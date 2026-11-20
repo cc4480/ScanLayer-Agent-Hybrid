@@ -114,4 +114,17 @@ Test results after the fixes (superagent suite, Windows): `runtime.spec` passes 
 
 1. **Restart 3082** so it runs the rebuilt plugin (this also brings the superagent plugin back, which has been inactive since 06:56). It was **not** done because a session (`SecScan-Training-Datasets`) was being written to at the time (last write 12 s earlier); a restart kills a running turn and issues a new tokenised URL (reusable until the next restart, per the web server source). Run `restart-superagent.ps1` when that session is idle.
 2. Remaining Windows gaps in the superagent (from the shim work): `executable()` in `src/deployment.ts` looks up bare command names without PATHEXT; `workerProbe` uses a POSIX `env PATH=...` command; rewriting a `.cmd` shim while a worker runs it is untested; a worker can still call the real `gh.exe` by absolute path (the shims are a guardrail, as the source says).
-3. Your decisions: the tailnet forward of the AlterEgo bridge and its plaintext token (3, 4), moving out of OneDrive (5), the four experimental bundles (8).
+3. Your decisions: the tailnet forward of the AlterEgo bridge (3), moving out of OneDrive (5), the four experimental bundles (8).
+
+## 8. AlterEgo bridge replaced by native tools (updated 08:50)
+
+You said the app is local and does not need the remote-agent bridge, but its agents need some of the tools. Evidence: across 465 tool calls in the DSH session logs, agents only ever called four trivial AlterEgo tools (`load_tools`, `system_info`, `active_window`, `idle_seconds`, once each); all real work used the built-in shell, file and web tools.
+
+| Capability | Status |
+| --- | --- |
+| Remove the `alterego` MCP entry and its bearer token from the superagent profile | **Done and live.** 14 lines removed from `.dsh\profiles\superagent\cordis.patch.yml`; the token no longer appears in the file; a token-redacted backup is `cordis.patch.yml.bak-before-native-tools`. Finding 4 is closed for the app. **The token sat in a OneDrive-synced file for hours: rotate it** (`bridge-admin.ps1` in the bridge folder), since removing it does not erase OneDrive's version history |
+| Window and system info (`system_info`, `active_window`, `idle_seconds`) | **Done.** Skill `windows-system-info` (`skills\`, installed to `.dsh\skills`), commit `5e98066c`. Tested in PowerShell 5.1 and 7; not tested for a minimized window, a locked screen or a real non-ASCII title |
+| Browser driving | **Wired and live.** Playwright MCP over the installed Google Chrome, headless, throwaway profile (none of your real cookies or logins), nothing downloaded. Verified: the MCP server lists its 24 tools with no network and no browser at startup; one `about:blank` page launched Chrome and closed cleanly; the restart log shows no activation warnings. **Not verified:** a real website load, or a live agent session using it. The superagent router session also receives these tools unless a guard is added to `sessions.ts` |
+| Desktop control (screen, mouse, keyboard) | **Not done, waiting for your decision.** The harness's native Windows computer-use bundle needs a one-time ~108 MB nuget.org download to build its C# helper (no local NuGet cache); `helperPath` must then be set so restarts skip the rebuild. Nothing was downloaded |
+
+The bridge itself (`127.0.0.1:8765`), its tailnet forward and its Cloudflare tunnel were not touched.
