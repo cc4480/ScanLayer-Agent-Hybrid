@@ -1,96 +1,169 @@
-# restart-superagent.ps1 - stop and relaunch the superagent profile server (port 3082)
+# restart-superagent.ps1 - stop and relaunch the superagent profile server (default port 3082)
 #
-# Reloads .dsh\profiles\superagent\cordis.patch.yml, which is how the AlterEgo
-# MCP server entry becomes live as native mcp__alterego__* tools.
+# Reloads .dsh\profiles\superagent\cordis.patch.yml (how the AlterEgo MCP server entry
+# becomes live as native mcp__alterego__* tools) and picks up a rebuilt
+# src\dsh-superagent-prototype\lib.
 #
-#   .\restart-superagent.ps1            stop, relaunch, print the new tokenized URL
-#   .\restart-superagent.ps1 -DryRun    show what would be stopped / run
+#   .\restart-superagent.ps1            stop (if running), relaunch, verify, print the new tokenized URL
+#   .\restart-superagent.ps1 -DryRun    show what would be stopped / run, change nothing
 #
-# Needs an elevated PowerShell: the running server may have been started from a
-# higher-integrity process, and a non-elevated shell cannot read its command line
-# or terminate it (Access is denied / "no process found").
+# Works in Windows PowerShell 5.1 and in PowerShell 7. A regular shell is enough when the
+# running server was started by the same user at the same integrity level; if it was
+# started elevated, the script says so and must be run elevated.
 #
-# The Web UI at 3082 needs the NEW ?token= URL this script prints. Sessions are
-# durable: reopening the same session keeps its history.
+# SUCCESS means all of: the server printed its URL, the port is listening, the listener is
+# the process this script launched (command line matches -OwnerPattern), and it is still
+# listening after an 8 second settle check. A URL printed by a server that then died is a
+# failure, and the URL file is overwritten with 'no url captured' so a dead token never
+# lingers. Every launch writes its own log (superagent-restart-<time>.log, last 5 kept), so
+# output of an older, dying server can never be mistaken for the new one.
+#
+# SAFETY: the script only stops the owner of the port when that process's command line
+# matches -OwnerPattern. Anything else on the port is left alone and reported.
+#
+# Exit codes: 0 up and verified | 1 did not come up | 2 refused (foreign owner, or cannot stop it) | 3 timed out
+#
+# The Web UI needs the NEW ?token= URL this script prints. Sessions are durable: reopening
+# the same session keeps its history.
+#
+# Test parameters (leave alone in normal use): -Port -LaunchCommand -OwnerPattern -UrlFile -LogDir -NoClipboard
+[CmdletBinding()]
 param(
-    [switch]$DryRun
+    [switch]$DryRun,
+    [int]$Port = 3082,
+    [string]$LaunchCommand = 'pnpm dsh --profile superagent --no-open',
+    [string]$OwnerPattern = '--profile superagent',
+    [int]$TimeoutSeconds = 180,
+    [string]$UrlFile,
+    [string]$LogDir,
+    [switch]$NoClipboard
 )
 
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $HarnessDir = Join-Path $Root 'src\deepseek-harness'
-$LogDir = Join-Path $Root 'state'
-$LogFile = Join-Path $LogDir 'superagent-restart.log'
+if (-not $LogDir)  { $LogDir  = Join-Path $Root 'state' }
+if (-not $UrlFile) { $UrlFile = Join-Path $Root 'state\superagent-url.txt' }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-function Get-PortOwner([int]$port) {
-    $line = netstat -ano | Select-String ":$port\s+.*LISTENING" | Select-Object -First 1
-    if (-not $line) { return $null }
-    $fields = ($line.Line -split '\s+') | Where-Object { $_ }
-    return [int]$fields[-1]
+# Anything in a fresh log that means the server is not (or no longer) healthy. "did not activate"
+# is the line DSH prints when a plugin such as dsh-superagent fails its config validation.
+$FailurePattern = 'startup failed|ELIFECYCLE|ValidationError|did not activate|EADDRINUSE|ERR_MODULE_NOT_FOUND'
+
+function Get-Listeners([int]$LocalPort) {
+    @(Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique)
 }
 
-$isAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin -and -not $DryRun) {
-    Write-Host 'This must run elevated (right-click PowerShell -> Run as administrator, or:' -ForegroundColor Yellow
-    Write-Host '  Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File ""' + $PSCommandPath + '"""' -ForegroundColor Yellow
-    return
+function Get-CommandLine([int]$ProcessId) {
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+    if ($p) { $p.CommandLine } else { $null }
 }
 
-$owner = Get-PortOwner 3082
-if ($owner) {
+# --- who holds the port? ----------------------------------------------------------------
+$owners = @(Get-Listeners $Port)
+foreach ($owner in $owners) {
     $proc = Get-Process -Id $owner -ErrorAction SilentlyContinue
-    Write-Host "port 3082 is held by pid $owner ($($proc.ProcessName)) - stopping it"
-    if ($DryRun) {
-        Write-Host "would run: cd `"$HarnessDir`" ; pnpm dsh --profile superagent --no-open  (log: $LogFile)"
-        return
+    $name = if ($proc) { $proc.ProcessName } else { 'unknown' }
+    $cmdline = Get-CommandLine $owner
+    if (-not $cmdline) {
+        Write-Host "port $Port is held by pid $owner ($name), but its command line cannot be read - it was probably started elevated. Run this script elevated." -ForegroundColor Yellow
+        exit 2
     }
-    try {
-        Stop-Process -Id $owner -Force -ErrorAction Stop
-    } catch {
+    if ($cmdline -notmatch $OwnerPattern) {
+        Write-Host "port $Port is held by pid $owner ($name), which does not look like the superagent server (its command line does not match '$OwnerPattern'). Not stopping it." -ForegroundColor Red
+        exit 2
+    }
+}
+
+if ($DryRun) {
+    if ($owners.Count) { Write-Host "would stop pid(s): $($owners -join ', ') (port $Port)" } else { Write-Host "port $Port is free - nothing to stop" }
+    Write-Host "would run in ${HarnessDir}: $LaunchCommand   (DSH_HOME=$(Join-Path $Root '.dsh'), log in $LogDir)"
+    exit 0
+}
+
+# --- stop the old server ----------------------------------------------------------------
+foreach ($owner in $owners) {
+    Write-Host "stopping pid $owner"
+    try { Stop-Process -Id $owner -Force -ErrorAction Stop }
+    catch {
         Write-Host "could not stop pid $owner : $($_.Exception.Message)" -ForegroundColor Red
         Write-Host 'run this script from an elevated PowerShell' -ForegroundColor Yellow
-        return
-    }
-} else {
-    Write-Host 'port 3082 is free - launching a fresh server'
-    if ($DryRun) {
-        Write-Host "would run: cd `"$HarnessDir`" ; pnpm dsh --profile superagent --no-open  (log: $LogFile)"
-        return
+        exit 2
     }
 }
-
-for ($i = 0; $i -lt 40; $i++) {
-    if (-not (Get-PortOwner 3082)) { break }
-    Start-Sleep -Milliseconds 500
+$freed = -not $owners.Count
+for ($i = 0; (-not $freed) -and ($i -lt 40); $i++) {
+    if (-not (Get-Listeners $Port).Count) { $freed = $true } else { Start-Sleep -Milliseconds 500 }
+}
+if (-not $freed) {
+    Write-Host "port $Port is still in use 20 s after stopping its owner" -ForegroundColor Red
+    exit 2
 }
 
-# pnpm is launched through cmd so PowerShell's execution policy does not apply.
+# --- launch the new one -----------------------------------------------------------------
 $env:DSH_HOME = Join-Path $Root '.dsh'
-Remove-Item $LogFile -Force -ErrorAction SilentlyContinue
-$cmd = "cd /d `"$HarnessDir`" && pnpm dsh --profile superagent --no-open > `"$LogFile`" 2>&1"
-Start-Process cmd -ArgumentList '/c', $cmd -WindowStyle Hidden
-
-$url = $null
-for ($i = 0; $i -lt 90; $i++) {
-    Start-Sleep -Seconds 2
-    if (Test-Path $LogFile) {
-        $m = Select-String -Path $LogFile -Pattern 'https?://127\.0\.0\.1:3082/\?token=\S+' -ErrorAction SilentlyContinue |
-            Select-Object -Last 1
-        if ($m) { $url = $m.Matches[0].Value; break }
-        if (Select-String -Path $LogFile -Pattern 'Failed plugins|startup failed|ELIFECYCLE' -Quiet) { break }
-    }
+if (-not $env:DEEPSEEK_API_KEY) {
+    $userKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
+    if ($userKey) { $env:DEEPSEEK_API_KEY = $userKey }
 }
+$LogFile = Join-Path $LogDir ("superagent-restart-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+Get-ChildItem $LogDir -Filter 'superagent-restart-*.log' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 |
+    ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
 
-Set-Content -Path (Join-Path $LogDir 'superagent-url.txt') -Value ($url ?? 'no url captured') -Encoding UTF8
+# Launched through cmd so PowerShell's execution policy does not apply to pnpm.
+$cmd = "cd /d `"$HarnessDir`" && $LaunchCommand > `"$LogFile`" 2>&1"
+$launched = Start-Process cmd -ArgumentList '/c', $cmd -WindowStyle Hidden -PassThru
+
+# --- wait for it, and do not believe the log alone --------------------------------------
+$urlPattern = 'https?://127\.0\.0\.1:' + $Port + '/\?token=\S+'
+$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+$url = $null
+$failure = $null
+$timedOut = $false
+while ($true) {
+    if ((Get-Date) -ge $deadline) { $timedOut = $true; $failure = "no verified URL within $TimeoutSeconds s"; break }
+    Start-Sleep -Seconds 2
+    $text = if (Test-Path $LogFile) { Get-Content $LogFile -Raw -ErrorAction SilentlyContinue } else { $null }
+    if ($text -and ($text -match $FailurePattern)) { $failure = "the server logged: $($Matches[0])"; break }
+    $listening = @(Get-Listeners $Port)
+    if ($text -and ($text -match $urlPattern) -and $listening.Count) { $url = $Matches[0]; break }
+    if ($launched.HasExited -and -not $listening.Count) { $failure = 'the server process exited before it started listening'; break }
+}
 
 if ($url) {
-    Write-Host ''
-    Write-Host 'superagent server is back up. Open this URL (new token):' -ForegroundColor Green
-    Write-Host "  $url" -ForegroundColor Cyan
-    Set-Clipboard -Value $url
-    Write-Host '(copied to clipboard)'
-} else {
-    Write-Host "server did not come up - last log lines from $LogFile" -ForegroundColor Red
-    if (Test-Path $LogFile) { Get-Content $LogFile -Tail 25 }
+    # Settle check: a server that prints its URL and then dies is a failure.
+    Start-Sleep -Seconds 8
+    $textAfter = Get-Content $LogFile -Raw -ErrorAction SilentlyContinue
+    $after = @(Get-Listeners $Port)
+    if ($textAfter -and ($textAfter -match $FailurePattern)) {
+        $failure = "the server logged: $($Matches[0]) after it printed its URL"
+    } elseif (-not $after.Count) {
+        $failure = "the server stopped listening on port $Port within 8 s of starting"
+    } else {
+        $now = Get-CommandLine $after[0]
+        if ((-not $now) -or ($now -notmatch $OwnerPattern)) { $failure = "port $Port is now held by a process that is not the superagent server" }
+    }
 }
+
+# --- report -----------------------------------------------------------------------------
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+if ($url -and -not $failure) {
+    [IO.File]::WriteAllText($UrlFile, $url, $utf8NoBom)
+    Write-Host ''
+    Write-Host "superagent server is up on port $Port and still listening after the settle check. Open this URL (new token):" -ForegroundColor Green
+    Write-Host "  $url" -ForegroundColor Cyan
+    if (-not $NoClipboard) { Set-Clipboard -Value $url; Write-Host '(copied to clipboard)' }
+    Write-Host "log: $LogFile"
+    exit 0
+}
+
+[IO.File]::WriteAllText($UrlFile, 'no url captured', $utf8NoBom)
+Write-Host "server did not come up: $failure" -ForegroundColor Red
+if (Test-Path $LogFile) {
+    Write-Host "last log lines ($LogFile):"
+    Get-Content $LogFile -Tail 25 | ForEach-Object { $_ -replace 'token=[A-Za-z0-9_-]+', 'token=<redacted>' }
+}
+if ($timedOut) { exit 3 }
+exit 1
