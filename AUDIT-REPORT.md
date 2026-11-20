@@ -86,3 +86,32 @@ Severity is my judgement for this single-user Windows machine.
 - **Sampled only:** `deepseek-harness` is an upstream product (2,302 spec files, 2.7 GB with dependencies); I did not review it line by line, and I did not run its full suite.
 - **Not audited:** `dsh-libreoffice-kit` and `dsh-node-addon-require-builtin` (unreferenced by the build), `node_modules`, the separate `secscan-rebuild-test` project, the AlterEgo bridge's own code.
 - **Not done:** no server was started, so finding 2 is from source and test evidence, not a live worker run, and my account of the 04:03 restart (section 2, item 3) is an inference from timestamps and file contents.
+
+## 7. Fix status (updated 07:46)
+
+The project is now a git repo; every fix below is a separate commit (`git log --oneline`).
+
+| Finding | Status | Where |
+| --- | --- | --- |
+| 7 No version control | **Fixed.** Baseline `147b61d5`; root `.gitignore` keeps `.dsh/`, `state/`, `.env`, `node_modules/` out. No secrets in the 23,005 tracked files (checked by path and by content) | `147b61d5` |
+| 6 `restart-superagent.ps1` | **Fixed and tested.** Parses in PowerShell 5.1 and 7; success needs a live, stable listener; fresh log per launch; refuses to kill a foreign process; no BOM; no dead URL left behind. New: waits out the plugin's 30 s state-directory lock (this failed the 05:18 restart with "Lock file is already being held") and says when a failed launch is still holding the port. Verified 4/4 lock scenarios (5.1) and 6/6 regression scenarios (7) against fake servers | `1df19dbc`, `c0720e4e` |
+| 2 Windows worker shims | **Fixed in source and tests, built into `lib/`, not yet running.** `.cmd` twins of every shim on win32; 17 new tests, run for real under cmd, PowerShell 5.1 and 7. Remaining Windows gaps are listed in the commit and below | `b3e77615`, `6a94fac5` |
+| 1 / the error in the screenshot | **Workaround in place:** the session opens on 3082. Not yet running the fixed plugin (see below) | |
+| 3, 4, 5, 8, 9, 10, 11, 12 | **Open** (decisions or upstream changes; unchanged) | |
+
+Test results after the fixes (superagent suite, Windows): `runtime.spec` passes in full (was 2 failures); `docs.spec` (3) and `environment.spec` (6) still show the same pre-existing Windows-portability failures. I did not re-run the whole suite.
+
+### New findings from this round
+
+| # | Sev | Finding |
+| --- | --- | --- |
+| 15 | **High (now repaired)** | **The superagent package's `node_modules` was emptied at 06:01** (every package directory left in place, zero files inside). Cause unknown: no DSH session issued a matching command, and it is not something I did. A restart at 06:54 then ran the superagent with `zod` unresolvable, so the plugin and `github-watch` failed to import and **the server on 3082 has been running without the superagent plugin since 06:56** (the preset list and normal sessions still work). I restored it with `pnpm install --offline --frozen-lockfile --force` (21 s, from the local pnpm store: 6,596 files; `zod`, `tsdown`, `vitest`, `typescript` verified). If it recurs, suspect the OneDrive-synced location (finding 5) |
+| 16 | Med | `pnpm dsh` auto-reinstalls the whole harness workspace when its `node_modules` is stale (+1437 packages, 1 m 40 s at 06:54). A restart can therefore take 2-3 minutes; the script's 180 s timeout covered it |
+| 17 | Low | My `git init` made the project root the repo root, so the harness's `lefthook` postinstall generated an example `lefthook.yml` and a `prepare-commit-msg` hook there. Both were inert (all-comment config); removed, and `/lefthook.yml` is now git-ignored. A future `pnpm install` may recreate the hook; it is harmless |
+| 18 | Info | 3080 (the plain `web` profile) is no longer running (pid 20956 is gone); sessions are being served by 3082 |
+
+### Still to do
+
+1. **Restart 3082** so it runs the rebuilt plugin (this also brings the superagent plugin back, which has been inactive since 06:56). It was **not** done because a session (`SecScan-Training-Datasets`) was being written to at the time (last write 12 s earlier); a restart kills a running turn and issues a new tokenised URL (reusable until the next restart, per the web server source). Run `restart-superagent.ps1` when that session is idle.
+2. Remaining Windows gaps in the superagent (from the shim work): `executable()` in `src/deployment.ts` looks up bare command names without PATHEXT; `workerProbe` uses a POSIX `env PATH=...` command; rewriting a `.cmd` shim while a worker runs it is untested; a worker can still call the real `gh.exe` by absolute path (the shims are a guardrail, as the source says).
+3. Your decisions: the tailnet forward of the AlterEgo bridge and its plaintext token (3, 4), moving out of OneDrive (5), the four experimental bundles (8).
