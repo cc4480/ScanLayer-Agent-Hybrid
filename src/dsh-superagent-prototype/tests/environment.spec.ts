@@ -1,11 +1,11 @@
-import { execFile, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SENSITIVE_ENV_PATTERN, type SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { GIT_LOCATION, agentVariables, credentialHelper, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
+import { GIT_LOCATION, agentVariables, cmdFailShim, cmdRunShim, credentialHelper, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
   from '../src/infra/environment.ts'
 import { CliError } from '../src/infra/commands.ts'
 import { testDeployment } from './fixtures/deployment.ts'
@@ -46,29 +46,177 @@ describe('worker shims', () => {
     expect([(await exec(join(bin, 'gh'), ['api', 'user'])).stdout, (await exec(join(bin, 'lark-cli'), ['im'])).stdout]).toEqual(['gh api user\n', 'lark im\n'])
     expect(readdirSync(bin)).not.toContain('git')
   })
+  // These two tests check the `sh` shims alone, so they name the platform: on win32 the default also writes the `.cmd` twins, which the
+  // 'Windows command shims' tests below cover.
   it('replace only what dsh-superagent wrote and refuse anything else in its places', async () => {
-    await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli'])
-    await writeEnvironment(testDeployment({ stateDir: dir }), [])
+    await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli'], 'linux')
+    await writeEnvironment(testDeployment({ stateDir: dir }), [], 'linux')
     expect(readdirSync(workerBin(dir)).sort()).toEqual(['gh', 'lark-cli'])
     // A file that merely contains the marker on a later line, a symlink to a shim, and a foreign gitconfig are all rejected.
     writeFileSync(join(workerBin(dir), 'notes'), `notes\nmore\n${readFileSync(join(workerBin(dir), 'gh'), 'utf8').split('\n')[1]}\n`)
-    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [])).rejects.toThrow(`${join(workerBin(dir), 'notes')} was not written by dsh-superagent`)
+    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [], 'linux')).rejects.toThrow(`${join(workerBin(dir), 'notes')} was not written by dsh-superagent`)
     rmSync(join(workerBin(dir), 'notes'))
     symlinkSync(join(workerBin(dir), 'gh'), join(workerBin(dir), 'link'))
-    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [])).rejects.toThrow('link was not written by dsh-superagent')
+    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [], 'linux')).rejects.toThrow('link was not written by dsh-superagent')
     rmSync(join(workerBin(dir), 'link'))
     writeFileSync(workerGitConfig(dir), '[user]\n\tname = someone\n')
-    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [])).rejects.toThrow(`${workerGitConfig(dir)} was not written by dsh-superagent`)
+    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [], 'linux')).rejects.toThrow(`${workerGitConfig(dir)} was not written by dsh-superagent`)
     expect(readFileSync(workerGitConfig(dir), 'utf8')).toBe('[user]\n\tname = someone\n')
   })
   it('replaces the files it wrote under the project\'s earlier names', async () => {
-    await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli', 'older-cli'])
+    await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli', 'older-cli'], 'linux')
     const legacy = (file: string, name: string) => writeFileSync(file, readFileSync(file, 'utf8').replace('Written by dsh-superagent', `Written by ${name}`))
     legacy(join(workerBin(dir), 'old-cli'), 'dsh-tag'); legacy(join(workerBin(dir), 'older-cli'), 'dsh-freelancer'); legacy(workerGitConfig(dir), 'dsh-go')
-    await writeEnvironment(testDeployment({ stateDir: dir }), [])
+    await writeEnvironment(testDeployment({ stateDir: dir }), [], 'linux')
     expect(readdirSync(workerBin(dir)).sort()).toEqual(['gh', 'lark-cli'])
     expect(readFileSync(workerGitConfig(dir), 'utf8')).toContain('Written by dsh-superagent')
   })
+})
+
+/** A `.cmd` shim as `cmdRunShim` and `cmdFailShim` write it: batch lines end in CRLF, and the marker is a comment on line 2. */
+const batch = (...lines: string[]): string => ['@echo off', 'REM # Written by dsh-superagent on every start; edits are lost.', ...lines].join('\r\n') + '\r\n'
+
+describe('Windows command shims: text', () => {
+  const bin = String.raw`C:\state\worker-bin`
+  it('runs an .exe target directly, strips the shim directory from PATH first, and returns its exit code', () => {
+    expect(cmdRunShim(bin, String.raw`C:\Program Files\GitHub CLI\gh.exe`)).toBe(batch(
+      'setlocal DisableDelayedExpansion',
+      String.raw`set "PATH=%PATH:C:\state\worker-bin;=%"`,
+      String.raw`set "PATH=%PATH:;C:\state\worker-bin=%"`,
+      String.raw`"C:\Program Files\GitHub CLI\gh.exe" %*`,
+      'exit /b %ERRORLEVEL%'))
+  })
+  it('runs a .cmd or .bat wrapper through `call`, which a batch file needs to get control back', () => {
+    for (const wrapper of [String.raw`C:\tools\gh-agent.cmd`, String.raw`C:\tools\gh-agent.BAT`]) {
+      expect(cmdRunShim(bin, wrapper)).toContain(`\r\ncall "${wrapper}" %*\r\nexit /b %ERRORLEVEL%\r\n`)
+    }
+    expect(cmdRunShim(bin, String.raw`C:\tools\gh.EXE`)).not.toContain('call ')
+  })
+  it('doubles a % in the target path and leaves spaces alone', () => {
+    expect(cmdRunShim(bin, String.raw`C:\100%\my tools\gh.exe`)).toContain(String.raw`"C:\100%%\my tools\gh.exe" %*`)
+  })
+  it('skips the PATH edit, not the run, for a shim directory %PATH:from=to% cannot name', () => {
+    for (const odd of [String.raw`C:\100%\worker-bin`, String.raw`C:\a=b\worker-bin`, '*\\worker-bin']) {
+      const text = cmdRunShim(odd, String.raw`C:\tools\gh.exe`)
+      expect(text).not.toContain('set "PATH=')
+      expect(text).toContain(String.raw`"C:\tools\gh.exe" %*`)
+    }
+    expect(cmdRunShim(String.raw`C:\My State\worker-bin`, String.raw`C:\tools\gh.exe`)).toContain(String.raw`set "PATH=%PATH:C:\My State\worker-bin;=%"`)
+  })
+  it('works on a copy of the environment, so running the shim in an interactive cmd leaves its PATH alone', () => {
+    for (const text of [cmdRunShim(bin, String.raw`C:\tools\gh.exe`), cmdFailShim('no')]) {
+      expect(text.indexOf('setlocal')).toBeGreaterThan(-1)
+      expect(text.indexOf('setlocal')).toBeLessThan(Math.max(text.indexOf('set "PATH'), text.indexOf('exit /b')))
+    }
+  })
+  it('prints a blocked command\'s message to stderr with cmd\'s special characters escaped, and exits 1', () => {
+    expect(cmdFailShim('curl is blocked in this installation; use gh, which acts as agent-bot.')).toBe(batch(
+      'setlocal DisableDelayedExpansion',
+      '>&2 echo(curl is blocked in this installation; use gh, which acts as agent-bot.',
+      'exit /b 1'))
+    expect(cmdFailShim('a&b|c<d>e^f(g)h!i%j"k')).toBe(batch('setlocal DisableDelayedExpansion', ">&2 echo(a^&b^|c^<d^>e^^f^(g^)h^!i%%j'k", 'exit /b 1'))
+  })
+})
+
+describe('Windows command shims: files', () => {
+  const lines = (file: string): string[] => readFileSync(file, 'utf8').split('\r\n')
+  it('writes a .cmd twin beside every sh shim on win32, and none elsewhere', async () => {
+    const base = testDeployment({ stateDir: dir }), bin = workerBin(dir)
+    await writeEnvironment(base, ['personal-gh'], 'win32')
+    expect(readdirSync(bin).sort()).toEqual(['gh', 'gh.cmd', 'lark-cli', 'lark-cli.cmd', 'personal-gh', 'personal-gh.cmd'])
+    expect(readFileSync(join(bin, 'gh.cmd'), 'utf8')).toBe(cmdRunShim(bin, base.github.cli))
+    expect(readFileSync(join(bin, 'lark-cli.cmd'), 'utf8')).toBe(cmdRunShim(bin, base.feishu!.cli))
+    expect(readFileSync(join(bin, 'personal-gh.cmd'), 'utf8')).toBe(cmdFailShim('personal-gh is blocked in this installation; use gh, which acts as agent-bot.'))
+    expect(lines(join(bin, 'gh.cmd')).slice(0, 2)).toEqual(['@echo off', 'REM # Written by dsh-superagent on every start; edits are lost.'])
+    expect(readFileSync(join(bin, 'gh'), 'utf8').startsWith('#!/bin/sh\n')).toBe(true)
+    for (const platform of ['linux', 'darwin'] as const) {
+      rmSync(bin, { recursive: true })
+      await writeEnvironment(base, ['personal-gh'], platform)
+      expect(readdirSync(bin).sort()).toEqual(['gh', 'lark-cli', 'personal-gh'])
+    }
+  })
+  it('writes the Feishu shim as a failure without a bot, as the sh shim does', async () => {
+    await writeEnvironment(testDeployment({ stateDir: dir, feishu: undefined }), [], 'win32')
+    expect(readFileSync(join(workerBin(dir), 'lark-cli.cmd'), 'utf8')).toBe(cmdFailShim('lark-cli is unavailable: this installation has no Feishu bot.'))
+  })
+  it('rewrites the same files on a second start and removes the twins of a shim that is no longer wanted', async () => {
+    const bin = workerBin(dir), read = () => Object.fromEntries(readdirSync(bin).map(name => [name, readFileSync(join(bin, name), 'utf8')]))
+    await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli'], 'win32')
+    expect(readdirSync(bin)).toContain('old-cli.cmd')
+    await writeEnvironment(testDeployment({ stateDir: dir }), [], 'win32')
+    const first = read()
+    expect(Object.keys(first).sort()).toEqual(['gh', 'gh.cmd', 'lark-cli', 'lark-cli.cmd'])
+    await writeEnvironment(testDeployment({ stateDir: dir }), [], 'win32')
+    expect(read()).toEqual(first)
+  })
+  it('refuses a .cmd file it did not write and keeps it', async () => {
+    await writeEnvironment(testDeployment({ stateDir: dir }), [], 'win32')
+    const stray = join(workerBin(dir), 'stray.cmd')
+    writeFileSync(stray, '@echo off\r\necho mine\r\n')
+    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [], 'win32')).rejects.toThrow(`${stray} was not written by dsh-superagent`)
+    // The marker on a later line does not count, with CRLF endings either.
+    writeFileSync(stray, `@echo off\r\necho mine\r\nREM # Written by dsh-superagent on every start; edits are lost.\r\n`)
+    await expect(writeEnvironment(testDeployment({ stateDir: dir }), [], 'win32')).rejects.toThrow('stray.cmd was not written by dsh-superagent')
+    expect(readFileSync(stray, 'utf8')).toContain('echo mine')
+  })
+  it('replaces a .cmd shim written under the project\'s earlier names, and one left half-written by a crash', async () => {
+    await writeEnvironment(testDeployment({ stateDir: dir }), [], 'win32')
+    const bin = workerBin(dir)
+    writeFileSync(join(bin, 'legacy.cmd'), '@echo off\r\nREM # Written by dsh-tag on every start; edits are lost.\r\nexit /b 1\r\n')
+    writeFileSync(join(bin, '.gh.cmd.123.tmp'), '@echo off\r\nREM # Written by dsh-superagent on every start; edits are lost.\r\n')
+    await writeEnvironment(testDeployment({ stateDir: dir }), [], 'win32')
+    expect(readdirSync(bin).sort()).toEqual(['gh', 'gh.cmd', 'lark-cli', 'lark-cli.cmd'])
+  })
+})
+
+/** The shims run by the shells workers use. Only meaningful where cmd.exe and PowerShell exist. */
+describe.skipIf(process.platform !== 'win32')('Windows command shims: run by cmd and PowerShell', () => {
+  // Starting a shell can take seconds on a loaded machine.
+  const SHELL_TIMEOUT = 90_000
+  const system32 = join(process.env.SystemRoot ?? String.raw`C:\Windows`, 'System32')
+  const windowsPowerShell = join(system32, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  const pwsh = ((): string | undefined => { try { return execFileSync('where', ['pwsh'], { encoding: 'utf8' }).split(/\r?\n/)[0] || undefined } catch { return undefined } })()
+  type Outcome = { code: number; stdout: string; stderr: string }
+  /** `verbatim` hands cmd its command line unchanged: Node would otherwise re-quote the embedded double quotes. */
+  const run = (file: string, args: string[], path: string, verbatim: boolean): Promise<Outcome> =>
+    exec(file, args, { env: { ...process.env, PATH: path }, timeout: 80_000, windowsVerbatimArguments: verbatim }).then(
+      ({ stdout, stderr }) => ({ code: 0, stdout, stderr }),
+      (error: { code?: number; stdout?: string; stderr?: string }) => ({ code: error.code ?? -1, stdout: error.stdout ?? '', stderr: error.stderr ?? '' }))
+  /** A worker shell's PATH: the shim directory first, then the directory of the real `gh`, then only what the shells themselves need. */
+  const workerPath = (): string => [workerBin(dir), join(dir, 'real'), system32, join(system32, 'WindowsPowerShell', 'v1.0'), ...(pwsh ? [join(pwsh, '..')] : [])].join(';')
+  const powershell = (command: string): string[] => ['-NoProfile', '-NonInteractive', '-Command', `${command}; exit $LASTEXITCODE`]
+  /** name, executable, argv for a command line, and whether cmd must get it verbatim (`/s` drops the outer quotes added here). */
+  const shells: Array<[string, string, (command: string) => string[], boolean]> = [
+    ['cmd', process.env.ComSpec ?? join(system32, 'cmd.exe'), command => ['/d', '/s', '/c', `"${command}"`], true],
+    ['Windows PowerShell 5.1', windowsPowerShell, powershell, false],
+  ]
+  if (pwsh) shells.push(['PowerShell 7', pwsh, powershell, false])
+
+  beforeEach(async () => {
+    // The real `gh` reports its arguments and whether the shim directory is still on PATH, and exits 7.
+    writeFileSync(join(dir, 'real', 'gh.cmd'), ['@echo off', 'echo real-gh:%*', 'echo config:%GH_CONFIG_DIR%',
+      'echo %PATH% | findstr /i /c:"worker-bin" >nul', 'if errorlevel 1 (echo shim-stripped) else (echo shim-present)', 'exit /b 7', ''].join('\r\n'))
+    // The agent's `gh` is a wrapper that calls `gh` by name, as the sh test does: it reaches the real one only if the shim left PATH.
+    writeFileSync(join(dir, 'gh-agent.cmd'), ['@echo off', 'set "GH_CONFIG_DIR=%~dp0agent-config"', 'call gh %*', 'exit /b %ERRORLEVEL%', ''].join('\r\n'))
+    await writeEnvironment(testDeployment({ stateDir: dir, github: { ...testDeployment().github, cli: join(dir, 'gh-agent.cmd') }, feishu: undefined }), ['personal-gh'], 'win32')
+  })
+
+  for (const [name, file, command, verbatim] of shells) {
+    it(`${name}: \`gh\` reaches the real one through the agent's wrapper with its arguments, its exit code and a PATH without the shim directory`, async () => {
+      const outcome = await run(file, command(name === 'cmd' ? 'gh a "b c"' : `gh a 'b c'`), workerPath(), verbatim)
+      expect(outcome.stdout.split(/\r?\n/).filter(Boolean)).toEqual(['real-gh:a "b c"', `config:${join(dir, 'agent-config')}`, 'shim-stripped'])
+      expect(outcome.code).toBe(7)
+    }, SHELL_TIMEOUT)
+    it(`${name}: a blocked command and a missing Feishu bot exit 1 with their message on stderr`, async () => {
+      const blocked = await run(file, command('personal-gh'), workerPath(), verbatim)
+      expect(blocked.code).toBe(1)
+      expect(blocked.stderr).toContain('personal-gh is blocked in this installation; use gh, which acts as agent-bot.')
+      expect(blocked.stdout.trim()).toBe('')
+      const lark = await run(file, command('lark-cli im'), workerPath(), verbatim)
+      expect(lark.code).toBe(1)
+      expect(lark.stderr).toContain('lark-cli is unavailable: this installation has no Feishu bot.')
+    }, SHELL_TIMEOUT)
+  }
 })
 
 describe('agent git configuration', () => {

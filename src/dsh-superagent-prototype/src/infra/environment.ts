@@ -57,12 +57,40 @@ export function agentVariables(stateDir: string): Record<string, string | undefi
   }
 }
 
-/** True when a regular file starts with the dsh-superagent marker in its first two lines; a symbolic link, directory, or other non-regular file never counts as written by dsh-superagent. */
+/**
+ * True when a regular file starts with the dsh-superagent marker in its first two lines; a symbolic link, directory, or other non-regular file never counts as written by dsh-superagent.
+ * A `.cmd` shim carries the marker as a batch comment (`REM # Written by …`) on CRLF lines, so both are accepted.
+ */
 async function written(file: string): Promise<boolean> {
   if (!(await lstat(file)).isFile()) return false
-  const head = (await readFile(file, 'utf8')).split('\n', 2)
+  const head = (await readFile(file, 'utf8')).split('\n', 2).map(line => line.replace(/\r$/, '').replace(/^REM /, ''))
   return [MARKER, ...LEGACY_MARKERS].some(marker => head.includes(marker))
 }
+
+/** A value inside a batch file: `%` would start a variable expansion, so it doubles. */
+const cmdLiteral = (value: string): string => value.replaceAll('%', '%%')
+/**
+ * Text a batch `echo` prints literally. cmd's special characters take a `^`, and `%` doubles. A double quote cannot be escaped in
+ * `echo` and would switch off the escapes after it, so it prints as a single quote.
+ */
+const cmdEcho = (value: string): string => value.replaceAll('"', "'").replace(/[&|<>^()!]/g, char => `^${char}`).replaceAll('%', '%%')
+/** Batch files use CRLF line endings; the marker sits on the second line, where {@link written} looks for it. */
+const cmdLines = (...lines: string[]): string => ['@echo off', `REM ${MARKER}`, ...lines].join('\r\n') + '\r\n'
+
+/**
+ * Text of the Windows `.cmd` shim that runs `program` (an absolute path) in place of the extensionless `sh` shim, which `cmd` and
+ * PowerShell do not resolve. It works on a copy of the environment (`setlocal`), removes `dir` from `PATH` so a wrapper that calls the
+ * command by name reaches the real one, runs the target and returns its exit code. A `.exe` or `.com` target runs directly; anything
+ * else, such as a `.cmd` wrapper, runs through `call`, which a batch file needs in order to get control back.
+ * The `PATH` edit is skipped when `dir` holds a character that cannot appear in `%PATH:from=to%`; the target is run by absolute path either way.
+ */
+export function cmdRunShim(dir: string, program: string): string {
+  const strip = /[%="\r\n]/.test(dir) || dir.startsWith('*') ? [] : [`set "PATH=%PATH:${dir};=%"`, `set "PATH=%PATH:;${dir}=%"`]
+  const direct = /\.(exe|com)$/i.test(program)
+  return cmdLines('setlocal DisableDelayedExpansion', ...strip, `${direct ? '' : 'call '}"${cmdLiteral(program)}" %*`, 'exit /b %ERRORLEVEL%')
+}
+/** Text of the Windows `.cmd` shim that prints `message` to stderr and exits with status 1, as the `sh` shim does. */
+export const cmdFailShim = (message: string): string => cmdLines('setlocal DisableDelayedExpansion', `>&2 echo(${cmdEcho(message)}`, 'exit /b 1')
 async function own(file: string, text: string, mode = 0o644): Promise<void> {
   let foreign = false
   try { foreign = !await written(file) } catch { /* The file does not exist yet. */ }
@@ -75,8 +103,11 @@ async function own(file: string, text: string, mode = 0o644): Promise<void> {
 /**
  * Atomically writes worker CLI shims and the isolated git configuration file into the state directory, refusing to overwrite foreign files.
  * Each shim strips the shim directory from PATH before exec so wrapper scripts resolving `gh` or `lark-cli` by name reach the real binary.
+ * On Windows every shim also gets a `.cmd` twin (`gh.cmd`), because `cmd` and PowerShell find commands through PATHEXT and never run the
+ * extensionless `sh` file; the `sh` shim stays for Git Bash workers.
+ * @param platform - the platform the files are written for; only `win32` adds the `.cmd` twins.
  */
-export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' | 'repository' | 'github' | 'feishu'>, blockedCommands: readonly string[]): Promise<void> {
+export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' | 'repository' | 'github' | 'feishu'>, blockedCommands: readonly string[], platform: NodeJS.Platform = process.platform): Promise<void> {
   const { stateDir, repository, github, feishu } = deployment
   const dir = workerBin(stateDir)
   await mkdir(dir, { recursive: true })
@@ -84,11 +115,16 @@ export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' |
   for (const name of before) { const file = join(dir, name); if (!await written(file)) throw new SetupError('foreignFile', { file }) }
   // Workers may be running concurrently: write each shim to a temp file and atomically rename it so no command ever resolves past the shim directory.
   const kept = new Set<string>()
-  const shim = async (name: string, body: string): Promise<void> => {
+  const shim = async (name: string, body: string, cmd: string): Promise<void> => {
     const temporary = join(dir, `.${name}.${process.pid}.tmp`)
     await writeFile(temporary, `#!/bin/sh\n${MARKER}\n${body}\n`, { mode: 0o755 })
     await rename(temporary, join(dir, name))
     kept.add(name)
+    if (platform !== 'win32') return
+    const twin = `${name}.cmd`, twinTemporary = join(dir, `.${twin}.${process.pid}.tmp`)
+    await writeFile(twinTemporary, cmd)
+    await rename(twinTemporary, join(dir, twin))
+    kept.add(twin)
   }
   const withoutShims = [
     `self=${shellQuote(dir)}`, 'rest=', 'IFS=:', 'set -f',
@@ -97,10 +133,12 @@ export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' |
   ].join('\n')
   const run = (program: string): string => `${withoutShims}\nexec ${shellQuote(program)} "$@"`
   const fail = (message: string): string => `echo ${shellQuote(message)} >&2\nexit 1`
-  await shim('gh', run(github.cli))
-  await shim('lark-cli', feishu ? run(feishu.cli) : fail('lark-cli is unavailable: this installation has no Feishu bot.'))
+  const unavailable = 'lark-cli is unavailable: this installation has no Feishu bot.'
+  await shim('gh', run(github.cli), cmdRunShim(dir, github.cli))
+  await shim('lark-cli', feishu ? run(feishu.cli) : fail(unavailable), feishu ? cmdRunShim(dir, feishu.cli) : cmdFailShim(unavailable))
   for (const name of new Set(blockedCommands.filter(name => !WORKER_COMMANDS.includes(name)))) {
-    await shim(name, fail(`${name} is blocked in this installation; use gh, which acts as ${github.login}.`))
+    const blocked = `${name} is blocked in this installation; use gh, which acts as ${github.login}.`
+    await shim(name, fail(blocked), cmdFailShim(blocked))
   }
   for (const name of before) if (!kept.has(name)) await unlink(join(dir, name))
   await own(workerGitConfig(stateDir), [
