@@ -1,0 +1,13 @@
+# Deepseek super — root ignore rules.
+# Secrets, runtime state, session history and dependencies stay out of version control.
+# (src/deepseek-harness and src/dsh-superagent-prototype carry their own .gitignore for build output.)
+
+# DSH_HOME: credential store, session transcripts, profile node_modules, logs, tokens
+.dsh/
+# Superagent state directory (sqlite database, locks, restart log, tokenised URL file)
+state/
+# API key file and setup flag
+.env
+.setup-done
+
+node_modules/

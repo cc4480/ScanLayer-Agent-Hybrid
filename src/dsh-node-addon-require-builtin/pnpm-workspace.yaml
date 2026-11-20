@@ -1,0 +1,4 @@
+packages:
+  - packages/loader
+  - packages/require-builtin/*
+  - packages/internal-loader/*

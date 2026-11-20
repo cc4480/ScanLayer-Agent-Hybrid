@@ -1,0 +1,50 @@
+{
+  "name": "node-addon-internal-loader",
+  "version": "0.1.9",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/dsh-node-addon-require-builtin.git",
+    "directory": "packages/internal-loader/entry"
+  },
+  "type": "commonjs",
+  "description": "Node-API addon with runtime probing for internal access (cjs/esm loader whitelist variant).",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "import": "./lib/index.js",
+      "require": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "README.md",
+    "lib/",
+    "!lib/.tsbuildinfo",
+    "!lib/*.tsbuildinfo"
+  ],
+  "scripts": {
+    "build:js": "tsc -b"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "node-addon-native-custom-loader": "workspace:*"
+  },
+  "optionalDependencies": {
+    "node-addon-internal-loader-darwin-arm64": "workspace:*",
+    "node-addon-internal-loader-darwin-x64": "workspace:*",
+    "node-addon-internal-loader-linux-arm64-gnu": "workspace:*",
+    "node-addon-internal-loader-linux-arm64-musl": "workspace:*",
+    "node-addon-internal-loader-linux-x64-gnu": "workspace:*",
+    "node-addon-internal-loader-linux-x64-musl": "workspace:*",
+    "node-addon-internal-loader-win32-arm64-msvc": "workspace:*",
+    "node-addon-internal-loader-win32-ia32-msvc": "workspace:*",
+    "node-addon-internal-loader-win32-x64-msvc": "workspace:*"
+  }
+}

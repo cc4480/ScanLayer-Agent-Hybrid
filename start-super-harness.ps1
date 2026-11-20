@@ -1,0 +1,85 @@
+# Deepseek super - start script (Windows PowerShell)
+#
+# First run: installs dependencies, builds any missing artifacts, creates
+# the superagent profile inside .dsh, links the superagent plugin, and
+# writes its config. Later runs skip straight to launch (.setup-done flag).
+#
+# API key resolution (first hit wins):
+#   1. The harness credential store:  .dsh\.credentials.yaml
+#      (managed in the Web UI under Models; seated by Cho-zen1 - the
+#       package intentionally ships without it)
+#   2. DEEPSEEK_API_KEY from the Windows User environment variable
+#   3. DEEPSEEK_API_KEY from a .env file in this folder
+$ErrorActionPreference = 'Stop'
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $Root
+$env:DSH_HOME = Join-Path $Root '.dsh'
+New-Item -ItemType Directory -Force -Path $env:DSH_HOME | Out-Null
+$StateDir = Join-Path $Root 'state\superagent'
+New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+
+# --- key routes 2 and 3 ------------------------------------------------------
+if (-not $env:DEEPSEEK_API_KEY) {
+    $userKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
+    if ($userKey) { $env:DEEPSEEK_API_KEY = $userKey }
+}
+if (-not $env:DEEPSEEK_API_KEY) {
+    $envFile = Join-Path $Root '.env'
+    if (Test-Path $envFile) {
+        foreach ($line in Get-Content $envFile) {
+            if ($line -match '^\s*DEEPSEEK_API_KEY\s*=\s*(.+?)\s*$') {
+                $env:DEEPSEEK_API_KEY = $Matches[1]
+            }
+        }
+    }
+}
+
+# --- first-run setup -----------------------------------------------------------
+$setupDone = Join-Path $Root '.setup-done'
+if (-not (Test-Path $setupDone)) {
+    Write-Host '[setup] First run: installing the harness dependencies - needs internet, takes a few minutes...'
+    Push-Location (Join-Path $Root 'src\deepseek-harness')
+    pnpm install
+    if (-not (Test-Path 'apps\web\dist')) {
+        Write-Host '[setup] Building harness artifacts...'
+        pnpm run build:artifacts
+    }
+    Pop-Location
+
+    Write-Host '[setup] Installing and building the superagent prototype...'
+    Push-Location (Join-Path $Root 'src\dsh-superagent-prototype')
+    pnpm install
+    pnpm run build
+    Pop-Location
+
+    Write-Host '[setup] Creating the superagent profile and linking the plugin...'
+    Push-Location (Join-Path $Root 'src\deepseek-harness')
+    pnpm dsh superagent --from-default-profile web --dump-config | Out-Null
+    pnpm dsh plugin --profile superagent add "link:$(Join-Path $Root 'src\dsh-superagent-prototype')"
+    Pop-Location
+
+    Write-Host '[setup] Writing the superagent profile config...'
+    $patch = @"
+# Superagent profile config for this package (written by start-super-harness.ps1).
+- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 3082
+- id: dsh-superagent
+  config:
+    stateDir: $StateDir
+"@
+    Set-Content -Path (Join-Path $env:DSH_HOME 'profiles\superagent\cordis.patch.yml') -Value $patch -Encoding UTF8
+
+    Set-Content -Path $setupDone -Value 'done'
+    Write-Host '[setup] Setup complete.'
+}
+
+# --- launch ---------------------------------------------------------------------
+Write-Host 'Starting the DeepSeek Harness Web UI  - http://127.0.0.1:3080'
+Write-Host 'Starting the Superagent profile       - http://127.0.0.1:3082'
+Write-Host 'Each server window prints a tokenized URL - open THAT url in the browser.'
+Write-Host 'Keep both server windows open while testing. Close them to stop.'
+$HarnessDir = Join-Path $Root 'src\deepseek-harness'
+Start-Process cmd -ArgumentList '/k', "cd /d `"$HarnessDir`" && pnpm dsh web --no-open" -WindowStyle Normal
+Start-Process cmd -ArgumentList '/k', "cd /d `"$HarnessDir`" && pnpm dsh --profile superagent --no-open" -WindowStyle Normal
