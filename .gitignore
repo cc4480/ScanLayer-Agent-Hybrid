@@ -11,3 +11,7 @@ state/
 .setup-done
 
 node_modules/
+
+# The harness postinstall (lefthook) generates an example config and a git hook at the repo root
+# when the project root is the git root; neither is wanted here.
+/lefthook.yml

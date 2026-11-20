@@ -26,7 +26,11 @@
 # The Web UI needs the NEW ?token= URL this script prints. Sessions are durable: reopening
 # the same session keeps its history.
 #
-# Test parameters (leave alone in normal use): -Port -LaunchCommand -OwnerPattern -UrlFile -LogDir -NoClipboard
+# A force-stopped server leaves its state-directory lock (state\superagent.lock) behind until it
+# goes stale after 30 s; the script waits for that (up to 45 s) before launching, otherwise the
+# plugin fails with "Lock file is already being held".
+#
+# Test parameters (leave alone in normal use): -Port -LaunchCommand -OwnerPattern -UrlFile -LogDir -LockPath -NoClipboard
 [CmdletBinding()]
 param(
     [switch]$DryRun,
@@ -36,6 +40,7 @@ param(
     [int]$TimeoutSeconds = 180,
     [string]$UrlFile,
     [string]$LogDir,
+    [string]$LockPath,
     [switch]$NoClipboard
 )
 
@@ -44,6 +49,7 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $HarnessDir = Join-Path $Root 'src\deepseek-harness'
 if (-not $LogDir)  { $LogDir  = Join-Path $Root 'state' }
 if (-not $UrlFile) { $UrlFile = Join-Path $Root 'state\superagent-url.txt' }
+if (-not $LockPath) { $LockPath = Join-Path $Root 'state\superagent.lock' }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 # Anything in a fresh log that means the server is not (or no longer) healthy. "did not activate"
@@ -53,6 +59,10 @@ $FailurePattern = 'startup failed|ELIFECYCLE|ValidationError|did not activate|EA
 function Get-Listeners([int]$LocalPort) {
     @(Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue |
         Select-Object -ExpandProperty OwningProcess -Unique)
+}
+
+function Get-LockAge([string]$Path) {
+    try { ((Get-Date) - (Get-Item -LiteralPath $Path -ErrorAction Stop).LastWriteTime).TotalSeconds } catch { $null }
 }
 
 function Get-CommandLine([int]$ProcessId) {
@@ -99,6 +109,18 @@ for ($i = 0; (-not $freed) -and ($i -lt 40); $i++) {
 if (-not $freed) {
     Write-Host "port $Port is still in use 20 s after stopping its owner" -ForegroundColor Red
     exit 2
+}
+
+# The plugin guards its state directory with proper-lockfile, which treats a lock as stale only
+# after 30 s without a heartbeat, and a force-stopped server cannot release its lock. A server
+# launched sooner fails with "Lock file is already being held" and the plugin does not activate
+# (this is what failed the 05:18 restart). So wait until the lock is gone or stale (cap: 45 s).
+$lockWaitUntil = (Get-Date).AddSeconds(45)
+$lockAge = Get-LockAge $LockPath
+if (($null -ne $lockAge) -and ($lockAge -lt 32)) { Write-Host "waiting for the plugin lock to go stale (age $([int]$lockAge) s, needs 32 s): $LockPath" }
+while (($null -ne $lockAge) -and ($lockAge -lt 32) -and ((Get-Date) -lt $lockWaitUntil)) {
+    Start-Sleep -Seconds 2
+    $lockAge = Get-LockAge $LockPath
 }
 
 # --- launch the new one -----------------------------------------------------------------
@@ -161,6 +183,10 @@ if ($url -and -not $failure) {
 
 [IO.File]::WriteAllText($UrlFile, 'no url captured', $utf8NoBom)
 Write-Host "server did not come up: $failure" -ForegroundColor Red
+$left = @(Get-Listeners $Port)
+if ($left.Count) {
+    Write-Host "NOTE: the server this script launched is still listening on port $Port (pid $($left -join ', ')) but is not healthy. Stop it (Stop-Process -Id $($left[0])) or fix the cause and run this script again." -ForegroundColor Yellow
+}
 if (Test-Path $LogFile) {
     Write-Host "last log lines ($LogFile):"
     Get-Content $LogFile -Tail 25 | ForEach-Object { $_ -replace 'token=[A-Za-z0-9_-]+', 'token=<redacted>' }
