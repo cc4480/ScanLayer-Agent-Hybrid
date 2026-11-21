@@ -1,0 +1,277 @@
+{
+  "generatedBy": "secscan transfer (verbatim copy)",
+  "copies": [
+    {
+      "source": "artifacts/api-server/src/lib/challengePage.ts",
+      "copy": "src/engines/secscan-src/challengePage.ts",
+      "sha256_source": "2caf1a60713f3425782b636b2715d1ab5d954731b4ee9a69a5f20de5c95d96ec",
+      "sha256_copy": "2caf1a60713f3425782b636b2715d1ab5d954731b4ee9a69a5f20de5c95d96ec",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/cookieClassification.ts",
+      "copy": "src/engines/secscan-src/cookieClassification.ts",
+      "sha256_source": "1b654c9dd51bd4758f724dbc87d399361d409660ede3e5b18cc657956a70e641",
+      "sha256_copy": "1b654c9dd51bd4758f724dbc87d399361d409660ede3e5b18cc657956a70e641",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/cookieFlags.ts",
+      "copy": "src/engines/secscan-src/cookieFlags.ts",
+      "sha256_source": "ae8a73d08e4a821abd237b6d15ac537419a6bca52d0146b12bb6b80e90673204",
+      "sha256_copy": "ae8a73d08e4a821abd237b6d15ac537419a6bca52d0146b12bb6b80e90673204",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/headerAnalysis.ts",
+      "copy": "src/engines/secscan-src/headerAnalysis.ts",
+      "sha256_source": "5889c01e774028f5e236896bb7a2616aa032423700d7ff9334ab4e2af2f05161",
+      "sha256_copy": "5889c01e774028f5e236896bb7a2616aa032423700d7ff9334ab4e2af2f05161",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/hstsParse.ts",
+      "copy": "src/engines/secscan-src/hstsParse.ts",
+      "sha256_source": "d7cb1ffcf2c25db49a5b95afd4b1444c181f862aa15476248835f857f56b1fec",
+      "sha256_copy": "d7cb1ffcf2c25db49a5b95afd4b1444c181f862aa15476248835f857f56b1fec",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/isolationHeaders.ts",
+      "copy": "src/engines/secscan-src/isolationHeaders.ts",
+      "sha256_source": "99d42787a0b343b78a44b85bf1003378b0f606ec01a542ea9eac5416f1acce0e",
+      "sha256_copy": "99d42787a0b343b78a44b85bf1003378b0f606ec01a542ea9eac5416f1acce0e",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/jwtAnalysis.ts",
+      "copy": "src/engines/secscan-src/jwtAnalysis.ts",
+      "sha256_source": "ba6daeff5f9ab13ae9d48f98c112b152f5a936f99c865475a65087a7f406fe11",
+      "sha256_copy": "ba6daeff5f9ab13ae9d48f98c112b152f5a936f99c865475a65087a7f406fe11",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/publicKeys.ts",
+      "copy": "src/engines/secscan-src/publicKeys.ts",
+      "sha256_source": "09ba063c31d017abc0626c39c9016ce79595c1c72e4b914c26bce16515d8d5b0",
+      "sha256_copy": "09ba063c31d017abc0626c39c9016ce79595c1c72e4b914c26bce16515d8d5b0",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/scannerCookies.ts",
+      "copy": "src/engines/secscan-src/scannerCookies.ts",
+      "sha256_source": "93acc381a52dad8b9461c00ebb87996fa261850ca223be37cc40d980351a04e5",
+      "sha256_copy": "93acc381a52dad8b9461c00ebb87996fa261850ca223be37cc40d980351a04e5",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/scannerCspChecks.ts",
+      "copy": "src/engines/secscan-src/scannerCspChecks.ts",
+      "sha256_source": "753f37b7d77508be38be4fec5d4581326fde0b79cd95181324b30833ec91943a",
+      "sha256_copy": "753f37b7d77508be38be4fec5d4581326fde0b79cd95181324b30833ec91943a",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/scannerHeaderChecks.ts",
+      "copy": "src/engines/secscan-src/scannerHeaderChecks.ts",
+      "sha256_source": "d66e528e04f2050567509e6c759747b9ecc3eb488cd6b715174dbda252cf8cce",
+      "sha256_copy": "d66e528e04f2050567509e6c759747b9ecc3eb488cd6b715174dbda252cf8cce",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/scannerTypes.ts",
+      "copy": "src/engines/secscan-src/scannerTypes.ts",
+      "sha256_source": "08eac38ca8655160b8575b083117f7214903def180e846231b0e56895985ee17",
+      "sha256_copy": "08eac38ca8655160b8575b083117f7214903def180e846231b0e56895985ee17",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-ai.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-ai.ts",
+      "sha256_source": "f3bf62ab46e09dceaad6164396778e044865064e83eec5fae0743fa04a9b99fd",
+      "sha256_copy": "f3bf62ab46e09dceaad6164396778e044865064e83eec5fae0743fa04a9b99fd",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-data.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-data.ts",
+      "sha256_source": "a7a62a54799d7b52779498f9ccf222c50ce5629c2b8459edeb14cc40f911dbad",
+      "sha256_copy": "a7a62a54799d7b52779498f9ccf222c50ce5629c2b8459edeb14cc40f911dbad",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-filters.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-filters.ts",
+      "sha256_source": "c31a19dac0e64a101028f2c282383083083f648f9ee4e01832257f9ee63fd28c",
+      "sha256_copy": "c31a19dac0e64a101028f2c282383083083f648f9ee4e01832257f9ee63fd28c",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-generic.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-generic.ts",
+      "sha256_source": "39e6033537161c5288f7fc13e166e51e81724a6e629732eb988f17090ea648a7",
+      "sha256_copy": "39e6033537161c5288f7fc13e166e51e81724a6e629732eb988f17090ea648a7",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-jwt.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-jwt.ts",
+      "sha256_source": "6794a9c9e26d25ae510f3089414a8fd74400120d17056a2de8614d6c2f8a173a",
+      "sha256_copy": "6794a9c9e26d25ae510f3089414a8fd74400120d17056a2de8614d6c2f8a173a",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-more.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-more.ts",
+      "sha256_source": "29cd722fd89fc68f462d079367388498bf7fa21b35ddbb55df056ea9ecf019d9",
+      "sha256_copy": "29cd722fd89fc68f462d079367388498bf7fa21b35ddbb55df056ea9ecf019d9",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-vendors.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-vendors.ts",
+      "sha256_source": "6930a9ea453a59834e99c7edc1cca34cb70ba347577f4e2d6c9f58db81845ec2",
+      "sha256_copy": "6930a9ea453a59834e99c7edc1cca34cb70ba347577f4e2d6c9f58db81845ec2",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secretPlaceholders.ts",
+      "copy": "src/engines/secscan-src/secretPlaceholders.ts",
+      "sha256_source": "32655a4daf08eb48f405c6812024b5743996cd349ee37bfdf85b83e76669a8cd",
+      "sha256_copy": "32655a4daf08eb48f405c6812024b5743996cd349ee37bfdf85b83e76669a8cd",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/sriPolicy.ts",
+      "copy": "src/engines/secscan-src/sriPolicy.ts",
+      "sha256_source": "6674fd637bde8168bba59376bfa019b22d4cd9e9ff5e579ab9de347249477b3d",
+      "sha256_copy": "6674fd637bde8168bba59376bfa019b22d4cd9e9ff5e579ab9de347249477b3d",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/structuredData.ts",
+      "copy": "src/engines/secscan-src/structuredData.ts",
+      "sha256_source": "d4a4b630d89c7d996385c61e536a648f8e881c87aaf5be47cbd9204c6657526c",
+      "sha256_copy": "d4a4b630d89c7d996385c61e536a648f8e881c87aaf5be47cbd9204c6657526c",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/structuredDataHosts.ts",
+      "copy": "src/engines/secscan-src/structuredDataHosts.ts",
+      "sha256_source": "06972d497e6f2e7e500e842d339140a4fdb3f4c380b85974e9907cc0b68775b8",
+      "sha256_copy": "06972d497e6f2e7e500e842d339140a4fdb3f4c380b85974e9907cc0b68775b8",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/structuredDataMeta.ts",
+      "copy": "src/engines/secscan-src/structuredDataMeta.ts",
+      "sha256_source": "2b36d5c58d593aa606a3fc46a1be98704edc6e4bf54fd9ef93e9809b4c4d5b26",
+      "sha256_copy": "2b36d5c58d593aa606a3fc46a1be98704edc6e4bf54fd9ef93e9809b4c4d5b26",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/subdomain-service-data.ts",
+      "copy": "src/engines/secscan-src/subdomain-service-data.ts",
+      "sha256_source": "3c6130ac255c19f900ba35c939223967e2ebeb09dd860b009bfe006603441e29",
+      "sha256_copy": "3c6130ac255c19f900ba35c939223967e2ebeb09dd860b009bfe006603441e29",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/techEvidence.ts",
+      "copy": "src/engines/secscan-src/techEvidence.ts",
+      "sha256_source": "1d6fa9fa57790ceaf0d403fc712913009dd21c9c00f25e76cf8ca9845e53c7e3",
+      "sha256_copy": "1d6fa9fa57790ceaf0d403fc712913009dd21c9c00f25e76cf8ca9845e53c7e3",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/techFingerprint.ts",
+      "copy": "src/engines/secscan-src/techFingerprint.ts",
+      "sha256_source": "ba004cfba8125f9a9a80e126c146747b8681d956e244d893bd263e8570a38fae",
+      "sha256_copy": "ba004cfba8125f9a9a80e126c146747b8681d956e244d893bd263e8570a38fae",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/cookieClassification.test.ts",
+      "copy": "src/engines/secscan-src/cookieClassification.test.ts",
+      "sha256_source": "f6e6df85c9c83e89c071f9d8eebef6c9b586a627e83012f3699e950186ba5d21",
+      "sha256_copy": "f6e6df85c9c83e89c071f9d8eebef6c9b586a627e83012f3699e950186ba5d21",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/cookieFlags.test.ts",
+      "copy": "src/engines/secscan-src/cookieFlags.test.ts",
+      "sha256_source": "30667ca8509fa3d335d669f98f4a733f9bd261bce46aef8e8d19a2159cf5880c",
+      "sha256_copy": "30667ca8509fa3d335d669f98f4a733f9bd261bce46aef8e8d19a2159cf5880c",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/headerAnalysis.test.ts",
+      "copy": "src/engines/secscan-src/headerAnalysis.test.ts",
+      "sha256_source": "408101249430eb1b3811a7f47385e4bf0524f369a40f95aae3668094fc023c63",
+      "sha256_copy": "408101249430eb1b3811a7f47385e4bf0524f369a40f95aae3668094fc023c63",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/jwtAnalysis.test.ts",
+      "copy": "src/engines/secscan-src/jwtAnalysis.test.ts",
+      "sha256_source": "ac9cfd91449335e80d335709b877f46925800ebfcc2f62b09fbcee1bb065b4ff",
+      "sha256_copy": "ac9cfd91449335e80d335709b877f46925800ebfcc2f62b09fbcee1bb065b4ff",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/scannerCspChecks.test.ts",
+      "copy": "src/engines/secscan-src/scannerCspChecks.test.ts",
+      "sha256_source": "ef92b51aa3d0e5700597090f82786da3594e0088eb929b0bf1271a75be1f185b",
+      "sha256_copy": "ef92b51aa3d0e5700597090f82786da3594e0088eb929b0bf1271a75be1f185b",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/secret-pattern-data.test.ts",
+      "copy": "src/engines/secscan-src/secret-pattern-data.test.ts",
+      "sha256_source": "d6051da881da401f325158ccbc7f99b9b8d56791331fc30e696d95f8cd597529",
+      "sha256_copy": "d6051da881da401f325158ccbc7f99b9b8d56791331fc30e696d95f8cd597529",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/techFingerprint.test.ts",
+      "copy": "src/engines/secscan-src/techFingerprint.test.ts",
+      "sha256_source": "326c93a6403e1ec97b1684714e7e7f273735564d2650c227f6631d1ad906246e",
+      "sha256_copy": "326c93a6403e1ec97b1684714e7e7f273735564d2650c227f6631d1ad906246e",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/techFingerprint.rules.test.ts",
+      "copy": "src/engines/secscan-src/techFingerprint.rules.test.ts",
+      "sha256_source": "c29651c0b2429f2d08479b9687993d71899977e21ee6063d36cdcb5f31966fdb",
+      "sha256_copy": "c29651c0b2429f2d08479b9687993d71899977e21ee6063d36cdcb5f31966fdb",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/structuredData.findings.test.ts",
+      "copy": "src/engines/secscan-src/structuredData.findings.test.ts",
+      "sha256_source": "96c6140b659ff607ac1f06106d98c6e5c84e2be98b9fca4a3de1a632b7d2a9d3",
+      "sha256_copy": "96c6140b659ff607ac1f06106d98c6e5c84e2be98b9fca4a3de1a632b7d2a9d3",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/structuredData.meta.test.ts",
+      "copy": "src/engines/secscan-src/structuredData.meta.test.ts",
+      "sha256_source": "90931a6dd18257663631a978a4c90f4db3dabe8dfc617cb84ea4ebe9f88e4c20",
+      "sha256_copy": "90931a6dd18257663631a978a4c90f4db3dabe8dfc617cb84ea4ebe9f88e4c20",
+      "match": true
+    },
+    {
+      "source": "artifacts/api-server/src/lib/structuredData.testkit.ts",
+      "copy": "src/engines/secscan-src/structuredData.testkit.ts",
+      "sha256_source": "4b6e0c63bc018d4156d9e0f49346de8518d7381e7018787913c43b26d96a39b3",
+      "sha256_copy": "4b6e0c63bc018d4156d9e0f49346de8518d7381e7018787913c43b26d96a39b3",
+      "match": true
+    }
+  ],
+  "summary": {
+    "files": 38,
+    "matched": 38,
+    "mismatched": 0,
+    "adaptations": 0
+  }
+}

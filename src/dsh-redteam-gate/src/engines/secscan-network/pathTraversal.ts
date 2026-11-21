@@ -1,0 +1,194 @@
+/**
+ * Path traversal / Local File Inclusion (LFI) active probing.
+ *
+ * Strategy:
+ *  1. Collect candidate (path, param) pairs from:
+ *     a. File-related query params already on the target URL.
+ *     b. File-related params found in in-page links (first 50 KB of HTML).
+ *     c. Common file-serving endpoint patterns probed with known param names.
+ *  2. For each candidate, send a small set of traversal payloads.
+ *  3. Confirm a finding only when the response body contains definitive
+ *     file content (e.g. /etc/passwd root entry or win.ini section markers).
+ *
+ * Only runs on deep-tier scans. Non-fatal — all errors return [].
+ */
+
+import { randomUUID } from "node:crypto";
+import type { ScanVulnerability } from "./scanner";
+import { PATH_TRAVERSAL_TEMPLATES, classifyTraversalBody } from "./payloads";
+import { scanFetch } from "./http";
+import { isDestructiveUrl } from "./destructive";
+
+const TIMEOUT_MS = 7_000;
+
+// Up to 40 cases x (1 baseline + up to 10 payloads) is ~440 requests. Run
+// sequentially at 7s each, a target that's slow or rate-limiting (this
+// scanner's own production deployment does both) turns "deep scan" into a
+// many-minutes-to-never wall-clock hang -- indistinguishable from the scan
+// being stuck, since nothing else in the pipeline can finish without this
+// probe settling (Promise.allSettled waits for every entry, unconditionally).
+// Bounding concurrency is what the file's own comment already claimed
+// ("run all cases concurrently") but the implementation never did.
+const CASE_CONCURRENCY = 8;
+
+function vuln(partial: Omit<ScanVulnerability, "id">): ScanVulnerability {
+  return { id: randomUUID(), ...partial };
+}
+
+// ─── File-related parameter names ─────────────────────────────────────────────
+
+const FILE_PARAMS = new Set([
+  "file", "page", "path", "include", "template", "view", "doc",
+  "document", "load", "read", "filename", "src", "data", "folder",
+  "dir", "pg", "module", "conf", "cfg", "content", "layout",
+  "resource", "section", "action", "name", "f", "p",
+]);
+
+// ─── Common probe endpoints ───────────────────────────────────────────────────
+
+const PROBE_ENDPOINTS = [
+  "/download", "/file", "/include", "/load", "/read",
+  "/view", "/serve", "/assets", "/resource", "/template",
+  "/content", "/page", "/render", "/fetch",
+];
+
+const PROBE_PARAMS = ["file", "path", "doc", "page", "name"];
+
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
+
+async function safeGet(url: string): Promise<{ status: number; body: string } | null> {
+  const res = await scanFetch(url, { timeoutMs: TIMEOUT_MS });
+  // Unchanged behaviour: only a 2xx counts as readable content here.
+  if (!res || res.status < 200 || res.status >= 300) return null;
+  return { status: res.status, body: res.body };
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+export async function checkPathTraversal(
+  targetUrl: string,
+  html: string,
+): Promise<ScanVulnerability[]> {
+  let origin: string;
+  let targetPath: string;
+
+  try {
+    const parsed = new URL(targetUrl);
+    origin = parsed.origin;
+    targetPath = parsed.pathname;
+  } catch {
+    return [];
+  }
+
+  // ── Collect (path, param) test cases ────────────────────────────────────────
+
+  const seen = new Set<string>();
+  const cases: Array<{ path: string; param: string }> = [];
+
+  function addCase(path: string, param: string) {
+    const key = `${path}::${param}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    cases.push({ path, param });
+  }
+
+  // 1. File-related params already on the target URL
+  try {
+    for (const [k] of new URL(targetUrl).searchParams.entries()) {
+      if (FILE_PARAMS.has(k.toLowerCase())) addCase(targetPath, k);
+    }
+  } catch { /* ignored */ }
+
+  // 2. File-related params found in in-page links
+  const linkRx = /href=["']([^"'#?]+\?[^"']+)["']/gi;
+  const sample = html.slice(0, 60_000);
+  let lm: RegExpExecArray | null;
+  while ((lm = linkRx.exec(sample)) !== null && cases.length < 25) {
+    try {
+      const u = new URL(lm[1]!, origin);
+      for (const [k] of u.searchParams.entries()) {
+        if (FILE_PARAMS.has(k.toLowerCase())) addCase(u.pathname, k);
+      }
+    } catch { /* invalid */ }
+  }
+
+  // 3. Common probe endpoint + param combos
+  for (const ep of PROBE_ENDPOINTS) {
+    for (const param of PROBE_PARAMS) {
+      addCase(ep, param);
+      if (cases.length >= 40) break;
+    }
+    if (cases.length >= 40) break;
+  }
+
+  // ── Test payloads ────────────────────────────────────────────────────────────
+  // Bounded-concurrency across cases, resolve on the first confirmed hit.
+
+  async function testCase(path: string, param: string): Promise<ScanVulnerability[] | null> {
+    // Same guard as the injection probe: a traversal payload aimed at an action
+    // endpoint still triggers the action on the way through.
+    if (isDestructiveUrl(`${origin}${path}`)) return null;
+
+    // Baseline the case once before trying payloads: the Windows signatures
+    // ([fonts], [extensions], [files]) are short, plain-English bracketed
+    // words, not vendor error strings, and can legitimately appear in a
+    // page's normal content — a markdown link, a settings section, a nav
+    // item. Without ruling out "the response already said this before any
+    // payload was sent," any path that renders that content for every
+    // parameter value — an SPA catch-all, most obviously — would confirm
+    // path traversal at the maximum severity this scanner assigns, on a
+    // page that never read a file it was not supposed to. The Linux
+    // signature (root:x:0:0:) does not realistically need this, but the
+    // check is cheap enough to apply uniformly rather than special-case it.
+    const baselineUrl = new URL(`${origin}${path}`);
+    baselineUrl.searchParams.set(param, "baseline-" + Math.random().toString(36).slice(2, 8));
+    const baseline = await safeGet(baselineUrl.toString());
+    const baselineOs = baseline ? classifyTraversalBody(baseline.body) : null;
+
+    for (const payload of PATH_TRAVERSAL_TEMPLATES) {
+      const testUrl = new URL(`${origin}${path}`);
+      testUrl.searchParams.set(param, payload);
+
+      const result = await safeGet(testUrl.toString());
+      if (!result) continue;
+
+      const os = classifyTraversalBody(result.body);
+      if (!os || os === baselineOs) continue;
+
+      const target = os === "linux" ? "/etc/passwd" : "windows/win.ini";
+      return [
+        vuln({
+          name: "Path Traversal / Local File Inclusion (LFI)",
+          severity: "critical",
+          category: "Information Disclosure",
+          description: `The '${param}' parameter on ${path} is vulnerable to directory traversal. By injecting sequences like '../../../${target}', an attacker can read arbitrary files from the server filesystem — including application source code, configuration files with credentials, SSH private keys, and system files.`,
+          evidence: `Endpoint: ${path}?${param}=<payload>\nPayload used: ${payload}\nServer OS: ${os === "linux" ? "Linux/Unix" : "Windows"}\nResponse contained ${target} content patterns.`,
+          solution:
+            "Never construct file system paths from user input. If file selection is required: (1) Use an allowlist of permitted file names or IDs only, (2) Resolve the final path with path.resolve() or equivalent and assert it starts within the permitted directory, (3) Never pass user-controlled values directly to file-reading APIs. Block any path containing '..', encoded variants, or null bytes at the input validation layer.",
+          cweId: "CWE-22",
+          cvssScore: 9.8,
+          wstgId: "WSTG-AUTHZ-01",
+        }),
+      ];
+    }
+    return null;
+  }
+
+  const queue = cases.slice(0, 40);
+  let cursor = 0;
+  let hit: ScanVulnerability[] | null = null;
+
+  async function worker(): Promise<void> {
+    while (hit === null) {
+      const i = cursor++;
+      if (i >= queue.length) return;
+      const { path, param } = queue[i]!;
+      const found = await testCase(path, param);
+      if (found) hit = found;
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(CASE_CONCURRENCY, queue.length) }, worker));
+
+  return hit ?? [];
+}

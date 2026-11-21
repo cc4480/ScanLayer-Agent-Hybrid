@@ -1,0 +1,5 @@
+# dsh-redteam-gate bundle layer: mounts the verified-scope gate (tools/pre-execute hook) for native active tools.
+# No configuration: the lab exception (loopback) is fixed in code; SecScan verification is wired in src/plugin.mjs.
+- insert:
+    - id: dsh-redteam-gate
+      name: dsh-redteam-gate

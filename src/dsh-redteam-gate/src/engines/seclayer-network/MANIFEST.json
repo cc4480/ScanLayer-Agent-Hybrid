@@ -1,0 +1,99 @@
+{
+  "generated": "2026-11-21",
+  "files": 13,
+  "matched": 13,
+  "all_match": true,
+  "entries": [
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\ssrf.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\ssrf.ts",
+      "sha256_source": "dc24b55813ee84fab6df4e75333a1a3e4c10f021562015944bfa93aef023361f",
+      "sha256_copy": "dc24b55813ee84fab6df4e75333a1a3e4c10f021562015944bfa93aef023361f",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\evidence.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\evidence.ts",
+      "sha256_source": "a2da9883ab8c3243f0bfa971d358b0692d5e23561734e31408119dd309290981",
+      "sha256_copy": "a2da9883ab8c3243f0bfa971d358b0692d5e23561734e31408119dd309290981",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\fpFilters.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\fpFilters.ts",
+      "sha256_source": "3730fd9c079e6e7d7b7f0c604f6a22e2b846b419300f27bc06e4a2666c073b60",
+      "sha256_copy": "3730fd9c079e6e7d7b7f0c604f6a22e2b846b419300f27bc06e4a2666c073b60",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\src\\types.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\src\\types.ts",
+      "sha256_source": "8980059fe9fb4a8cf45246a7083cf3395a1f23d86268b0ec7ac882274dfd1cd9",
+      "sha256_copy": "8980059fe9fb4a8cf45246a7083cf3395a1f23d86268b0ec7ac882274dfd1cd9",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\probeHttp.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\probeHttp.ts",
+      "sha256_source": "0f6639e725a12f23a0b079b0aaffb27e2c071e8b49b48c6f14dd77586199a211",
+      "sha256_copy": "0f6639e725a12f23a0b079b0aaffb27e2c071e8b49b48c6f14dd77586199a211",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\baseline.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\baseline.ts",
+      "sha256_source": "a51c6fefdc3852aa6e59c03a2f8292c3bb80d1705066ef64b6b556dc18cfada7",
+      "sha256_copy": "a51c6fefdc3852aa6e59c03a2f8292c3bb80d1705066ef64b6b556dc18cfada7",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\sqlInjection.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\sqlInjection.ts",
+      "sha256_source": "739647e10baae9cdd440c824e7e6c07ff07e26b6524c8cee0c17db194f4f0c32",
+      "sha256_copy": "739647e10baae9cdd440c824e7e6c07ff07e26b6524c8cee0c17db194f4f0c32",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\reflectedXss.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\reflectedXss.ts",
+      "sha256_source": "58fe1a47cfaf892b67643a62532baac8a67b7883c86a9584ae026fbe5d9b10be",
+      "sha256_copy": "58fe1a47cfaf892b67643a62532baac8a67b7883c86a9584ae026fbe5d9b10be",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\commandInjection.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\commandInjection.ts",
+      "sha256_source": "31895107912c49b62b07808fa8424cdbc5034cf9c927c48682b9df1e35c37e8f",
+      "sha256_copy": "31895107912c49b62b07808fa8424cdbc5034cf9c927c48682b9df1e35c37e8f",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\ssrf.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\ssrf.ts",
+      "sha256_source": "eb59d3bcafd10a0aa13ae5db5ee87a77f02a70795b65ee18b77b7be38fe36e95",
+      "sha256_copy": "eb59d3bcafd10a0aa13ae5db5ee87a77f02a70795b65ee18b77b7be38fe36e95",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\weakSessionToken.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\weakSessionToken.ts",
+      "sha256_source": "e1d5203ea0d608dc4b801f4c6ca638f88e0f79a9e06a00612c543b10c8e0fcd6",
+      "sha256_copy": "e1d5203ea0d608dc4b801f4c6ca638f88e0f79a9e06a00612c543b10c8e0fcd6",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\baseline.test.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\baseline.test.ts",
+      "sha256_source": "d88cd160bd4e037b75dc0c2fe872cad210becfdd5df7d9df35cc52a5f3950bb6",
+      "sha256_copy": "d88cd160bd4e037b75dc0c2fe872cad210becfdd5df7d9df35cc52a5f3950bb6",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\redTeam\\weakSessionToken.test.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-network\\server\\redTeam\\weakSessionToken.test.ts",
+      "sha256_source": "073ad7f4f3965f2206b8cce6538779eab3432ac4719fd997073248a7e294dbf2",
+      "sha256_copy": "073ad7f4f3965f2206b8cce6538779eab3432ac4719fd997073248a7e294dbf2",
+      "match": true
+    }
+  ]
+}

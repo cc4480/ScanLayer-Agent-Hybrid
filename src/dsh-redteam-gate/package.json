@@ -1,0 +1,34 @@
+{
+  "name": "dsh-redteam-gate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verified-scope gate for native active tools (nmap, nuclei, ffuf, gobuster, nikto, sqlmap, Metasploit) and shell commands that invoke them. Lab hosts (loopback) allowed; other domains require SecScan verification; fail closed.",
+  "type": "module",
+  "main": "src/plugin.mjs",
+  "exports": {
+    ".": "./src/plugin.mjs",
+    "./scope": "./src/scope.mjs",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/scope.test.mjs test/verifier.test.mjs test/runner.test.mjs test/tools.test.mjs test/recon/domain.test.mjs test/recon/passive.test.mjs test/seclayer/redteam-modules.test.mjs test/metasploit/msf.test.mjs test/alterego/allowlist.test.mjs test/alterego/bridge.test.mjs test/alterego/inventory.test.mjs test/guard/scoped-fetch.test.mjs test/redteam-tools.test.mjs test/render.test.mjs && vitest run test/secscan-network"
+  },
+  "dependencies": {
+    "undici": "^7.30.1",
+    "@deepseek-ai/dsh-tools": "file:../deepseek-harness/packages/core/tools"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.3",
+    "vitest": "^4.1.12"
+  }
+}

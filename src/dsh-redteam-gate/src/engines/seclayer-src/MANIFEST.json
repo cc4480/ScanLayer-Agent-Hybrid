@@ -1,0 +1,77 @@
+{
+  "generated": "2026-11-21",
+  "files": 10,
+  "all_match": true,
+  "entries": [
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\fpFilters.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\fpFilters.ts",
+      "sha256_source": "3730fd9c079e6e7d7b7f0c604f6a22e2b846b419300f27bc06e4a2666c073b60",
+      "sha256_copy": "3730fd9c079e6e7d7b7f0c604f6a22e2b846b419300f27bc06e4a2666c073b60",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\evidence.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\evidence.ts",
+      "sha256_source": "a2da9883ab8c3243f0bfa971d358b0692d5e23561734e31408119dd309290981",
+      "sha256_copy": "a2da9883ab8c3243f0bfa971d358b0692d5e23561734e31408119dd309290981",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\src\\types.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\src\\types.ts",
+      "sha256_source": "8980059fe9fb4a8cf45246a7083cf3395a1f23d86268b0ec7ac882274dfd1cd9",
+      "sha256_copy": "8980059fe9fb4a8cf45246a7083cf3395a1f23d86268b0ec7ac882274dfd1cd9",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\nmap\\classify.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\nmap\\classify.ts",
+      "sha256_source": "dd6cf7745801b2edde25a4d6aa827781cef92c6a0363f7f077c246738ccdb76a",
+      "sha256_copy": "dd6cf7745801b2edde25a4d6aa827781cef92c6a0363f7f077c246738ccdb76a",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\nmap\\ports.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\nmap\\ports.ts",
+      "sha256_source": "59341759f6131dcddec8752f8df0ec5b60888d53f1264d16b11fe90901aa3e57",
+      "sha256_copy": "59341759f6131dcddec8752f8df0ec5b60888d53f1264d16b11fe90901aa3e57",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\nmap\\args.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\nmap\\args.ts",
+      "sha256_source": "3a5f91e52129c647d34610b427e057e6ed8977cd755a2cf3a829ac5f9b2450e5",
+      "sha256_copy": "3a5f91e52129c647d34610b427e057e6ed8977cd755a2cf3a829ac5f9b2450e5",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\fpFilters.test.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\fpFilters.test.ts",
+      "sha256_source": "54d5c6217f450244808ddb20b3549145ea2dc99761d69d87e58b87896d736432",
+      "sha256_copy": "54d5c6217f450244808ddb20b3549145ea2dc99761d69d87e58b87896d736432",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\evidence.test.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\evidence.test.ts",
+      "sha256_source": "2bfc68340022521d162ea00cf2f3f830a6d8225539265b8a9c0a17789f420c1e",
+      "sha256_copy": "2bfc68340022521d162ea00cf2f3f830a6d8225539265b8a9c0a17789f420c1e",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\nmap\\classify.test.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\nmap\\classify.test.ts",
+      "sha256_source": "31d2ca5981d036a943a5120a851c8c2ff9f5dfd66cd60cbdd1bc3d42e923a151",
+      "sha256_copy": "31d2ca5981d036a943a5120a851c8c2ff9f5dfd66cd60cbdd1bc3d42e923a151",
+      "match": true
+    },
+    {
+      "source_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\secscan-redteam-refactor\\seclayer.io2026\\server\\nmap\\args.test.ts",
+      "copy_path": "C:\\Users\\Cho-zen\\OneDrive\\Desktop\\Deepseek super\\src\\dsh-redteam-gate\\src\\engines\\seclayer-src\\server\\nmap\\args.test.ts",
+      "sha256_source": "bbf1d1ad0487020ea11d358f4df4a0ff1307054d1bdd17e25b50812c9af00536",
+      "sha256_copy": "bbf1d1ad0487020ea11d358f4df4a0ff1307054d1bdd17e25b50812c9af00536",
+      "match": true
+    }
+  ]
+}
