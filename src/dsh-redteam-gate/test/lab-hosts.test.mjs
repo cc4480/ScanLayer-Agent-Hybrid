@@ -97,6 +97,9 @@ test('duplicate lab hosts are collapsed', async () => {
   })
 })
 
+import { CATALOG as AE_CATALOG_LAB } from '../src/engines/alterego/registry.mjs'
+const alterEgoCount = () => AE_CATALOG_LAB.tools.filter((t) => t.registered).length
+
 test('a non-array labHosts value is ignored rather than trusted', async () => {
   await withAllowlist(undefined, async () => {
     const { ctx } = fakeCtx()
@@ -114,10 +117,12 @@ test('lab host entries cannot smuggle a scheme, path or credentials', async () =
   })
 })
 
-test('apply still registers all eleven tools and the pre-execute hook', () => {
+test('apply still registers all eleven harness tools and the pre-execute hook', () => {
   const { ctx, registered, hooks } = fakeCtx()
   apply(ctx, { labHosts: ['127.0.0.1'] })
-  assert.equal(registered.length, 11)
+  const names = registered.map((t) => t.name ?? t)
+  assert.equal(names.filter((n) => !String(n).startsWith('ae_')).length, 11)
+  assert.equal(names.filter((n) => String(n).startsWith('ae_')).length, alterEgoCount())
   assert.deepEqual(hooks, ['tools/pre-execute'])
 })
 

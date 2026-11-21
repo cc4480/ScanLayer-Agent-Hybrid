@@ -1,0 +1,1984 @@
+{
+  "source": "AlterEgo pc-agent tool_wrappers.ALL_TOOLS",
+  "count": 104,
+  "registered": 103,
+  "tools": [
+    {
+      "name": "active_window",
+      "description": "Foreground window: hwnd, title, pid, process. No approval.",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "answer_elicitation",
+      "description": "Answer a pending elicitation with one of its options.",
+      "parameters": {
+        "elicitation_id": {
+          "type": "string",
+          "description": "elicitation_id (str)"
+        },
+        "choice": {
+          "type": "string",
+          "description": "choice (str)"
+        }
+      },
+      "required": [
+        "elicitation_id",
+        "choice"
+      ],
+      "registered": true
+    },
+    {
+      "name": "arbitrate_tool",
+      "description": "Rank candidate tool sequences by risk. No approval.",
+      "parameters": {
+        "trajectories": {
+          "type": "array",
+          "description": "trajectories (list)"
+        }
+      },
+      "required": [
+        "trajectories"
+      ],
+      "registered": true
+    },
+    {
+      "name": "batch",
+      "description": "Run up to 20 tool calls in one roundtrip. One approval covers all writes.",
+      "parameters": {
+        "calls": {
+          "type": "array",
+          "description": "calls (list)"
+        }
+      },
+      "required": [
+        "calls"
+      ],
+      "registered": true
+    },
+    {
+      "name": "browser",
+      "description": "Edge tab as one tool: operation snapshot | navigate | click |",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "browser_click",
+      "description": "Click the element containing text in the Edge tab. Requires approval.",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        },
+        "url_contains": {
+          "type": "string",
+          "description": "url_contains (str)",
+          "default": ""
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "browser_eval",
+      "description": "Run JavaScript in the Edge tab. Requires on-PC approval.",
+      "parameters": {
+        "js": {
+          "type": "string",
+          "description": "js (str)"
+        },
+        "url_contains": {
+          "type": "string",
+          "description": "url_contains (str)",
+          "default": ""
+        }
+      },
+      "required": [
+        "js"
+      ],
+      "registered": true
+    },
+    {
+      "name": "browser_fill",
+      "description": "Fill the field matching label in the Edge tab. Requires approval.",
+      "parameters": {
+        "label": {
+          "type": "string",
+          "description": "label (str)"
+        },
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        },
+        "url_contains": {
+          "type": "string",
+          "description": "url_contains (str)",
+          "default": ""
+        }
+      },
+      "required": [
+        "label",
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "browser_navigate",
+      "description": "Navigate the Edge tab to a URL. Requires on-PC approval.",
+      "parameters": {
+        "url": {
+          "type": "string",
+          "description": "url (str)"
+        },
+        "url_contains": {
+          "type": "string",
+          "description": "url_contains (str)",
+          "default": ""
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "registered": true
+    },
+    {
+      "name": "browser_snapshot",
+      "description": "List interactive elements of the live Edge tab (no approval).",
+      "parameters": {
+        "url_contains": {
+          "type": "string",
+          "description": "url_contains (str)",
+          "default": ""
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp",
+      "description": "Chrome CDP session as one tool: operation launch | connect |",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "cdp_click",
+      "description": "Click an element by CSS selector or visible text (never",
+      "parameters": {
+        "selector": {
+          "type": "string",
+          "description": "selector (str)",
+          "default": ""
+        },
+        "text": {
+          "type": "string",
+          "description": "text (str)",
+          "default": ""
+        },
+        "ref": {
+          "type": "string",
+          "description": "ref (str)",
+          "default": ""
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp_close",
+      "description": "End the CDP session: a launched browser is closed gracefully via",
+      "parameters": {
+        "delete_profile": {
+          "type": "boolean",
+          "description": "delete_profile (bool)",
+          "default": false
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp_connect",
+      "description": "Attach the CDP session to a Chrome already serving a debug port",
+      "parameters": {
+        "debug_port": {
+          "type": "integer",
+          "description": "debug_port (int)",
+          "default": 0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp_evaluate",
+      "description": "Run JavaScript in the CDP session tab. Requires on-PC approval.",
+      "parameters": {
+        "js": {
+          "type": "string",
+          "description": "js (str)"
+        }
+      },
+      "required": [
+        "js"
+      ],
+      "registered": true
+    },
+    {
+      "name": "cdp_launch",
+      "description": "Launch Chrome on the prepared presentation profile with a CDP",
+      "parameters": {
+        "profile_dir": {
+          "type": "string",
+          "description": "profile_dir (str)",
+          "default": ""
+        },
+        "debug_port": {
+          "type": "integer",
+          "description": "debug_port (int)",
+          "default": 0
+        },
+        "start_url": {
+          "type": "string",
+          "description": "start_url (str)",
+          "default": ""
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp_navigate",
+      "description": "Navigate the CDP session tab to a URL and verify the landing",
+      "parameters": {
+        "url": {
+          "type": "string",
+          "description": "url (str)"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 30
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "registered": true
+    },
+    {
+      "name": "cdp_readback",
+      "description": "Read back the session page's url, title, ready_state and active",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp_snapshot",
+      "description": "Compact index of the page's interactive elements with stable CSS",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp_targets",
+      "description": "List the session browser's page targets; switches the active",
+      "parameters": {
+        "target_id": {
+          "type": "string",
+          "description": "target_id (str)",
+          "default": ""
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "cdp_type",
+      "description": "Type into a field addressed by selector or label via CDP",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        },
+        "selector": {
+          "type": "string",
+          "description": "selector (str)",
+          "default": ""
+        },
+        "label": {
+          "type": "string",
+          "description": "label (str)",
+          "default": ""
+        },
+        "clear_first": {
+          "type": "boolean",
+          "description": "clear_first (bool)",
+          "default": true
+        },
+        "ref": {
+          "type": "string",
+          "description": "ref (str)",
+          "default": ""
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "clipboard",
+      "description": "Clipboard as one tool: operation get | set, args are the member",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "clipboard_get",
+      "description": "Read text from the Windows clipboard (no approval).",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "clipboard_set",
+      "description": "Put text on the Windows clipboard. Requires on-PC approval.",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "close_window",
+      "description": "Gracefully close a window (like clicking X). Requires on-PC approval.",
+      "parameters": {
+        "hwnd": {
+          "type": "integer",
+          "description": "hwnd (int)"
+        }
+      },
+      "required": [
+        "hwnd"
+      ],
+      "registered": true
+    },
+    {
+      "name": "complete_arg",
+      "description": "Complete an argument value from live state: window titles or",
+      "parameters": {
+        "tool": {
+          "type": "string",
+          "description": "tool (str)"
+        },
+        "argument": {
+          "type": "string",
+          "description": "argument (str)"
+        },
+        "prefix": {
+          "type": "string",
+          "description": "prefix (str)",
+          "default": ""
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "max_results (int)",
+          "default": 10
+        }
+      },
+      "required": [
+        "tool",
+        "argument"
+      ],
+      "registered": true
+    },
+    {
+      "name": "copy_file",
+      "description": "Copy a file (metadata preserved). Approval unless dry_run.",
+      "parameters": {
+        "src": {
+          "type": "string",
+          "description": "src (str)"
+        },
+        "dst": {
+          "type": "string",
+          "description": "dst (str)"
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "dry_run (bool)",
+          "default": false
+        }
+      },
+      "required": [
+        "src",
+        "dst"
+      ],
+      "registered": true
+    },
+    {
+      "name": "create_dir",
+      "description": "Create a directory (parents too). Approval unless dry_run.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "dry_run (bool)",
+          "default": false
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "dashboard",
+      "description": "Bridge status summary for the MCP Apps widget (same data as",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "delete_file",
+      "description": "Permanently delete a file. Approval unless dry_run.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "dry_run (bool)",
+          "default": false
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "desktop_state",
+      "description": "One call: windows, focused window, its UI elements, screenshot.",
+      "parameters": {
+        "include_screenshot": {
+          "type": "boolean",
+          "description": "include_screenshot (bool)",
+          "default": true
+        },
+        "scale": {
+          "type": "number",
+          "description": "scale (float)",
+          "default": 0.5
+        },
+        "max_elements": {
+          "type": "integer",
+          "description": "max_elements (int)",
+          "default": 25
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "dns_query",
+      "description": "Resolve DNS records (A AAAA CNAME MX NS TXT DNSKEY SOA). No approval.",
+      "parameters": {
+        "domain": {
+          "type": "string",
+          "description": "domain (str)"
+        },
+        "rtype": {
+          "type": "string",
+          "description": "rtype (str)",
+          "default": "A"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "registered": true
+    },
+    {
+      "name": "doctor",
+      "description": "Bridge health check: Python, port, Defender, Startup, tunnel, disk.",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "edit_file",
+      "description": "Replace old_text with new_text. Fails on multiple matches unless",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        },
+        "old_text": {
+          "type": "string",
+          "description": "old_text (str)"
+        },
+        "new_text": {
+          "type": "string",
+          "description": "new_text (str)"
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "dry_run (bool)",
+          "default": false
+        },
+        "require_unique": {
+          "type": "boolean",
+          "description": "require_unique (bool)",
+          "default": true
+        },
+        "read_before": {
+          "type": "boolean",
+          "description": "read_before (bool)",
+          "default": true
+        },
+        "expected_sha256": {
+          "type": "string",
+          "description": "expected_sha256 (str | None)"
+        }
+      },
+      "required": [
+        "path",
+        "old_text",
+        "new_text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "elicit_input",
+      "description": "Ask a structured question with a pick-list instead of failing",
+      "parameters": {
+        "question": {
+          "type": "string",
+          "description": "question (str)"
+        },
+        "options": {
+          "type": "array",
+          "description": "options (list)"
+        },
+        "tool": {
+          "type": "string",
+          "description": "tool (str)",
+          "default": ""
+        },
+        "argument": {
+          "type": "string",
+          "description": "argument (str)",
+          "default": ""
+        },
+        "context": {
+          "type": "string",
+          "description": "context (str)",
+          "default": ""
+        }
+      },
+      "required": [
+        "question",
+        "options"
+      ],
+      "registered": true
+    },
+    {
+      "name": "exec",
+      "description": "Shell execution as one tool: operation shell | pwsh | background |",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "exec_background",
+      "description": "Start a long-running shell command in the background. Returns a",
+      "parameters": {
+        "command": {
+          "type": "string",
+          "description": "command (str)"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 300
+        },
+        "cwd": {
+          "type": "string",
+          "description": "cwd (str | None)"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "registered": true
+    },
+    {
+      "name": "exec_cancel",
+      "description": "Kill a running background job started with exec_background.",
+      "parameters": {
+        "job_id": {
+          "type": "string",
+          "description": "job_id (str)"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "registered": true
+    },
+    {
+      "name": "exec_status",
+      "description": "Check on a background job started with exec_background. offset",
+      "parameters": {
+        "job_id": {
+          "type": "string",
+          "description": "job_id (str)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "registered": true
+    },
+    {
+      "name": "file",
+      "description": "Files as one tool: operation read | read_range | write | edit |",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "file_info",
+      "description": "Size and timestamps for a file or directory (no approval).",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "focus_window",
+      "description": "Bring a window to the foreground. Requires on-PC approval.",
+      "parameters": {
+        "hwnd": {
+          "type": "integer",
+          "description": "hwnd (int)"
+        }
+      },
+      "required": [
+        "hwnd"
+      ],
+      "registered": true
+    },
+    {
+      "name": "hot_reload",
+      "description": "Hot reload: status | enable | disable | trigger. Enable/disable/trigger require approval.",
+      "parameters": {
+        "action": {
+          "type": "string",
+          "description": "action (str)"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "registered": true
+    },
+    {
+      "name": "hotkey",
+      "description": "Press a key combo: 'enter', 'esc', 'tab', 'ctrl+c', 'alt+f4', 'win+r'.",
+      "parameters": {
+        "keys": {
+          "type": "string",
+          "description": "keys (str)"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "registered": true
+    },
+    {
+      "name": "http_headers",
+      "description": "GET a URL, return status + response headers. No approval (read-only).",
+      "parameters": {
+        "url": {
+          "type": "string",
+          "description": "url (str)"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 20
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "registered": true
+    },
+    {
+      "name": "idle_seconds",
+      "description": "Seconds since last keyboard/mouse input. No approval.",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "keyboard",
+      "description": "Keyboard as one tool: operation type | hotkey | paste, args are",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "kill_process",
+      "description": "Terminate a process by PID. Requires on-PC approval.",
+      "parameters": {
+        "pid": {
+          "type": "integer",
+          "description": "pid (int)"
+        }
+      },
+      "required": [
+        "pid"
+      ],
+      "registered": true
+    },
+    {
+      "name": "list_dir",
+      "description": "List a directory. Restricted to the user's profile. Paginated.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)",
+          "default": ""
+        },
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit (int)",
+          "default": 0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "list_elicitations",
+      "description": "Pending/answered/all elicitations, newest first. Read-only,",
+      "parameters": {
+        "status": {
+          "type": "string",
+          "description": "status (str)",
+          "default": ""
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit (int)",
+          "default": 20
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "list_processes",
+      "description": "Running processes (pid + exe). No approval. Paginated.",
+      "parameters": {
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit (int)",
+          "default": 0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "list_watches",
+      "description": "Registered watches with last fingerprints. Read-only, no",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "list_windows",
+      "description": "List visible windows: handle, pid, title. Paginated.",
+      "parameters": {
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit (int)",
+          "default": 0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "macro_delete",
+      "description": "Delete a recorded macro. Fails loud on unknown names.",
+      "parameters": {
+        "name": {
+          "type": "string",
+          "description": "name (str)"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "registered": true
+    },
+    {
+      "name": "macro_list",
+      "description": "Recorded macros, sorted by name, with their steps. No approval.",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "macro_record",
+      "description": "Record a named macro: 1-20 tool calls replayed as one call with",
+      "parameters": {
+        "name": {
+          "type": "string",
+          "description": "name (str)"
+        },
+        "steps": {
+          "type": "array",
+          "description": "steps (list)"
+        }
+      },
+      "required": [
+        "name",
+        "steps"
+      ],
+      "registered": true
+    },
+    {
+      "name": "macro_replay",
+      "description": "Replay a recorded macro as one call through the batch layer.",
+      "parameters": {
+        "name": {
+          "type": "string",
+          "description": "name (str)"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "registered": false,
+      "notRegisteredReason": "replays recorded tool calls the scope gate cannot read"
+    },
+    {
+      "name": "maximize_window",
+      "description": "Maximize a window. Requires on-PC approval.",
+      "parameters": {
+        "hwnd": {
+          "type": "integer",
+          "description": "hwnd (int)"
+        }
+      },
+      "required": [
+        "hwnd"
+      ],
+      "registered": true
+    },
+    {
+      "name": "memory_recall",
+      "description": "Search the on-PC memory archive (transcripts + subjects). No approval.",
+      "parameters": {
+        "query": {
+          "type": "string",
+          "description": "query (str)"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit (int)",
+          "default": 5
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "registered": true
+    },
+    {
+      "name": "minimize_window",
+      "description": "Minimize a window. Requires on-PC approval.",
+      "parameters": {
+        "hwnd": {
+          "type": "integer",
+          "description": "hwnd (int)"
+        }
+      },
+      "required": [
+        "hwnd"
+      ],
+      "registered": true
+    },
+    {
+      "name": "mouse",
+      "description": "Mouse as one tool: operation move | click | scroll, args are the",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "mouse_click",
+      "description": "Click at screen coordinates. Requires on-PC approval.",
+      "parameters": {
+        "x": {
+          "type": "integer",
+          "description": "x (int)"
+        },
+        "y": {
+          "type": "integer",
+          "description": "y (int)"
+        },
+        "button": {
+          "type": "string",
+          "description": "button (str)",
+          "default": "left"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "registered": true
+    },
+    {
+      "name": "mouse_move",
+      "description": "Move the cursor to screen coordinates. Requires on-PC approval.",
+      "parameters": {
+        "x": {
+          "type": "integer",
+          "description": "x (int)"
+        },
+        "y": {
+          "type": "integer",
+          "description": "y (int)"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "registered": true
+    },
+    {
+      "name": "mouse_scroll",
+      "description": "Scroll the wheel under the cursor. Requires on-PC approval.",
+      "parameters": {
+        "direction": {
+          "type": "string",
+          "description": "direction (str)",
+          "default": "down"
+        },
+        "clicks": {
+          "type": "integer",
+          "description": "clicks (int)",
+          "default": 3
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "move_file",
+      "description": "Move/rename a file. Approval unless dry_run.",
+      "parameters": {
+        "src": {
+          "type": "string",
+          "description": "src (str)"
+        },
+        "dst": {
+          "type": "string",
+          "description": "dst (str)"
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "dry_run (bool)",
+          "default": false
+        }
+      },
+      "required": [
+        "src",
+        "dst"
+      ],
+      "registered": true
+    },
+    {
+      "name": "notify",
+      "description": "Windows tray balloon notification. Requires approval.",
+      "parameters": {
+        "title": {
+          "type": "string",
+          "description": "title (str)"
+        },
+        "message": {
+          "type": "string",
+          "description": "message (str)"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 5
+        }
+      },
+      "required": [
+        "title",
+        "message"
+      ],
+      "registered": true
+    },
+    {
+      "name": "paste_text",
+      "description": "Paste text into the focused window (reliable for long text).",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "poll_changes",
+      "description": "Change journal entries after a sequence cursor. Read-only,",
+      "parameters": {
+        "since_seq": {
+          "type": "integer",
+          "description": "since_seq (int)",
+          "default": 0
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit (int)",
+          "default": 50
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "power",
+      "description": "lock | sleep | restart | shutdown. Requires approval.",
+      "parameters": {
+        "action": {
+          "type": "string",
+          "description": "action (str)"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "registered": true
+    },
+    {
+      "name": "process",
+      "description": "Processes as one tool: operation list | kill, args are the member",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "query_events",
+      "description": "Search the event-sourced operation log: filter by tool name, event",
+      "parameters": {
+        "tool": {
+          "type": "string",
+          "description": "tool (str)"
+        },
+        "type": {
+          "type": "string",
+          "description": "type (str)"
+        },
+        "since": {
+          "type": "string",
+          "description": "since (str)",
+          "default": "7d"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "session_id (str)"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "limit (int)",
+          "default": 50
+        },
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "read_file",
+      "description": "Read a UTF-8 text file (<=1MB). Restricted to the user's profile.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "read_file_range",
+      "description": "Read 1-indexed line range (end_line=0 \u2192 start+50). Profile-restricted.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        },
+        "start_line": {
+          "type": "integer",
+          "description": "start_line (int)"
+        },
+        "end_line": {
+          "type": "integer",
+          "description": "end_line (int)",
+          "default": 0
+        }
+      },
+      "required": [
+        "path",
+        "start_line"
+      ],
+      "registered": true
+    },
+    {
+      "name": "record_audio",
+      "description": "Record microphone audio to a WAV clip (1-30s). Always requires",
+      "parameters": {
+        "duration_s": {
+          "type": "integer",
+          "description": "duration_s (int)",
+          "default": 5
+        },
+        "device": {
+          "type": "string",
+          "description": "device (str)"
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "replay_session",
+      "description": "Full causal transcript of one operator session \u2014 verify reported",
+      "parameters": {
+        "session_id": {
+          "type": "string",
+          "description": "session_id (str)"
+        },
+        "format": {
+          "type": "string",
+          "description": "format (str)",
+          "default": "human"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "registered": true
+    },
+    {
+      "name": "screenshot",
+      "description": "Capture the primary monitor as PNG (base64). Optional region and scale.",
+      "parameters": {
+        "region": {
+          "type": "object",
+          "description": "region (dict | None)"
+        },
+        "scale": {
+          "type": "number",
+          "description": "scale (float)",
+          "default": 1.0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "search_filenames",
+      "description": "Find files by name glob under a dir. Profile-restricted, no approval.",
+      "parameters": {
+        "pattern": {
+          "type": "string",
+          "description": "pattern (str)"
+        },
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "max_results (int)",
+          "default": 50
+        },
+        "sort_by": {
+          "type": "string",
+          "description": "sort_by (str)",
+          "default": "name"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        }
+      },
+      "required": [
+        "pattern",
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "search_files",
+      "description": "Content search (regex) under a dir. Profile-restricted, no approval.",
+      "parameters": {
+        "pattern": {
+          "type": "string",
+          "description": "pattern (str)"
+        },
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        },
+        "file_pattern": {
+          "type": "string",
+          "description": "file_pattern (str)",
+          "default": "*"
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "max_results (int)",
+          "default": 50
+        },
+        "context": {
+          "type": "integer",
+          "description": "context (int)",
+          "default": 0
+        },
+        "case_insensitive": {
+          "type": "boolean",
+          "description": "case_insensitive (bool)",
+          "default": false
+        },
+        "output_mode": {
+          "type": "string",
+          "description": "output_mode (str)",
+          "default": "matches"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        }
+      },
+      "required": [
+        "pattern",
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "search_tools",
+      "description": "Find tools by keyword over names, docs, and groups \u2014 use this",
+      "parameters": {
+        "query": {
+          "type": "string",
+          "description": "query (str)",
+          "default": ""
+        },
+        "group": {
+          "type": "string",
+          "description": "group (str)",
+          "default": ""
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "max_results (int)",
+          "default": 10
+        },
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "server_reload",
+      "description": "Restart the bridge server via the supervisor (fresh code, same tunnel and tokens). Refuses when no supervisor is running. Requires approval.",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "set_volume",
+      "description": "Set master volume 0-100. No approval dialog (see tools.md note).",
+      "parameters": {
+        "level": {
+          "type": "integer",
+          "description": "level (int)"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "registered": true
+    },
+    {
+      "name": "shell_exec",
+      "description": "Run a command in cmd.exe. Optional cwd must be inside the user",
+      "parameters": {
+        "command": {
+          "type": "string",
+          "description": "command (str)"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 60
+        },
+        "cwd": {
+          "type": "string",
+          "description": "cwd (str | None)"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "registered": true
+    },
+    {
+      "name": "shell_pwsh",
+      "description": "Run a PowerShell script directly (no cmd.exe wrapping). Optional cwd",
+      "parameters": {
+        "script": {
+          "type": "string",
+          "description": "script (str)"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 60
+        },
+        "cwd": {
+          "type": "string",
+          "description": "cwd (str | None)"
+        }
+      },
+      "required": [
+        "script"
+      ],
+      "registered": true
+    },
+    {
+      "name": "speak",
+      "description": "Speak text aloud through the PC speakers. Requires approval.",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "supervisor_status",
+      "description": "Supervisor health: running, child pid, restarts, heartbeat age. No approval.",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "system_info",
+      "description": "OS, host, user, CPU/memory.",
+      "parameters": {},
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "task_checkpoint",
+      "description": "Append a signed checkpoint to a task. No approval.",
+      "parameters": {
+        "task_id": {
+          "type": "string",
+          "description": "task_id (str)"
+        },
+        "step": {
+          "type": "integer",
+          "description": "step (int)"
+        },
+        "result": {
+          "type": "string",
+          "description": "result (str)"
+        },
+        "done": {
+          "type": "boolean",
+          "description": "done (bool)",
+          "default": true
+        }
+      },
+      "required": [
+        "task_id",
+        "step",
+        "result"
+      ],
+      "registered": true
+    },
+    {
+      "name": "task_create",
+      "description": "Create a signed task record with a step plan. No approval.",
+      "parameters": {
+        "goal": {
+          "type": "string",
+          "description": "goal (str)"
+        },
+        "plan": {
+          "type": "array",
+          "description": "plan (list)"
+        }
+      },
+      "required": [
+        "goal",
+        "plan"
+      ],
+      "registered": true
+    },
+    {
+      "name": "task_status",
+      "description": "Get a task's verified status, or list all tasks. No approval.",
+      "parameters": {
+        "task_id": {
+          "type": "string",
+          "description": "task_id (str)",
+          "default": ""
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "tcp_check",
+      "description": "TCP connect check across ports (open/closed/filtered). No approval.",
+      "parameters": {
+        "host": {
+          "type": "string",
+          "description": "host (str)"
+        },
+        "ports": {
+          "type": "array",
+          "description": "ports (list)"
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 3
+        }
+      },
+      "required": [
+        "host",
+        "ports"
+      ],
+      "registered": true
+    },
+    {
+      "name": "tls_info",
+      "description": "TLS handshake: version, cipher, cert subject/issuer/expiry. No approval.",
+      "parameters": {
+        "host": {
+          "type": "string",
+          "description": "host (str)"
+        },
+        "port": {
+          "type": "integer",
+          "description": "port (int)",
+          "default": 443
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 15
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "registered": true
+    },
+    {
+      "name": "tool_finder",
+      "description": "Find tools by keyword \u2014 plain-name alias for search_tools.",
+      "parameters": {
+        "query": {
+          "type": "string",
+          "description": "query (str)",
+          "default": ""
+        },
+        "group": {
+          "type": "string",
+          "description": "group (str)",
+          "default": ""
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "max_results (int)",
+          "default": 10
+        },
+        "offset": {
+          "type": "integer",
+          "description": "offset (int)",
+          "default": 0
+        }
+      },
+      "required": [],
+      "registered": true
+    },
+    {
+      "name": "type_text",
+      "description": "Type text into the focused window. Requires on-PC approval.",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "uia",
+      "description": "UI Automation as one tool: operation find | click | set_text,",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "uia_click",
+      "description": "Click a UI element by name via UI Automation. Requires on-PC approval.",
+      "parameters": {
+        "window": {
+          "type": "string",
+          "description": "window (str)"
+        },
+        "name_rx": {
+          "type": "string",
+          "description": "name_rx (str)"
+        },
+        "control_type": {
+          "type": "string",
+          "description": "control_type (str)",
+          "default": ""
+        },
+        "index": {
+          "type": "integer",
+          "description": "index (int)"
+        },
+        "button": {
+          "type": "string",
+          "description": "button (str)",
+          "default": "left"
+        }
+      },
+      "required": [
+        "window",
+        "name_rx"
+      ],
+      "registered": true
+    },
+    {
+      "name": "uia_find",
+      "description": "Find UI elements in a window via UI Automation (no screenshot).",
+      "parameters": {
+        "window": {
+          "type": "string",
+          "description": "window (str)"
+        },
+        "name_rx": {
+          "type": "string",
+          "description": "name_rx (str)",
+          "default": ""
+        },
+        "control_type": {
+          "type": "string",
+          "description": "control_type (str)",
+          "default": ""
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "max_results (int)",
+          "default": 50
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "registered": true
+    },
+    {
+      "name": "uia_set_text",
+      "description": "Set text of a UI element via UI Automation. Requires on-PC approval.",
+      "parameters": {
+        "window": {
+          "type": "string",
+          "description": "window (str)"
+        },
+        "name_rx": {
+          "type": "string",
+          "description": "name_rx (str)"
+        },
+        "text": {
+          "type": "string",
+          "description": "text (str)"
+        },
+        "control_type": {
+          "type": "string",
+          "description": "control_type (str)",
+          "default": ""
+        },
+        "index": {
+          "type": "integer",
+          "description": "index (int)"
+        }
+      },
+      "required": [
+        "window",
+        "name_rx",
+        "text"
+      ],
+      "registered": true
+    },
+    {
+      "name": "unwatch_path",
+      "description": "Drop a watched file. Read-only, no approval.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "wait_for",
+      "description": "Poll until target appears; found=false on timeout, never an error.",
+      "parameters": {
+        "kind": {
+          "type": "string",
+          "description": "kind (str)"
+        },
+        "target": {
+          "type": "string",
+          "description": "target (str)"
+        },
+        "window": {
+          "type": "string",
+          "description": "window (str)",
+          "default": ""
+        },
+        "control_type": {
+          "type": "string",
+          "description": "control_type (str)",
+          "default": ""
+        },
+        "timeout_s": {
+          "type": "number",
+          "description": "timeout_s (float)",
+          "default": 10.0
+        },
+        "interval_s": {
+          "type": "number",
+          "description": "interval_s (float)",
+          "default": 0.5
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "registered": true
+    },
+    {
+      "name": "watch_path",
+      "description": "Register a file to watch for changes. Read-only, no approval.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "registered": true
+    },
+    {
+      "name": "web_fetch",
+      "description": "Fetch a URL, return its readable text. SSRF-guarded: public IPs only,",
+      "parameters": {
+        "url": {
+          "type": "string",
+          "description": "url (str)"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "description": "max_bytes (int)",
+          "default": 100000
+        },
+        "timeout_s": {
+          "type": "integer",
+          "description": "timeout_s (int)",
+          "default": 15
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "registered": true
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web without an API key (DuckDuckGo/Bing scraping,",
+      "parameters": {
+        "query": {
+          "type": "string",
+          "description": "query (str)"
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "max_results (int)",
+          "default": 10
+        },
+        "backend": {
+          "type": "string",
+          "description": "backend (str)",
+          "default": "auto"
+        },
+        "time_range": {
+          "type": "string",
+          "description": "time_range (str)",
+          "default": ""
+        },
+        "language": {
+          "type": "string",
+          "description": "language (str)",
+          "default": "en"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "registered": true
+    },
+    {
+      "name": "window",
+      "description": "Windows as one tool: operation list | active | focus | close |",
+      "parameters": {
+        "operation": {
+          "type": "string",
+          "description": "operation (str)"
+        },
+        "args": {
+          "type": "object",
+          "description": "args (dict | None)"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "registered": true
+    },
+    {
+      "name": "write_file",
+      "description": "Create/overwrite a UTF-8 text file. Approval unless dry_run.",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "description": "path (str)"
+        },
+        "content": {
+          "type": "string",
+          "description": "content (str)"
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "dry_run (bool)",
+          "default": false
+        },
+        "expected_sha256": {
+          "type": "string",
+          "description": "expected_sha256 (str | None)"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "registered": true
+    }
+  ]
+}

@@ -5,6 +5,9 @@ import { redteamTools } from '../src/redteam-tools.mjs'
 import { parseOptionString } from '../src/redteam-tools.mjs'
 import { ACTIVE_TOOLS } from '../src/scope.mjs'
 
+import { CATALOG as AE_CATALOG } from '../src/engines/alterego/registry.mjs'
+const alterEgoCount = () => AE_CATALOG.tools.filter((t) => t.registered).length
+
 test('the plugin loads and registers native scanners plus red-team tools, and hooks the scope gate', () => {
   const registered = []
   const hooks = []
@@ -14,7 +17,11 @@ test('the plugin loads and registers native scanners plus red-team tools, and ho
   assert.deepEqual(hooks, ['tools/pre-execute'])
   for (const n of ['nmap', 'nuclei', 'ffuf', 'gobuster', 'sqlmap', 'nikto', 'john']) assert.ok(registered.includes(n), n)
   for (const n of ['secscan_fetch', 'seclayer_probe', 'msfconsole', 'recon_passive']) assert.ok(registered.includes(n), n)
-  assert.equal(registered.length, 11)
+  // The 11 scanner and red-team tools, plus one ae_ tool per registered AlterEgo catalog entry.
+  const harness = registered.filter((n) => !n.startsWith('ae_'))
+  assert.equal(harness.length, 11)
+  assert.ok(registered.some((n) => n.startsWith('ae_')), 'AlterEgo tools are registered')
+  assert.equal(registered.filter((n) => n.startsWith('ae_')).length, alterEgoCount())
 })
 
 test('every target-sending red-team tool is gate-active', () => {

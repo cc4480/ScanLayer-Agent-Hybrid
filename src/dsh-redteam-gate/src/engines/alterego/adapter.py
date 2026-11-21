@@ -7,24 +7,26 @@ Reads {"tool": str, "args": {...}} from stdin. Writes one JSON line to stdout:
 
 Calls the same wrapper functions the AlterEgo MCP server registers (tool_wrappers.ALL_TOOLS).
 Nothing is sent over MCP or HTTP. Anything the wrappers print goes to stderr, not stdout.
-Keep ALLOWED in sync with allowlist.mjs (a test checks this).
+ALLOWED is read from catalog.json (written by scripts/gen-alterego-catalog.py), so there is one list.
 """
 import json
 import os
 import sys
 
-ALLOWED = frozenset({
-    "screenshot",
-    "list_windows",
-    "active_window",
-    "system_info",
-    "list_processes",
-    "list_dir",
-    "read_file",
-    "read_file_range",
-    "search_files",
-    "search_filenames",
-})
+CATALOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalog.json")
+
+
+def _load_allowed():
+    """Every catalog tool marked registered. A missing or unreadable catalog allows nothing."""
+    try:
+        with open(CATALOG, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return frozenset()
+    return frozenset(t["name"] for t in data.get("tools", []) if t.get("registered"))
+
+
+ALLOWED = _load_allowed()
 
 
 def _emit(payload):

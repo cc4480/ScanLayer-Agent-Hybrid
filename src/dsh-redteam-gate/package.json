@@ -21,7 +21,7 @@
     }
   },
   "scripts": {
-"test": "npx tsx --test test/lab-hosts.test.mjs test/scope.test.mjs test/verifier.test.mjs test/runner.test.mjs test/tools.test.mjs test/recon/domain.test.mjs test/recon/passive.test.mjs test/seclayer/redteam-modules.test.mjs test/metasploit/msf.test.mjs test/alterego/allowlist.test.mjs test/alterego/bridge.test.mjs test/alterego/inventory.test.mjs test/guard/scoped-fetch.test.mjs test/redteam-tools.test.mjs test/render.test.mjs && vitest run test/secscan-network"
+"test": "npx tsx --test test/lab-hosts.test.mjs test/scope.test.mjs test/verifier.test.mjs test/runner.test.mjs test/tools.test.mjs test/recon/domain.test.mjs test/recon/passive.test.mjs test/seclayer/redteam-modules.test.mjs test/metasploit/msf.test.mjs test/alterego/allowlist.test.mjs test/alterego/bridge.test.mjs test/alterego/inventory.test.mjs test/alterego/scope-rules.test.mjs test/alterego/registry.test.mjs test/guard/scoped-fetch.test.mjs test/redteam-tools.test.mjs test/render.test.mjs && vitest run test/secscan-network"
   },
   "dependencies": {
     "undici": "^7.30.1",

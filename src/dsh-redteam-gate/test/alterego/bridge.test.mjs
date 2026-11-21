@@ -57,19 +57,31 @@ after(() => {
 
 const envFor = (dir) => ({ ...process.env, ALTEREGO_PC_AGENT_DIR: dir, ALTEREGO_PYTHON: PYTHON })
 
-test('adapter ALLOWED set matches the native allowlist (keep in sync)', () => {
-  const src = fs.readFileSync(ADAPTER_PATH, 'utf8')
-  const block = src.match(/ALLOWED = frozenset\(\{([\s\S]*?)\}\)/)
-  assert.ok(block, 'ALLOWED block not found in adapter.py')
-  const names = [...block[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort()
-  assert.deepEqual(names, [...ALLOWLISTED_TOOLS].sort())
+test('adapter ALLOWED set is exactly the catalog tools marked registered', { skip }, async () => {
+  // ALLOWED is loaded from catalog.json at import time, so ask the adapter itself.
+  const { execFileSync } = await import('node:child_process')
+  const script = 'import importlib.util,json,sys\n'
+    + 'spec=importlib.util.spec_from_file_location("a", sys.argv[1])\n'
+    + 'm=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n'
+    + 'print(json.dumps(sorted(m.ALLOWED)))'
+  const allowed = JSON.parse(execFileSync(PYTHON, ['-c', script, ADAPTER_PATH], { encoding: 'utf8' }))
+  const catalog = JSON.parse(fs.readFileSync(path.join(path.dirname(ADAPTER_PATH), 'catalog.json'), 'utf8'))
+  const registered = catalog.tools.filter((t) => t.registered).map((t) => t.name).sort()
+  assert.deepEqual(allowed, registered)
+  assert.ok(!allowed.includes('macro_replay'), 'macro_replay must never be allowed')
 })
 
-test('adapter refuses shell_exec even though the pc-agent exposes it', { skip }, async () => {
-  const res = await invokePcAgent('shell_exec', { command: 'whoami' }, { env: envFor(stubDir) })
+test('adapter refuses a tool that is not in the catalog', { skip }, async () => {
+  const res = await invokePcAgent('not_a_real_tool', {}, { env: envFor(stubDir) })
   assert.equal(res.ok, false)
   assert.equal(res.refused, true)
   assert.match(res.error, /not allowlisted/)
+})
+
+test('adapter refuses macro_replay, which the app does not register', { skip }, async () => {
+  const res = await invokePcAgent('macro_replay', { name: 'x' }, { env: envFor(stubDir) })
+  assert.equal(res.ok, false)
+  assert.equal(res.refused, true)
 })
 
 test('bridge refuses shell_exec without spawning python', { skip }, async () => {
