@@ -1,0 +1,16 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@deepseek-ai/dsh-subagent-claude-code':
+        specifier: link:C:/Users/Cho-zen/OneDrive/Desktop/Deepseek super/src/deepseek-harness/packages/subagent/subagent-claude-code
+        version: link:../../../src/deepseek-harness/packages/subagent/subagent-claude-code
+      dsh-superagent:
+        specifier: link:C:/Users/Cho-zen/OneDrive/Desktop/Deepseek super/src/dsh-superagent-prototype
+        version: link:../../../src/dsh-superagent-prototype

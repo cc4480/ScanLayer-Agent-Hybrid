@@ -1,0 +1,64 @@
+# Superagent profile config for this package (written by start-super-harness.ps1).
+- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 3082
+- id: dsh-superagent
+  config:
+    stateDir: C:\Users\Cho-zen\OneDrive\Desktop\Deepseek super\state\superagent
+- id: ui-settings-general
+  name: "@deepseek-ai/dsh-client-ui-settings-general"
+  config:
+    welcomeNoticeVersion: 2026-09-28.1
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+    reasoningEffort: off
+
+# Native browser driving: Playwright MCP over the INSTALLED Google Chrome (nothing downloaded).
+# `insert` appends new rows; a bare `- id:` patch only overrides rows that already exist.
+- insert:
+    - id: browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+    - id: browser-use-playwright-mcp
+      name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
+      config:
+        mode: launch
+        headless: true
+        executablePath: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        toolCallTimeoutMs: 120000
+
+# Native Windows computer use (screen, mouse, keyboard) with per-application consent. The helper is pre-built;
+# helperPath makes activation skip the build and the NuGet restore. Rebuild it with:
+#   dotnet publish native/entry/CuaWindows.csproj -c Release -r win-x64 --self-contained true -o native/bin/win-x64 -p:EnableWindowsTargeting=true
+- id: cua-windows
+  config:
+    agentPreset: ptc
+    helperPath: 'C:\Users\Cho-zen\OneDrive\Desktop\Deepseek
+      super\src\deepseek-harness\packages\experimental\cua-windows\native\bin\win-x64\dsh-cua-windows.exe'
+- id: ui-theme
+  name: "@deepseek-ai/dsh-client-ui-theme"
+  config:
+    preference: dark
+    fontSize: 18
+- id: permission
+  name: "@deepseek-ai/dsh-permission-presets"
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: danger-full-access
+- id: ui-chat
+  name: "@deepseek-ai/dsh-client-ui-chat"
+  config:
+    transcriptView: compact
+    performanceUsage: compact
