@@ -69,3 +69,18 @@
     providers:
       opencode:
         apiKeyEnv: OPENCODE_API_KEY
+
+# mcp3 (MCP-N): authenticated MCP gateway on 127.0.0.1:8080, started by C:\mcpn\start.ps1.
+# The bearer token is a credential reference, never the token itself, and tools load on demand to keep the schema out of context.
+- insert:
+    - id: mcp-mcpn
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        transport: streamable-http
+        serverName: mcpn
+        url: http://127.0.0.1:8080/mcp
+        headers:
+          Authorization: 'Bearer ${credential:MCPN_TOKEN}'
+        expandTemplates: true
+        toolLoading: on-demand
+        catalogDescriptionMaxLength: 160
