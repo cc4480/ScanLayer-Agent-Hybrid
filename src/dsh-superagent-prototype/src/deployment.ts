@@ -1,7 +1,7 @@
 /** Plugin configuration and startup verification for repository access and agent CLI identities. */
 import { LIMITS } from './limits.ts'
 import { accessSync, constants, statSync } from 'node:fs'
-import { delimiter, isAbsolute, join } from 'node:path'
+import { delimiter, extname, isAbsolute, join } from 'node:path'
 import type { Volatile } from '@deepseek-ai/cordis'
 import s from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -58,10 +58,19 @@ export interface Deployment extends Machine {
 }
 export interface FeishuBot { cli: string; appId: string; brand: 'feishu' | 'lark'; botId: string; name: string }
 
-/** Resolve a command name or absolute path to an executable file, ignoring the worker shim directory. */
+/** Extensions Windows appends to a bare command name, as PATHEXT lists them; the system default covers a missing value. */
+const pathext = (): string[] => (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+/**
+ * Resolve a command name or absolute path to an executable file, ignoring the worker shim directory.
+ * Windows runs no extensionless file, so it looks a bare name up through PATHEXT (`gh` finds `gh.exe`) instead of the name as
+ * written; a name that already has an extension, and every name on other platforms, is used as written.
+ */
 export function executable(name: string, path: string, exclude?: string): string {
   if (name.includes('/') && !isAbsolute(name)) throw new Error(`${name} must be a command name or an absolute path`)
-  const candidates = isAbsolute(name) ? [name] : path.split(delimiter).filter(dir => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude))).map(dir => join(dir, name))
+  const names = process.platform === 'win32' && extname(name) === '' ? pathext().map(extension => name + extension) : [name]
+  const candidates = isAbsolute(name) ? [name]
+    : path.split(delimiter).filter(dir => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude)))
+      .flatMap(dir => names.map(candidate => join(dir, candidate)))
   for (const candidate of candidates) {
     try { if (statSync(candidate).isFile()) { accessSync(candidate, constants.X_OK); return candidate } }
     catch { /* Not an executable file here; try the next PATH directory. */ }

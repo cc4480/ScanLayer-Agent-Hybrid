@@ -83,6 +83,19 @@ describe('setup', () => {
     await needs('github', 'agentCliNoAccount', {}, { repository, cli: program(join(dir, 'bin', 'gh-anonymous'), `echo '{}'`) })
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow('nothing-here is not an executable file on PATH')
   })
+  it('resolves a bare command name through PATHEXT on Windows, which runs no extensionless file', () => {
+    if (process.platform !== 'win32') return
+    const bin = join(dir, 'pathext')
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, 'agent-cli.EXE'), '')
+    expect(executable('agent-cli', bin)).toBe(join(bin, 'agent-cli.EXE'))
+    // A name that already has an extension is used as written, without another one appended.
+    writeFileSync(join(bin, 'with-ext.cmd'), '')
+    expect(executable('with-ext.cmd', bin)).toBe(join(bin, 'with-ext.cmd'))
+    expect(() => executable('absent-cli', bin)).toThrow('absent-cli is not an executable file on PATH')
+    // An absolute path is used as written, extension or not.
+    expect(executable(join(bin, 'agent-cli.EXE'), join(dir, 'nowhere'))).toBe(join(bin, 'agent-cli.EXE'))
+  })
   it('reads the Feishu bot from a bot-only lark-cli, or finds none when the Feishu Source names no CLI', async () => {
     expect(await resolveFeishuBot(machine(), {}, probe, path)).toBeUndefined()
     expect(await resolveFeishuBot(machine(), { cli: 'lark-cli' }, probe, path)).toEqual({ cli: join(dir, 'bin', 'lark-cli'), appId: 'cli_bot', brand: 'lark', botId: 'ou_bot', name: 'Widgets Bot' })

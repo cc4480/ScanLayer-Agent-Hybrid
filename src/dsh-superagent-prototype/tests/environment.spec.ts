@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SENSITIVE_ENV_PATTERN, type SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { GIT_LOCATION, agentVariables, cmdFailShim, cmdRunShim, credentialHelper, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
+import { GIT_LOCATION, agentVariables, cmdFailShim, cmdRunShim, credentialHelper, runAsWorker, shellArgv, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
   from '../src/infra/environment.ts'
 import { CliError } from '../src/infra/commands.ts'
 import { testDeployment } from './fixtures/deployment.ts'
@@ -330,5 +330,20 @@ describe('the repository the host\'s environment names', () => {
       for (const name of GIT_LOCATION) expect(env, name).not.toHaveProperty(name)
       expect(env.GIT_CEILING_DIRECTORIES).toBe(dir)
     } finally { vi.unstubAllEnvs() }
+  })
+})
+
+describe('the prepare shell', () => {
+  it('runs a prepare command through the shell the platform has, and cmd where Windows has no sh', () => {
+    expect(shellArgv('echo hi', 'linux', '')).toEqual(['sh', '-c', 'echo hi'])
+    expect(shellArgv('echo hi', 'darwin', '')).toEqual(['sh', '-c', 'echo hi'])
+    expect(shellArgv('echo hi', 'win32', '')).toEqual(['cmd.exe', '/d', '/s', '/c', 'echo hi'])
+    // Git for Windows supplies sh.exe, and its syntax wins where it is installed.
+    const bin = mkdtempSync(join(tmpdir(), 'prepare-shell-'))
+    try {
+      writeFileSync(join(bin, 'sh.exe'), '')
+      expect(shellArgv('echo hi', 'win32', bin)).toEqual(['sh', '-c', 'echo hi'])
+      expect(shellArgv('echo "quoted" && run', 'win32', bin)).toEqual(['sh', '-c', 'echo "quoted" && run'])
+    } finally { rmSync(bin, { recursive: true, force: true }) }
   })
 })

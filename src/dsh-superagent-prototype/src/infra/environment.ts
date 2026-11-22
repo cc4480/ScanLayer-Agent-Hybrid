@@ -4,12 +4,28 @@
  * Provides default-path guardrails rather than an OS-level security boundary, as workers run under the operator's OS user.
  */
 import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { realpathSync } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import type { SubprocessOutputReader, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { Deployment } from '../deployment.ts'
 import { SetupError } from '../setup.ts'
 import { CliError } from './commands.ts'
+
+/** Whether a bare file name resolves in one of the directories of `path`. */
+function onPath(name: string, path: string): boolean {
+  return path.split(delimiter).some(dir => {
+    if (!dir) return false
+    try { return statSync(join(dir, name)).isFile() } catch { return false }
+  })
+}
+/**
+ * The argv that runs a prepare command: `sh -c` everywhere, except a Windows box without `sh` (Git for Windows supplies one).
+ * There the command runs through `cmd.exe /c`, the shell Windows always has, so a prepare command is never impossible there.
+ */
+export function shellArgv(command: string, platform: NodeJS.Platform = process.platform, path = process.env.PATH ?? ''): string[] {
+  if (platform !== 'win32') return ['sh', '-c', command]
+  return onPath('sh.exe', path) ? ['sh', '-c', command] : ['cmd.exe', '/d', '/s', '/c', command]
+}
 
 const MARKER = '# Written by dsh-superagent on every start; edits are lost.'
 /** Markers of files written under the project's earlier names (`dsh-tag`, `dsh-go`, `dsh-freelancer`), which `dsh-superagent` owns and replaces too. */
