@@ -9,6 +9,13 @@ import { SourceRegistry } from '../src/sources/registry.ts'
 import { SettingsSchema } from '../src/policy.ts'
 import { key, type OutboundMessage } from '../src/core/index.ts'
 import { testDeployment } from './fixtures/deployment.ts'
+/** A program every platform has: Node itself, running a one-line script. */
+const nodeScript = (script: string): [string, string[]] => [process.execPath, ['-e', script]]
+const sleep = (seconds: number): [string, string[]] => nodeScript(`setTimeout(() => {}, ${seconds * 1000})`)
+const exitWith = (code: number): [string, string[]] => nodeScript(`process.exit(${code})`)
+/** Prints a child's environment as `NAME=value` lines, which `set` and `env` both do. */
+const dumpEnv: [string, string[]] = process.platform === 'win32' ? ['cmd.exe', ['/d', '/c', 'set']] : ['env', []]
+const echo = (text: string): [string, string[]] => process.platform === 'win32' ? ['cmd.exe', ['/d', '/c', 'echo', text]] : ['echo', [text]]
 const sources = new SourceRegistry(() => SettingsSchema.parse({}))
 sources.register(feishuKind); sources.register(githubKind)
 const send = (commands: Commands, message: OutboundMessage) => sources.send(message, commands)
@@ -24,7 +31,7 @@ describe('account-isolated operations', () => {
   it('runs every command with its environment over the process environment, where undefined removes a variable', async () => {
     process.env.GH_TOKEN = 'personal'
     try {
-      const output = await new Commands(() => deployment, { GH_TOKEN: undefined, DSH_SUPERAGENT_PROBE: 'agent' }, new AbortController().signal).run('env', [])
+      const output = await new Commands(() => deployment, { GH_TOKEN: undefined, DSH_SUPERAGENT_PROBE: 'agent' }, new AbortController().signal).run(dumpEnv[0], dumpEnv[1])
       expect(output).toContain('DSH_SUPERAGENT_PROBE=agent')
       expect(output).not.toContain('GH_TOKEN=')
     } finally { delete process.env.GH_TOKEN }
@@ -172,14 +179,17 @@ it('says how to add the bot to a chat when Feishu answers that it is not a membe
 it('names only the program and how it ended when a command prints no diagnostics, never its arguments', async () => {
   const commands = new Commands(() => deployment, {}, new AbortController().signal)
   const secret = 'secret reply text'
-  await expect(commands.run('sh', ['-c', 'exit 3', secret])).rejects.toMatchObject({ message: 'sh exited with code 3', exitCode: 3 })
-  await expect(commands.run('sh', ['-c', 'kill -9 $$', secret])).rejects.toMatchObject({ message: 'sh was stopped by SIGKILL' })
+  await expect(commands.run(exitWith(3)[0], [...exitWith(3)[1], secret])).rejects.toMatchObject({ message: expect.stringMatching(/^node(\.exe)? exited with code 3$/), exitCode: 3 })
   await expect(commands.run('/no/such/program', ['secret reply text'])).rejects.toMatchObject({ message: 'program could not run: ENOENT' })
   // Timeouts kill the child with SIGTERM; Node's default error message would echo every argument.
   const timedOut = { killed: true, signal: 'SIGTERM', code: null, stderr: '',
     message: 'Command failed: /path/lark-bot im +messages-reply --markdown withdrawn' }
   expect(commandError(timedOut, '/path/lark-bot')).toMatchObject({ message: 'lark-bot timed out after 90 s' })
   expect(String(commandError(timedOut, '/path/lark-bot'))).not.toContain('withdrawn')
+})
+it.skipIf(process.platform === 'win32')('names a command stopped by a signal, which only POSIX reports', async () => {
+  const commands = new Commands(() => deployment, {}, new AbortController().signal)
+  await expect(commands.run('sh', ['-c', 'kill -9 $$', 'secret reply text'])).rejects.toMatchObject({ message: 'sh was stopped by SIGKILL' })
 })
 it('reports failures as CliError with the code the CLI names and the exit status', async () => {
   const notFound = commandError({ stderr: 'gh: Not Found (HTTP 404)\n', code: 1 })
@@ -191,7 +201,7 @@ it('reports failures as CliError with the code the CLI names and the exit status
   const aborted = Object.assign(new Error('The operation was aborted'), { name: 'AbortError', stderr: '' })
   expect(commandError(aborted)).toBe(aborted)
   const controller = new AbortController()
-  const running = new Commands(() => deployment, {}, controller.signal).run('sleep', ['5'])
+  const running = new Commands(() => deployment, {}, controller.signal).run(sleep(5)[0], sleep(5)[1])
   controller.abort()
   await expect(running).rejects.toMatchObject({ name: 'AbortError' })
   const commands = new Commands(() => deployment, {}, new AbortController().signal)
@@ -203,12 +213,12 @@ it('stops a running command when the signal of its work aborts, or the lifetime,
   const lifetime = new AbortController(), work = new AbortController()
   const commands = new Commands(() => deployment, {}, lifetime.signal)
   const started = Date.now()
-  const running = commands.withSignal(work.signal).run('sleep', ['5'])
+  const running = commands.withSignal(work.signal).run(sleep(5)[0], sleep(5)[1])
   work.abort()
   await expect(running).rejects.toThrow()
   // Only commands bound to the aborted work signal stop.
-  expect(await commands.run('echo', ['still'])).toBe('still\n')
-  const other = commands.withSignal(new AbortController().signal).run('sleep', ['5'])
+  expect((await commands.run(echo('still')[0], echo('still')[1])).trim()).toBe('still')
+  const other = commands.withSignal(new AbortController().signal).run(sleep(5)[0], sleep(5)[1])
   lifetime.abort()
   await expect(other).rejects.toThrow()
   expect(Date.now() - started).toBeLessThan(4000)
