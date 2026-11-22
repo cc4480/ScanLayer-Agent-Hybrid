@@ -408,6 +408,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/stage.spec.ts` | The Ticket stages, row by row |
 | `tests/policy.spec.ts` | Source scope, the gate, the admission table, Mandate revalidation, the Policy version, settings migrations and assessment outcomes |
 | `tests/registry.spec.ts` | `SourceRegistry`: instances, validation, Policy parts, Channels and Thread context |
+| `tests/paths.spec.ts` | The state-directory path rule: absolute Windows, UNC and POSIX paths pass, while relative and drive-relative paths are refused |
 | `tests/manual.spec.ts` | The local Source: one Trigger per request on its own Thread, an explicit admission with no stored allow list, a Mandate that survives a Policy change, and the refusal of a stranger on a Source without one |
 | `tests/sources.spec.ts` | The Feishu and GitHub Sources on a `SourceContext`: translation, polls and read positions, the pull request rules, health |
 | `tests/commands.spec.ts` | CLI calls as the deployment's accounts, the Channels' answers, and repository-scoped GitHub calls |
