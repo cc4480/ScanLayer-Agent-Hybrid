@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Machine control",
+    "description": "Administer this Windows machine from DSH: sidebar entries for a machine console, processes and services, network and security, and a quit plan; plus agent tools for shell, processes, services, scheduled tasks, network, security posture, packages, disk, maintenance and event logs. Shell and change tools run PowerShell, and every change that needs administrator rights asks through an approval and then a UAC prompt."
+  }
+}

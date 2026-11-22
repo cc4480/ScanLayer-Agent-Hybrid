@@ -15,7 +15,7 @@
   config:
     provider: deepseek-official
     model: deepseek-flash
-    reasoningEffort: off
+    reasoningEffort: low
 
 # Native browser driving: Playwright MCP over the INSTALLED Google Chrome (nothing downloaded).
 # `insert` appends new rows; a bare `- id:` patch only overrides rows that already exist.

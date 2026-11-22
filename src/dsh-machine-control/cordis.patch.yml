@@ -1,0 +1,5 @@
+# Machine control bundle: the Host half registers the machine tools and the panel API; the Client half adds the sidebar
+# entries and their pages. The profile supplies nothing; every value below has a default.
+- insert:
+    - id: dsh-machine-control
+      name: dsh-machine-control
