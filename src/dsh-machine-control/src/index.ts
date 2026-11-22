@@ -73,10 +73,22 @@ export const inject = ['tools', 'systemPrompt', 'subprocess']
  */
 export function apply(ctx: Context, config: ControlConfig): void {
   const exec: Executor = machineExecutor(ctx, config.sandbox as SandboxMode, config.cwd)
-  const webServer = ctx.get('webServer')
-  if (webServer !== undefined) {
-    ctx.effect(() => registerApi({ webServer, ctx, exec, rowCap: config.rowCap, maxBodyBytes: config.maxBodyBytes, maxOutputChars: config.maxOutputChars, timeoutMs: config.timeoutMs }), 'machine-control: panel API')
-  }
+  // A Web profile provides the Web server after this bundle applies, so wait for the service instead of reading it once;
+  // a profile without one still gets the tools. The child fiber ends with this plugin.
+  ctx.inject(['webServer'], child => {
+    child.effect(
+      () => registerApi({
+        webServer: child.webServer,
+        ctx,
+        exec,
+        rowCap: config.rowCap,
+        maxBodyBytes: config.maxBodyBytes,
+        maxOutputChars: config.maxOutputChars,
+        timeoutMs: config.timeoutMs,
+      }),
+      'machine-control: panel API',
+    )
+  })
   if (config.tools) {
     const limits = {
       timeoutMs: config.timeoutMs,
