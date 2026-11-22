@@ -78,7 +78,7 @@
       config:
         transport: streamable-http
         serverName: mcpn
-        url: http://127.0.0.1:8080/mcp
+        url: http://127.0.0.1:8090/mcp
         headers:
           Authorization: 'Bearer ${credential:MCPN_TOKEN}'
         expandTemplates: true
