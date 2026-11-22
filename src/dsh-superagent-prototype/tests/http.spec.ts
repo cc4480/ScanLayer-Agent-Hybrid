@@ -99,9 +99,16 @@ it('answers a prompt save that lost a race with 409, and a settings body over 12
 
 it('starts local work through the panel route and refuses an empty request', async () => {
   const seen: unknown[] = []
-  const call = serve({ startWork: (input: unknown) => { seen.push(input); return { ticketId: 't1' } } })
+  const call = serve({ configured: () => true, startWork: (input: unknown) => { seen.push(input); return { ticketId: 't1' } } })
   expect(await call('POST', 'work', { title: ' Fix it ', text: 'Fix the failing test' })).toEqual({ status: 200, body: { ticketId: 't1' } })
   expect(seen).toEqual([{ title: 'Fix it', text: 'Fix the failing test' }])
   expect(await call('POST', 'work', { text: '   ' })).toMatchObject({ status: 400 })
   expect(await call('POST', 'work', { text: 'ok', extra: true })).toMatchObject({ status: 400 })
+})
+
+it('refuses local work until setup resolves the deployment a worker would run with', async () => {
+  let asked = 0
+  const call = serve({ configured: () => false, startWork: () => { asked++; return { ticketId: 't1' } } })
+  expect(await call('POST', 'work', { text: 'do it' })).toEqual({ status: 400, body: { error: 'No worker can start until setup finishes; the management panel names what is missing', code: 'setupIncomplete', values: {} } })
+  expect(asked).toBe(0)
 })

@@ -197,7 +197,11 @@ function routes(runtime: HttpHost): Routes {
     'GET tickets/:id': ({ params }) => ticketPage(runtime, params.id),
     'POST tickets/:id/retry': ({ params }) => { const id = ticket(params.id); runtime.engine.retryTicket(id); return { retried: true } },
     'POST tickets/:id/stop': ({ params }) => { const id = ticket(params.id); runtime.engine.stopTicket(id); return { stopped: true } },
-    'POST work': async ({ body }) => runtime.startWork(WorkRequest.parse(await body())),
+    'POST work': async ({ body }) => {
+      // No worker can start before setup resolves the deployment it runs with, so local work waits with everything else.
+      if (!runtime.configured()) throw new UserError('setupIncomplete')
+      return runtime.startWork(WorkRequest.parse(await body()))
+    },
     'POST executor/pause': async ({ body }) => runtime.settings.pause(z.object({ paused: z.boolean() }).parse(await body()).paused, 'panel'),
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)

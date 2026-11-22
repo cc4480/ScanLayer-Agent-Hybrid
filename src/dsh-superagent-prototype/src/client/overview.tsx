@@ -59,7 +59,7 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
 }
 
 /** The local work form: one request typed here becomes a Ticket at once, with no external conversation to answer in. */
-function WorkForm({ onStarted }: { onStarted: () => Promise<unknown> }) {
+function WorkForm({ blocked, onStarted }: { blocked: boolean; onStarted: () => Promise<unknown> }) {
   const { t, call, navigate } = usePanel()
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
@@ -82,8 +82,9 @@ function WorkForm({ onStarted }: { onStarted: () => Promise<unknown> }) {
       <textarea id="dt-work-text" className="dt-textarea" rows={4} maxLength={20000} value={text}
         placeholder={t('localWorkTextPlaceholder')} onChange={event => setText(event.target.value)} />
     </div>
+    {blocked && <Hint>{t('executorWaitingSetup')}</Hint>}
     <div className="dt-row-meta dt-row-buttons">
-      <Button variant="primary" size="sm" type="submit" disabled={post.busy || !text.trim()}>{t('startWork')}</Button>
+      <Button variant="primary" size="sm" type="submit" disabled={blocked || post.busy || !text.trim()}>{t('startWork')}</Button>
     </div>
   </form>
 }
@@ -112,7 +113,7 @@ export function OverviewPage() {
         onChanged={reload} />)}</ul>
     </Section>}
     <Section title={t('localWork')}>
-      <WorkForm onStarted={reload} />
+      <WorkForm blocked={!!setup?.problem} onStarted={reload} />
     </Section>
     <Section title={t('lastDay')} action={more({ page: 'trigger', query: { filter: 'recent' } })}>
       {/* Received and evaluated counts operate on Triggers rather than Threads or Decisions, so they do not link to filtered views. */}

@@ -129,7 +129,9 @@ export function listedBot(settings: Settings, actor: ActorRef): z.infer<typeof A
   const bots = z.array(AllowedSchema).catch([]).parse(settings.policy.sources[actor.source]?.bots ?? [])
   return bots.find(entry => sameName(entry.id, actor.id))
 }
-export const anyoneAllowed = (settings: Settings): boolean => Object.values(settings.policy.sources).some(part => part.allowed.length > 0)
+/** Whether any Source can start work: a stored allow list, or the local Source, whose one sender the Policy always allows. */
+export const anyoneAllowed = (settings: Settings, local = false): boolean => local
+  || Object.values(settings.policy.sources).some(part => part.allowed.length > 0)
 const senderName = (entry: z.infer<typeof AllowedSchema>): string => entry.name || entry.id
 
 /** Check whether a thread has tickets of its own (excluding context-only subscriptions). */
@@ -197,12 +199,15 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
       if (!trigger.human) return machineGate(trigger)
       const allowed = allowedSender(settings, trigger.actor)
       const scope = listened(sources, trigger.source, trigger.meta)
-      const row = scope.listened ? scope.row : undefined
+      // A Source that does not listen to this Trigger authorizes nothing, whatever the sender's allow list says: a Source that
+      // was switched off after the Trigger was stored must not start work from it either.
+      if (!scope.listened) return { admissible: false, reason: scope.reason }
+      const row = scope.row
       const recorded = { source: trigger.source, scope: trigger.meta, ...row === undefined ? {} : { row }, ...allowed ? { sender: senderName(allowed) } : {} }
       if (allowed && trigger.addressed) return { admissible: true, strength: 'explicit', basis: { ...recorded, via: 'addressed', addressed: trigger.addressed } }
       const cell = admissionCell(!!allowed, !!trigger.addressed)!
       // Unaddressed messages only use the admission table when the Source observes all messages in that scope.
-      const receivable = !!trigger.addressed || (scope.listened && scope.observed)
+      const receivable = !!trigger.addressed || scope.observed
       const admission = receivable ? admissionOf(settings, trigger.source, row, cell) : 'ignore'
       const basis = { ...recorded, via: 'admission' as const, cell, ...trigger.addressed ? { addressed: trigger.addressed } : {} }
       // Check explicit admission cells before thread follow-ups so a thread's tickets never weaken an explicit request to a follow-up.

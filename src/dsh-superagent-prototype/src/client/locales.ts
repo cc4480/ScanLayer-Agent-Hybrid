@@ -725,6 +725,7 @@ const TEXT = {
   'userError.noChannel': ['这个工单或触发没有可以回复的渠道。', USER_ERRORS.noChannel[1]],
   'userError.panelOnlyEnvironment': ['执行环境（执行目录、准备命令、禁止调用的命令）只能在管理页修改。', USER_ERRORS.panelOnlyEnvironment[1]],
   'userError.panelOnlyAccounts': ['部署检查读取的来源字段（例如账号 CLI）只能在管理页修改。', USER_ERRORS.panelOnlyAccounts[1]],
+  'userError.setupIncomplete': ['设置完成前无法开始任务；管理面板已列出缺少的内容', 'No worker can start until setup finishes; the management panel names what is missing'],
   'userError.setupComplete': ['部署检查已通过。', USER_ERRORS.setupComplete[1]],
   'userError.modelUnavailable': ['{block} 的模型不可用：{error}', USER_ERRORS.modelUnavailable[1]],
   'userError.promptTooLong': ['提示词配置超过 {limit} 个字符。', USER_ERRORS.promptTooLong[1]],
