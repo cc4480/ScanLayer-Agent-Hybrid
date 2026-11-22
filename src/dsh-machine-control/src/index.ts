@@ -75,7 +75,7 @@ export function apply(ctx: Context, config: ControlConfig): void {
   const exec: Executor = machineExecutor(ctx, config.sandbox as SandboxMode, config.cwd)
   const webServer = ctx.get('webServer')
   if (webServer !== undefined) {
-    ctx.effect(() => registerApi({ webServer, ctx, exec, rowCap: config.rowCap, maxBodyBytes: config.maxBodyBytes }), 'machine-control: panel API')
+    ctx.effect(() => registerApi({ webServer, ctx, exec, rowCap: config.rowCap, maxBodyBytes: config.maxBodyBytes, maxOutputChars: config.maxOutputChars, timeoutMs: config.timeoutMs }), 'machine-control: panel API')
   }
   if (config.tools) {
     const limits = {

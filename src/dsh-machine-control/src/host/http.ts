@@ -9,6 +9,7 @@ import type { PanelData, PageId } from '../types.ts'
 import { PAGES } from '../types.ts'
 import type { Executor } from './exec.ts'
 import { collectPage } from './queries.ts'
+import { PANEL_OPERATIONS } from './actions.ts'
 import { PLAN_ACTIONS, parsePlan } from './plan.ts'
 
 /** The Web server face this module needs; typed structurally so the bundle carries no dependency on its package. */
@@ -31,6 +32,20 @@ export interface ApiOptions {
   readonly rowCap: number
   /** Largest accepted request body, in bytes. */
   readonly maxBodyBytes: number
+  /** Largest output a panel action reports back, in characters. */
+  readonly maxOutputChars: number
+  /** Default deadline for a panel action. */
+  readonly timeoutMs: number
+}
+
+/** The answer to one panel action. */
+interface ActionReport {
+  readonly op: string
+  readonly title: string
+  readonly exitCode: number | null
+  readonly stdout: string
+  readonly stderr: string
+  readonly truncated: boolean
 }
 
 /** A client-facing failure with its HTTP status. */
@@ -125,6 +140,38 @@ async function writeQuitPlan(options: ApiOptions, body: unknown): Promise<{ read
   return { saved: true, path, plan }
 }
 
+/**
+ * Run one whitelisted panel operation: the same command the matching agent tool runs.
+ * @param options - the executor and its limits.
+ * @param body - the request body, holding `op` and its `params`.
+ * @returns the exit status and the trimmed output.
+ * @throws ApiError when the operation is unknown or its arguments are unusable.
+ */
+async function runAction(options: ApiOptions, body: unknown): Promise<ActionReport> {
+  const input = typeof body === 'object' && body !== null ? body as { op?: unknown; params?: unknown } : {}
+  const op = typeof input.op === 'string' ? input.op : ''
+  const operation = Object.prototype.hasOwnProperty.call(PANEL_OPERATIONS, op) ? PANEL_OPERATIONS[op] : undefined
+  if (operation === undefined) throw new ApiError(400, `Unknown operation: ${op === '' ? '(none)' : op}.`)
+  const params = typeof input.params === 'object' && input.params !== null ? input.params as Record<string, unknown> : {}
+  let command: string
+  try {
+    command = operation.command(params)
+  } catch (error) {
+    throw new ApiError(400, error instanceof Error ? error.message : String(error))
+  }
+  const outcome = await options.exec.run({ command, timeoutMs: options.timeoutMs })
+  const trim = (value: string): string => value.length <= options.maxOutputChars ? value : value.slice(0, options.maxOutputChars)
+  options.ctx.logger.info('machine-control: the panel ran %s (exit %s)', op, String(outcome.exitCode))
+  return {
+    op,
+    title: operation.title,
+    exitCode: outcome.exitCode,
+    stdout: trim(outcome.stdout),
+    stderr: trim(outcome.stderr),
+    truncated: outcome.stdout.length > options.maxOutputChars || outcome.stderr.length > options.maxOutputChars,
+  }
+}
+
 /** Route table: `METHOD path` to a handler. */
 type Routes = Record<string, (input: { readonly params: Record<string, string>; readonly query: URLSearchParams; readonly req: IncomingMessage }) => Promise<unknown>>
 
@@ -138,6 +185,7 @@ function routes(options: ApiOptions): Routes {
       return data
     },
     'POST quit-plan': async ({ req }) => writeQuitPlan(options, await readBody(req, options.maxBodyBytes)),
+    'POST action': async ({ req }) => runAction(options, await readBody(req, options.maxBodyBytes)),
   }
 }
 

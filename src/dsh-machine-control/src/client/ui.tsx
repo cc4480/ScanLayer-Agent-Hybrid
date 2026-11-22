@@ -1,6 +1,6 @@
 /** Presentational building blocks for the machine panels, styled with the host theme tokens. */
 import { useMemo, useState, type ReactNode } from 'react'
-import type { Fact, PanelData, Table } from '../types.ts'
+import type { Fact, PanelData, Table, TableRow } from '../types.ts'
 import type { T } from './locales.ts'
 
 /** The stylesheet every panel needs; inserted once by the client entry. */
@@ -51,6 +51,16 @@ export const STYLES = `
 .mc-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; padding: 10px 12px;
   border-radius: 8px; overflow-x: auto; white-space: pre; background: rgba(127,127,127,.12); display: block; }
 .mc-ok { color: #22c55e; font-size: 12.5px; }
+.mc-row-actions { display: flex; gap: 6px; white-space: nowrap; justify-content: flex-end; }
+.mc-button.mc-small { padding: 3px 9px; font-size: 12px; border-radius: 6px; }
+.mc-button.mc-danger { border-color: rgba(248,113,113,.55); color: #f87171; }
+.mc-button.mc-danger:hover:not([disabled]) { background: rgba(248,113,113,.12); }
+.mc-banner { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; max-height: 30vh; overflow: auto; padding: 12px 14px; border-radius: 8px; flex: none;
+  border: 1px solid rgba(127,127,127,.3); background: rgba(127,127,127,.08); }
+.mc-banner.mc-banner-error { border-color: #f87171; }
+.mc-banner-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px;
+  font-family: inherit; font-weight: 600; }
 `
 
 /** One fact card. */
@@ -81,8 +91,12 @@ function Cell({ text, className }: { text: string; className: string | undefined
   )
 }
 
-/** One rendered table with its own scrolling body. */
-export function DataTable({ table, t }: { table: Table; t: T }) {
+/** One rendered table with its own scrolling body and, when given, one action cell per row. */
+export function DataTable({ table, t, rowActions }: {
+  table: Table
+  t: T
+  rowActions?: ((row: TableRow) => ReactNode) | undefined
+}) {
   const count = table.truncated === undefined ? String(table.rows.length) : `${String(table.rows.length)} (+${String(table.truncated)} ${t('truncated')})`
   return (
     <section className="mc-table-card">
@@ -93,14 +107,18 @@ export function DataTable({ table, t }: { table: Table; t: T }) {
       <div className="mc-scroll">
         <table className="mc-table">
           <thead>
-            <tr>{table.columns.map(column => <th key={column}>{column}</th>)}</tr>
+            <tr>
+              {table.columns.map(column => <th key={column}>{column}</th>)}
+              {rowActions === undefined ? undefined : <th aria-label={t('actions')} />}
+            </tr>
           </thead>
           <tbody>
             {table.rows.length === 0
-              ? <tr><td colSpan={table.columns.length} className="mc-empty">{t('noRows')}</td></tr>
+              ? <tr><td colSpan={table.columns.length + (rowActions === undefined ? 0 : 1)} className="mc-empty">{t('noRows')}</td></tr>
               : table.rows.map((row, index) => (
                 <tr key={index}>
                   {row.map((cell, column) => <Cell key={column} text={cell} className={monospace(cell) ? 'mc-mono' : undefined} />)}
+                  {rowActions === undefined ? undefined : <td className="mc-row-actions">{rowActions(row)}</td>}
                 </tr>
               ))}
           </tbody>
@@ -156,7 +174,12 @@ export function PageFrame({ title, subtitle, actions, children }: {
 }
 
 /** Facts and tables for one collected page. */
-export function PanelBody({ data, t, offline }: { data: PanelData | undefined; t: T; offline?: string }) {
+export function PanelBody({ data, t, offline, rowActions }: {
+  data: PanelData | undefined
+  t: T
+  offline?: string | undefined
+  rowActions?: ((table: Table, row: TableRow) => ReactNode) | undefined
+}) {
   const tables = useMemo(() => data === undefined ? [] : data.tables, [data])
   if (data === undefined) return <div className="mc-empty">{offline ?? t('loading')}</div>
   return (
@@ -165,10 +188,34 @@ export function PanelBody({ data, t, offline }: { data: PanelData | undefined; t
       {data.facts.length === 0 ? undefined : (
         <div className="mc-facts">{data.facts.map(fact => <FactCard key={fact.label} fact={fact} />)}</div>
       )}
-      {tables.map(table => <DataTable key={table.title} table={table} t={t} />)}
+      {tables.map(table => (
+        <DataTable
+          key={table.title}
+          table={table}
+          t={t}
+          rowActions={rowActions === undefined ? undefined : row => rowActions(table, row)}
+        />
+      ))}
       {data.notes.map(note => <div key={note} className="mc-note">{note}</div>)}
       {data.facts.length === 0 && tables.length === 0 && <div className="mc-empty">{t('noRows')}</div>}
     </>
+  )
+}
+
+/** The result of the last action the reader ran, with a dismiss. */
+export function ActionBanner({ report, t, onDismiss }: {
+  report: { readonly ok: boolean; readonly title: string; readonly text: string }
+  t: T
+  onDismiss: () => void
+}) {
+  return (
+    <div className={`mc-banner${report.ok ? '' : ' mc-banner-error'}`}>
+      <div className="mc-banner-head">
+        <span>{report.title}</span>
+        <button type="button" className="mc-button mc-small" onClick={onDismiss}>{t('dismiss')}</button>
+      </div>
+      {report.text}
+    </div>
   )
 }
 

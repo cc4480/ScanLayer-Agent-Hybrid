@@ -7,6 +7,14 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolOutputDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { Executor } from './exec.ts'
 import { collectPage } from './queries.ts'
+import {
+  diskCommands,
+  networkCommands,
+  processCommands,
+  processTarget,
+  securityCommands,
+  serviceCommands,
+} from './actions.ts'
 import { renderPanel } from './render.ts'
 import type { PageId } from '../types.ts'
 
@@ -89,8 +97,7 @@ const GUIDE = [
   '- machine_network: action adapters, ports, routes, dns, connections, ping, test (port reachability), or firewall-list. Only',
   '  firewall-add and firewall-remove change anything, and both require elevation; never open a port unless the user asked.',
   '- machine_security: action status, firewall, defender (real-time protection), update-check, audit-policy, the list of',
-  '  installed security programs, winget/scoop/npm upgrade availability, or scan-start (needs a persistable plan to outlive the',
-  '  request), scan-cancel and scan-status. Report what changed.',
+  '  installed security programs, winget/scoop/npm upgrade availability, or scan-start and scan-status. Report what changed.',
   '- machine_packages: action search, list, install, uninstall, upgrade or source. winget, scoop and npm are supported; an',
   '  install or uninstall needs elevation when the package manager asks for it.',
   '- machine_disk: action volumes, usage (largest directories or files), clean-temp (deletes temporary files), or expand',
@@ -98,6 +105,9 @@ const GUIDE = [
   '- machine_maintenance: action reboot, shutdown, logoff, restart-explorer, clear-dns, flush-network, windows-update-list, or',
   '  windows-update-install. Reboot and shutdown end the session: confirm the user agreed before calling them.',
   '- machine_event-logs: list the newest events of one named log (System, Application, Security, Setup, ...) with filters.',
+  '',
+  'The sidebar panels run the same commands as these tools: row actions in Processes and Services, and the buttons on Disk,',
+  'Security and Network, call this plugin\'s own operation table, so a change is reachable from the page or from the model.',
   '',
   'The Quit control keeps a plan file at %LOCALAPPDATA%\\dsh-machine-control-quit.json. Writing that JSON there, with kind',
   'set to `reboot`, `shutdown`, `reboot-update`, `explorer` or `flush-dns`, makes the control perform that action after a normal',
@@ -122,11 +132,10 @@ const AREA_PARAMETERS = {
   properties: {
     area: {
       type: 'string',
-      enum: ['processes', 'services', 'startup', 'network', 'security', 'packages', 'disk'],
-      description: 'Panel area to read.',
+      enum: ['overview', 'processes', 'services', 'startup', 'network', 'security', 'packages', 'disk'],
+      description: 'Panel area to read; the host overview when omitted.',
     },
   },
-  required: ['area'],
   additionalProperties: false,
 }
 
@@ -202,7 +211,7 @@ export function registerTools(ctx: Context, executor: Executor, limits: ToolLimi
       execute: async (args: unknown, run: ToolRunContext) => {
         const input = typeof args === 'object' && args !== null ? args as { area?: unknown } : {}
         const area = input.area === undefined ? 'overview' : input.area
-        const page = (['processes', 'services', 'startup', 'network', 'security', 'packages', 'disk'] as const).find(candidate => candidate === area) ?? 'overview'
+        const page = (['overview', 'processes', 'services', 'startup', 'network', 'security', 'packages', 'disk'] as const).find(candidate => candidate === area) ?? 'overview'
         return renderPanel(await collectPage(executor, page satisfies PageId, limits.rowCap))
       },
     },
@@ -226,19 +235,21 @@ export function registerTools(ctx: Context, executor: Executor, limits: ToolLimi
       execute: async (args: unknown, run: ToolRunContext) => {
         const input = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
         const action = string(input.action, 'action')
-        const force = input.force === true ? ' -Force' : ''
-        const target = input.id !== undefined ? `-Id ${String(integer(input.id, 'id'))}` : `-Name ${quote(string(input.name, 'name').replace(/\.exe$/iu, ''))}`
-        const scripts: Record<string, string> = {
-          list: `Get-Process${input.name === undefined ? '' : ` -Name ${quote(string(input.name, 'name').replace(/\.exe$/iu, ''))}`} | Sort-Object -Property WorkingSet64 -Descending | Select-Object -First 50 Id,ProcessName,@{n="MemoryMB";e={[math]::Round($_.WorkingSet64/1MB)}},@{n="CpuSeconds";e={if($_.CPU){[math]::Round($_.CPU)}}} | Format-Table -AutoSize | Out-String`,
-          start: `Start-Process ${quote(string(input.command, 'command'))} -PassThru | Select-Object Id,ProcessName | Format-Table -AutoSize | Out-String`,
-          stop: `Stop-Process ${target}${force} -PassThru | Select-Object Id,ProcessName | Format-Table -AutoSize | Out-String`,
-          restart: `$old = Get-Process ${target} -ErrorAction Stop; $path = $old.Path; Stop-Process -InputObject $old${force}; Start-Sleep -Milliseconds 700; Start-Process $path; 'restarted ' + $old.ProcessName`,
-          details: `Get-Process ${target} | Select-Object Id,ProcessName,Path,@{n="Description";e={$_.Description}},@{n="Company";e={$_.Company}},StartTime,@{n="MemoryMB";e={[math]::Round($_.WorkingSet64/1MB)}},@{n="Threads";e={$_.Threads.Count}} | Format-List | Out-String`,
-          suspend: `$p = Get-Process ${target} -ErrorAction Stop; Add-Type -Name Nat -Namespace Win32 -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr h);'; [Win32.Nat]::NtSuspendProcess($p.Handle) | Out-Null; 'suspended ' + $p.ProcessName`,
-          resume: `$p = Get-Process ${target} -ErrorAction Stop; Add-Type -Name Nat -Namespace Win32 -MemberDefinition '[DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h);'; [Win32.Nat]::NtResumeProcess($p.Handle) | Out-Null; 'resumed ' + $p.ProcessName`,
+        const force = input.force === true
+        const nameArg = typeof input.name === 'string' && input.name.trim() !== '' ? input.name.trim() : undefined
+        // Built on demand: only an action that addresses one process needs a selector, so list works without a name.
+        const scripts: Record<string, () => string> = {
+          list: () => processCommands.list(nameArg),
+          start: () => processCommands.start(string(input.command, 'command')),
+          stop: () => processCommands.stop(processTarget(input), force),
+          restart: () => processCommands.restart(processTarget(input), force),
+          details: () => processCommands.details(processTarget(input)),
+          suspend: () => processCommands.suspend(processTarget(input)),
+          resume: () => processCommands.resume(processTarget(input)),
         }
-        const command = scripts[action]
-        if (command === undefined) throw new Error(`Unknown action: ${action}`)
+        const build = scripts[action]
+        if (build === undefined) throw new Error(`Unknown action: ${action}`)
+        const command = build()
         const elevated = action !== 'list' && action !== 'details' && input.elevate === true
           ? await elevate(ctx, { command, required: `${action} with administrator rights`, isElevated: async () => true }, run.agent, 'machine_process')
           : command
@@ -264,16 +275,24 @@ export function registerTools(ctx: Context, executor: Executor, limits: ToolLimi
         const input = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
         const action = string(input.action, 'action')
         const name = input.name === undefined ? undefined : string(input.name, 'name')
-        const scripts: Record<string, string> = {
-          list: 'Get-Service | Sort-Object Status,Name | Select-Object -First 200 Name,Status,StartType,DisplayName | Format-Table -AutoSize | Out-String',
-          status: `Get-Service -Name ${quote(name ?? '')} -ErrorAction Stop | Format-List Name,Status,StartType,DisplayName | Out-String`,
-          start: `Start-Service -Name ${quote(name ?? '')} -ErrorAction Stop; Get-Service -Name ${quote(name ?? '')} | Select-Object Name,Status | Format-Table -AutoSize | Out-String`,
-          stop: `Stop-Service -Name ${quote(name ?? '')} -ErrorAction Stop; Get-Service -Name ${quote(name ?? '')} | Select-Object Name,Status | Format-Table -AutoSize | Out-String`,
-          restart: `Restart-Service -Name ${quote(name ?? '')} -ErrorAction Stop; Get-Service -Name ${quote(name ?? '')} | Select-Object Name,Status | Format-Table -AutoSize | Out-String`,
-          'set-startup': `Set-Service -Name ${quote(name ?? '')} -StartupType ${string(input.startup, 'startup')} -ErrorAction Stop; Get-Service -Name ${quote(name ?? '')} | Select-Object Name,Status,StartType | Format-Table -AutoSize | Out-String`,
+        const required = (): string => string(name, 'name')
+        const scripts: Record<string, () => string> = {
+          list: () => serviceCommands.list(),
+          status: () => serviceCommands.status(required()),
+          start: () => serviceCommands.start(required()),
+          stop: () => serviceCommands.stop(required()),
+          restart: () => serviceCommands.restart(required()),
+          'set-startup': () => {
+            const startup = string(input.startup, 'startup')
+            if (startup !== 'automatic' && startup !== 'manual' && startup !== 'disabled') {
+              throw new Error('startup must be automatic, manual or disabled.')
+            }
+            return serviceCommands.setStartup(required(), startup)
+          },
         }
-        const command = scripts[action]
-        if (command === undefined) throw new Error(`Unknown action: ${action}`)
+        const build = scripts[action]
+        if (build === undefined) throw new Error(`Unknown action: ${action}`)
+        const command = build()
         const changes = action !== 'list' && action !== 'status'
         const line = changes && input.elevate === true
           ? await elevate(ctx, { command, required: `${action} of a service`, isElevated: async () => true }, run.agent, 'machine_service')
@@ -369,11 +388,11 @@ export function registerTools(ctx: Context, executor: Executor, limits: ToolLimi
     },
     {
       name: 'machine_security',
-      description: 'Read security posture: status (Defender, firewall, BitLocker, Secure Boot), firewall, defender, update-check, audit-policy, the installed security programs, available winget/scoop/npm upgrades, or scan status and control.',
+      description: 'Read security posture: status (Defender, firewall, BitLocker, Secure Boot), firewall, defender, update-check, audit-policy, the installed security programs, available winget/scoop/npm upgrades, or start a Defender scan and read its status.',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['status', 'firewall', 'defender', 'update-check', 'audit-policy', 'installed-programs', 'upgrades', 'scan-start', 'scan-cancel', 'scan-status'] },
+          action: { type: 'string', enum: ['status', 'firewall', 'defender', 'update-check', 'audit-policy', 'installed-programs', 'upgrades', 'scan-start', 'scan-status'] },
           scan: { type: 'string', enum: ['quick', 'full'], description: 'For scan-start.' },
         },
         required: ['action'],
@@ -390,14 +409,9 @@ export function registerTools(ctx: Context, executor: Executor, limits: ToolLimi
           'update-check': 'Get-CimInstance -Namespace root/StandardCimv2 -ClassName MSFT_NetFirewallProfile | Out-Null; (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0").Updates | Select-Object Title,@{n="KB";e={$_.KBArticleIDs -join ","}},IsDownloaded | Format-Table -AutoSize -Wrap | Out-String',
           'audit-policy': 'auditpol /get /category:* | Out-String',
           'installed-programs': 'Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | Select-Object displayName,productState,timestamp | Format-Table -AutoSize | Out-String',
-          upgrades: [
-            'if (Get-Command winget -ErrorAction SilentlyContinue) { "winget:"; (& winget upgrade --include-unknown 2>$null) | Out-String }',
-            'if (Get-Command scoop -ErrorAction SilentlyContinue) { "scoop:"; (& scoop status 2>$null) | Out-String }',
-            'if (Get-Command npm -ErrorAction SilentlyContinue) { "npm:"; (& npm outdated -g 2>$null) | Out-String }',
-          ].join('\n'),
-          'scan-start': 'Start-MpScan -ScanType ' + (input.scan === 'full' ? 'FullScan' : 'QuickScan') + ' -ErrorAction Stop; "scan started: "' + (input.scan === 'full' ? 'full' : 'quick'),
-          'scan-cancel': 'Get-MpComputerStatus | Out-Null; (Get-Command Stop-MpScan -ErrorAction SilentlyContinue) | Out-Null; if (Get-Command Unprotect-MpObject -ErrorAction SilentlyContinue) {}; "No cancel command is documented; a scan can be stopped only from Windows Security."',
-          'scan-status': 'Get-MpComputerStatus | Select-Object ScanParameters,QuickScanStartTime,QuickScanEndTime,FullScanStartTime,FullScanEndTime | Format-List | Out-String',
+          upgrades: securityCommands.upgrades(),
+          'scan-start': securityCommands.scanStart(input.scan === 'full' ? 'full' : 'quick'),
+          'scan-status': securityCommands.scanStatus(),
         }
         const command = scripts[action]
         if (command === undefined) throw new Error(`Unknown action: ${action}`)
@@ -456,26 +470,13 @@ export function registerTools(ctx: Context, executor: Executor, limits: ToolLimi
       execute: async (args: unknown, run: ToolRunContext) => {
         const input = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
         const action = string(input.action, 'action')
-        const path = typeof input.path === 'string' ? input.path : '$env:USERPROFILE'
+        const path = typeof input.path === 'string' && input.path.trim() !== '' ? input.path.trim() : undefined
         const drive = (typeof input.drive === 'string' ? input.drive : 'C').replace(/:$/u, '')
         const scripts: Record<string, string> = {
-          volumes: 'Get-Volume | Where-Object { $_.DriveLetter } | Select-Object DriveLetter,FileSystemLabel,FileSystem,HealthStatus,@{n="SizeGB";e={[math]::Round($_.Size/1GB,1)}},@{n="FreeGB";e={[math]::Round($_.SizeRemaining/1GB,1)}} | Format-Table -AutoSize | Out-String',
-          usage: [
-            `$root = ${quote(path)}`,
-            `Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object { $size = (Get-ChildItem -LiteralPath $_.FullName -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum; [pscustomobject]@{ Item = $_.FullName; SizeGB = [math]::Round($size/1GB,2) } } | Sort-Object -Property SizeGB -Descending | Select-Object -First 15 | Format-Table -AutoSize -Wrap | Out-String`,
-            `Get-ChildItem -LiteralPath $root -File -ErrorAction SilentlyContinue | Sort-Object -Property Length -Descending | Select-Object -First 10 FullName,@{n="SizeMB";e={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize -Wrap | Out-String`,
-          ].join('\n'),
-          'clean-temp': [
-            `$before = (Get-PSDrive ${quote(drive)}).Free`,
-            `Get-ChildItem -LiteralPath $env:TEMP -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue`,
-            `$after = (Get-PSDrive ${quote(drive)}).Free`,
-            `'freed ' + [math]::Round(($after - $before)/1MB,1) + ' MB from ' + $env:TEMP`,
-          ].join('\n'),
-          expand: [
-            `$partition = Get-Partition -DriveLetter ${quote(drive)} -ErrorAction Stop`,
-            `$supported = Get-PartitionSupportedSize -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -ErrorAction Stop`,
-            `if ($supported.SizeMax -le $partition.Size) { 'no unallocated space next to ' + ${quote(drive)} } else { Resize-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Size $supported.SizeMax -ErrorAction Stop; 'expanded ' + ${quote(drive)} + ' to ' + [math]::Round($supported.SizeMax/1GB,1) + ' GB' }`,
-          ].join('\n'),
+          volumes: diskCommands.volumes(),
+          usage: diskCommands.usage(path),
+          'clean-temp': diskCommands.cleanTemp(drive),
+          expand: diskCommands.expand(drive),
         }
         const command = scripts[action]
         if (command === undefined) throw new Error(`Unknown action: ${action}`)
@@ -510,7 +511,7 @@ export function registerTools(ctx: Context, executor: Executor, limits: ToolLimi
           shutdown: input.cancel === true ? 'shutdown.exe /a; "pending shutdown cancelled"' : `shutdown.exe /s /t ${String(delay)} /d p:4:1; 'shutdown scheduled in ${String(delay)} s'`,
           logoff: 'logoff.exe; "logging off"',
           'restart-explorer': '(Get-Process explorer -ErrorAction SilentlyContinue) | Stop-Process -Force; Start-Process explorer.exe; "explorer restarted"',
-          'clear-dns': 'Clear-DnsClientCache; ipconfig /flushdns | Out-String',
+          'clear-dns': networkCommands.clearDns(),
           'flush-network': 'ipconfig /release 2>&1 | Out-String; ipconfig /renew 2>&1 | Out-String; ipconfig /flushdns | Out-String',
           'windows-update-list': '(New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0").Updates | Select-Object Title,@{n="KB";e={$_.KBArticleIDs -join ","}},IsDownloaded | Format-Table -AutoSize -Wrap | Out-String',
           'windows-update-install': [

@@ -112,3 +112,41 @@ export async function saveQuitPlan(plan: { action: string; name?: string }): Pro
   }
   return value as { saved: boolean; path: string }
 }
+
+/** The answer to one panel action. */
+export interface ActionReport {
+  readonly op: string
+  readonly title: string
+  readonly exitCode: number | null
+  readonly stdout: string
+  readonly stderr: string
+  readonly truncated: boolean
+}
+
+/**
+ * Run one operation the Host's table allows. It builds the same PowerShell command the matching agent tool builds.
+ * @param op - the operation id.
+ * @param params - its arguments.
+ * @returns the exit status and the captured output.
+ */
+export async function runAction(op: string, params: Record<string, unknown> = {}): Promise<ActionReport> {
+  const response = await fetch('/machine-control/api/action', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ op, params }),
+  })
+  const text = await response.text()
+  let value: unknown
+  try {
+    value = text === '' ? {} : JSON.parse(text) as unknown
+  } catch {
+    throw new PanelError('The action did not answer with JSON.', false)
+  }
+  if (!response.ok) {
+    const message = typeof (value as { error?: unknown }).error === 'string'
+      ? String((value as { error: string }).error)
+      : 'The action failed.'
+    throw new PanelError(message, false)
+  }
+  return value as ActionReport
+}

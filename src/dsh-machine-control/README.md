@@ -53,14 +53,28 @@ Set on the bundle's row in `cordis.patch.yml`; every field has a default:
 | `tools` | `true` | Register the agent tools |
 | `guide` | `true` | Add the machine catalog to the system prompt |
 
+## Panel actions
+
+The pages are not read-only. The Process list offers **End** per row; Services offers **Start**, **Stop** and **Restart**
+per row; Disk offers **Delete temporary files**; Security offers **Start a quick scan**; Network offers **Clear the DNS
+cache**. Every one of them calls the same command builder the matching agent tool uses (`src/host/actions.ts`), so the
+page and the model can never drift apart. A change asks for confirmation first, shows the command's output in the panel,
+then re-reads the table.
+
 ## Panel API
 
-The pages read `GET /machine-control/api/status` and `GET /machine-control/api/page/<page>`, and write
-`POST /machine-control/api/quit-plan`. The route is owner-only (`auth: 'required'`) and additionally refuses a request
-whose `Host` or `Origin` does not name this page.
+The pages read `GET /machine-control/api/status` and `GET /machine-control/api/page/<page>`, write
+`POST /machine-control/api/quit-plan`, and act through `POST /machine-control/api/action` with `{ "op": "...", "params":
+{ } }`. The operation list is closed (`PANEL_OPERATIONS`): a request naming anything else is refused, so the route is not
+a general command runner. The route is owner-only (`auth: 'required'`) and additionally refuses a request whose `Host` or
+`Origin` does not name this page.
 
 ## Limitations
 
 - Windows only: every script is PowerShell and the elevation path uses `Start-Process -Verb RunAs`.
-- The panels read; they do not offer change controls beyond the quit plan. Use the agent tools for changes.
+- Panel actions run without elevation. A change that needs an administrator (most service start/stop, Defender scans)
+  reports the refusal the command gives; use the agent tools with `elevate` for those.
+- `machine_disk usage` is bounded: it gives up after 40 s overall and 8 s per folder and says what it left unmeasured, so
+  the sizes it reports can be lower bounds.
+- Defender exposes no supported way to cancel a scan, so there is no cancel action.
 - A tool call reports text. Long tables are capped by `rowCap` and `maxOutputChars`.

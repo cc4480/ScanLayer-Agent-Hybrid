@@ -1,10 +1,10 @@
 /** The sidebar pages: a machine overview, live process and service lists, network and security, and the quit plan. */
-import { useState } from 'react'
-import type { PageId } from '../types.ts'
+import { useState, type ReactNode } from 'react'
+import type { PageId, Table, TableRow } from '../types.ts'
 import { PAGES } from '../types.ts'
-import { saveQuitPlan, usePanel, useStatus } from './api.ts'
+import { runAction, saveQuitPlan, usePanel, useStatus } from './api.ts'
 import type { T } from './locales.ts'
-import { CopyButton, PageFrame, PanelBody, Tabs } from './ui.tsx'
+import { ActionBanner, CopyButton, PageFrame, PanelBody, Tabs } from './ui.tsx'
 
 /** Locale key of one page's tab label. */
 const LABEL_KEY: Record<PageId, string> = {
@@ -18,24 +18,136 @@ const LABEL_KEY: Record<PageId, string> = {
   disk: 'pageDisk',
 }
 
-/** A page that reads one area and offers a reload. */
+/** One action a table row offers: the operation, the arguments it reads from that row, and when it applies. */
+interface RowAction {
+  readonly labelKey: string
+  readonly op: string
+  readonly params: (row: TableRow) => Record<string, unknown>
+  readonly confirmKey?: string
+  readonly danger?: boolean
+  readonly when?: (row: TableRow) => boolean
+}
+
+/** One action a page offers above its tables. */
+interface PageAction {
+  readonly labelKey: string
+  readonly op: string
+  readonly params: Record<string, unknown>
+  readonly confirmKey?: string
+  readonly danger?: boolean
+}
+
+/**
+ * Row actions per page and table title. The columns are the ones each table declares: a process row starts with its PID, a
+ * service row with its name and status.
+ */
+const ROW_ACTIONS: Partial<Record<PageId, Record<string, ReadonlyArray<RowAction>>>> = {
+  processes: {
+    'Processes by memory': [
+      { labelKey: 'actEnd', op: 'process.stop', params: row => ({ id: Number(row[0]) }), confirmKey: 'confirmEnd', danger: true },
+    ],
+  },
+  services: {
+    Services: [
+      { labelKey: 'actStart', op: 'service.start', params: row => ({ name: row[0] }), when: row => row[1] !== 'Running' },
+      { labelKey: 'actStop', op: 'service.stop', params: row => ({ name: row[0] }), confirmKey: 'confirmStopService', danger: true, when: row => row[1] === 'Running' },
+      { labelKey: 'actRestart', op: 'service.restart', params: row => ({ name: row[0] }), confirmKey: 'confirmRestartService', when: row => row[1] === 'Running' },
+    ],
+  },
+}
+
+/** Page-level actions: housekeeping whose target is the whole machine rather than one row. */
+const PAGE_ACTIONS: Partial<Record<PageId, ReadonlyArray<PageAction>>> = {
+  security: [{ labelKey: 'actQuickScan', op: 'security.scan-start', params: { scan: 'quick' } }],
+  disk: [{ labelKey: 'actCleanTemp', op: 'disk.clean-temp', params: { drive: 'C' }, confirmKey: 'confirmCleanTemp', danger: true }],
+  network: [{ labelKey: 'actClearDns', op: 'network.clear-dns', params: {} }],
+}
+
+/** A page that reads one area and runs the operations that area offers. */
 function AreaPage({ first, t, areas }: { first: PageId; t: T; areas: ReadonlyArray<PageId> }) {
   const [area, setArea] = useState<PageId>(first)
   const { data, error, loading, reload } = usePanel(area)
+  const [busy, setBusy] = useState(false)
+  const [report, setReport] = useState<{ ok: boolean; title: string; text: string } | undefined>(undefined)
   // A read that has not answered yet must not show the previous tab's rows under the new tab.
   const shown = data !== undefined && data.page === area ? data : undefined
   const tabs = areas.map(id => ({ id, label: t(LABEL_KEY[id]) }))
+
+  const run = async (labelKey: string, op: string, params: Record<string, unknown>, confirmKey?: string): Promise<void> => {
+    if (confirmKey !== undefined && !window.confirm(t(confirmKey))) return
+    setBusy(true)
+    setReport(undefined)
+    try {
+      const result = await runAction(op, params)
+      const output = [result.stdout.trim(), result.stderr.trim()].filter(part => part !== '').join('\n')
+      const ok = result.exitCode === 0
+      setReport({
+        ok,
+        title: `${t(labelKey)}: ${ok ? t('actionDone') : `${t('actionFailed')} (exit ${String(result.exitCode)})`}`,
+        text: output === '' ? t('actionDone') : output,
+      })
+      await reload()
+    } catch (caught) {
+      setReport({
+        ok: false,
+        title: `${t(labelKey)}: ${t('actionFailed')}`,
+        text: caught instanceof Error ? caught.message : String(caught),
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const rowActionsFor = (table: Table, row: TableRow): ReactNode => {
+    const actions = (ROW_ACTIONS[area]?.[table.title] ?? []).filter(action => action.when === undefined || action.when(row))
+    return actions.map(action => (
+      <button
+        key={action.labelKey}
+        type="button"
+        className={`mc-button mc-small${action.danger === true ? ' mc-danger' : ''}`}
+        disabled={busy}
+        onClick={() => { void run(action.labelKey, action.op, action.params(row), action.confirmKey) }}
+      >
+        {t(action.labelKey)}
+      </button>
+    ))
+  }
+
+  const pageActions = PAGE_ACTIONS[area] ?? []
+  const actions = (
+    <>
+      {pageActions.map(action => (
+        <button
+          key={action.labelKey}
+          type="button"
+          className={`mc-button${action.danger === true ? ' mc-danger' : ''}`}
+          disabled={busy}
+          onClick={() => { void run(action.labelKey, action.op, action.params, action.confirmKey) }}
+        >
+          {t(action.labelKey)}
+        </button>
+      ))}
+      <button type="button" className="mc-button" onClick={() => { void reload() }} disabled={loading || busy}>{busy ? t('working') : t('reload')}</button>
+    </>
+  )
+
   return (
     <PageFrame
       title={t('panel')}
       subtitle={shown === undefined ? undefined : `${t('collectedAt')} ${new Date(shown.collectedAt).toLocaleTimeString()}`}
-      actions={<button type="button" className="mc-button" onClick={() => { void reload() }} disabled={loading}>{t('reload')}</button>}
+      actions={actions}
     >
       <Tabs tabs={tabs} value={area} onChange={setArea} />
       {error === undefined
         ? undefined
         : <div className="mc-note mc-error">{error.unreachable ? t('offline') : `${t('failed')}: ${error.message}`}</div>}
-      <PanelBody data={shown} t={t} offline={shown === undefined && error === undefined ? t('loading') : undefined} />
+      {report === undefined ? undefined : <ActionBanner report={report} t={t} onDismiss={() => { setReport(undefined) }} />}
+      <PanelBody
+        data={shown}
+        t={t}
+        offline={shown === undefined && error === undefined ? t('loading') : undefined}
+        rowActions={rowActionsFor}
+      />
     </PageFrame>
   )
 }
