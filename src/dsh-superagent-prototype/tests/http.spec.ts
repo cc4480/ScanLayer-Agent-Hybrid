@@ -96,3 +96,12 @@ it('answers a prompt save that lost a race with 409, and a settings body over 12
     body: { error: `Request exceeds ${128 * 1024} bytes` } })
   expect(saves).toEqual([])
 })
+
+it('starts local work through the panel route and refuses an empty request', async () => {
+  const seen: unknown[] = []
+  const call = serve({ startWork: (input: unknown) => { seen.push(input); return { ticketId: 't1' } } })
+  expect(await call('POST', 'work', { title: ' Fix it ', text: 'Fix the failing test' })).toEqual({ status: 200, body: { ticketId: 't1' } })
+  expect(seen).toEqual([{ title: 'Fix it', text: 'Fix the failing test' }])
+  expect(await call('POST', 'work', { text: '   ' })).toMatchObject({ status: 400 })
+  expect(await call('POST', 'work', { text: 'ok', extra: true })).toMatchObject({ status: 400 })
+})

@@ -10,6 +10,7 @@ import { key, type AssessmentOutcome, type Mandate, type Policy, type PolicyEffe
 import { sameName } from './infra/text.ts'
 import { WORKER_COMMANDS } from './infra/environment.ts'
 import { isAbsolutePath } from './infra/paths.ts'
+import { MANUAL_SOURCE } from './sources/manual.ts'
 
 export const RuleIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/)
 export const RuleMatchSchema = z.object({ rule_id: RuleIdSchema, reason: z.string().trim().min(1).max(500) }).strict()
@@ -118,6 +119,9 @@ export function policyVersion(settings: Settings): string {
   return key(POLICY_REVISION, JSON.stringify({ rules: settings.policy.rules, mode: settings.eval.mode, sources: settings.policy.sources }))
 }
 export function allowedSender(settings: Settings, actor: ActorRef): z.infer<typeof AllowedSchema> | undefined {
+  // The local Source has exactly one sender, the person at this machine's panel, so their work needs no list to allow it,
+  // and Tickets it started stay valid across a Policy change.
+  if (actor.source === MANUAL_SOURCE) return { id: actor.id }
   return settings.policy.sources[actor.source]?.allowed.find(entry => sameName(entry.id, actor.id))
 }
 /** Look up `actor` in the Source's `bots` policy list (validated by the Source's kind), whose messages are admitted as inferred candidates at most. */

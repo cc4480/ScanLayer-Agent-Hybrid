@@ -1,7 +1,7 @@
 /** Overview page: pending Tickets requiring human action, active system problems, 24-hour flow counts, and Executor load. */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { usePoll, type Problem } from './api.ts'
-import { Button, Icon } from './controls.tsx'
+import { Button, Icon, InfoTip, Input } from './controls.tsx'
 import { useAction, usePanel, usePanelData } from './provider.tsx'
 import { setupPage, settingsRoute, type Route } from './route.ts'
 import { TicketLine } from './rows.tsx'
@@ -58,6 +58,36 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
   }
 }
 
+/** The local work form: one request typed here becomes a Ticket at once, with no external conversation to answer in. */
+function WorkForm({ onStarted }: { onStarted: () => Promise<unknown> }) {
+  const { t, call, navigate } = usePanel()
+  const [title, setTitle] = useState('')
+  const [text, setText] = useState('')
+  const post = useAction(async () => {
+    const { ticketId } = await call('POST work', { body: { text, ...title.trim() ? { title: title.trim() } : {} } })
+    setTitle(''); setText('')
+    navigate({ page: 'execution', id: ticketId })
+  }, { reload: onStarted })
+  return <form className="dt-fieldset" onSubmit={event => {
+    event.preventDefault()
+    if (!post.busy && text.trim()) void post.run()
+  }}>
+    <div className="dt-field">
+      <span className="dt-field-head"><label htmlFor="dt-work-title">{t('localWorkTitle')}</label></span>
+      <Input id="dt-work-title" value={title} maxLength={120} placeholder={t('localWorkTitlePlaceholder')}
+        onChange={event => setTitle(event.target.value)} />
+    </div>
+    <div className="dt-field">
+      <span className="dt-field-head"><label htmlFor="dt-work-text">{t('localWorkText')}</label><InfoTip text={t('localWorkHint')} /></span>
+      <textarea id="dt-work-text" className="dt-textarea" rows={4} maxLength={20000} value={text}
+        placeholder={t('localWorkTextPlaceholder')} onChange={event => setText(event.target.value)} />
+    </div>
+    <div className="dt-row-meta dt-row-buttons">
+      <Button variant="primary" size="sm" type="submit" disabled={post.busy || !text.trim()}>{t('startWork')}</Button>
+    </div>
+  </form>
+}
+
 export function OverviewPage() {
   const { t, call, navigate } = usePanel()
   const { setup } = usePanelData()
@@ -81,6 +111,9 @@ export function OverviewPage() {
       <ul className="dt-list dt-cards">{data.problems.map((problem, index) => <ProblemLine key={index} problem={problem}
         onChanged={reload} />)}</ul>
     </Section>}
+    <Section title={t('localWork')}>
+      <WorkForm onStarted={reload} />
+    </Section>
     <Section title={t('lastDay')} action={more({ page: 'trigger', query: { filter: 'recent' } })}>
       {/* Received and evaluated counts operate on Triggers rather than Threads or Decisions, so they do not link to filtered views. */}
       <div className="dt-stats">

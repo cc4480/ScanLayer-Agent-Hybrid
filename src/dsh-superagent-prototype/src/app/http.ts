@@ -9,6 +9,7 @@ import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types
 import { PromptConflict, SKILL_NAME, SKILL_PREFIX, TEAM_SECTIONS, builtInBase, builtInParts, defaultPrompts, savePrompts, type Prompts }
   from './prompts.ts'
 import { policyVersion } from '../policy.ts'
+import { LIMITS } from '../limits.ts'
 import { SettingsConflict, type Settings } from './settings.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
 import { UserError, type EngineForPeople, type Ticket } from '../core/index.ts'
@@ -53,6 +54,8 @@ export interface HttpHost {
   checkSetup(): void
   requestPass(): void
   models(): Promise<ModelCatalog>
+  /** Start work a person typed in the panel; the Ticket it starts has no conversation to reply to. */
+  startWork(input: { title?: string; text: string }): { ticketId: string }
 }
 /**
  * Represents a client-facing 400 or 404 error raised during management route parsing or lookup.
@@ -147,6 +150,8 @@ const PromptsQuery = z.object({ revision: count.optional(), offset: count.defaul
 const SourceBlock = z.templateLiteral(['source:', z.string().regex(/^[a-z][a-z0-9-]*$/)])
 const SettingsBlockSchema = z.union([z.enum(['policy', 'eval', 'executor']), SourceBlock])
 const SaveRequest = z.object({ value: z.unknown(), revision: z.number().int().nonnegative() })
+const WorkRequest = z.object({ title: z.string().trim().max(120).optional(),
+  text: z.string().trim().min(1).max(LIMITS.workText) }).strict()
 
 function routes(runtime: HttpHost): Routes {
   const { store } = runtime
@@ -192,6 +197,7 @@ function routes(runtime: HttpHost): Routes {
     'GET tickets/:id': ({ params }) => ticketPage(runtime, params.id),
     'POST tickets/:id/retry': ({ params }) => { const id = ticket(params.id); runtime.engine.retryTicket(id); return { retried: true } },
     'POST tickets/:id/stop': ({ params }) => { const id = ticket(params.id); runtime.engine.stopTicket(id); return { stopped: true } },
+    'POST work': async ({ body }) => runtime.startWork(WorkRequest.parse(await body())),
     'POST executor/pause': async ({ body }) => runtime.settings.pause(z.object({ paused: z.boolean() }).parse(await body()).paused, 'panel'),
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)

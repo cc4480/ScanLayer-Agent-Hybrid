@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
-import { Engine, key, reasonText, type EngineForSettings, type ReceiveResult, type Ticket, type Trigger } from '../core/index.ts'
+import { Engine, key, reasonText, UserError, type EngineForSettings, type ReceiveResult, type Ticket, type Trigger } from '../core/index.ts'
 import { allowedSender, settingsPolicy } from '../policy.ts'
 import { SourceRegistry } from '../sources/registry.ts'
 import { Commands } from '../infra/commands.ts'
@@ -39,6 +39,7 @@ import { Outbox } from './outbox.ts'
 import { Passes } from './passes.ts'
 import { Setup } from './setup.ts'
 import { feishuSettings } from '../sources/feishu.ts'
+import { manualKind, manualTrigger } from '../sources/manual.ts'
 import { health, type Health, type SourceContext, type SourceHost } from '../sources/host.ts'
 import { Sessions } from './sessions.ts'
 import { Settings } from './settings.ts'
@@ -190,6 +191,27 @@ export class Runtime extends Service implements SourceHost {
     const { setup: { deployment }, sources } = this
     return ticketEnvironment({ deployment, sources, settings: this.store.settings(), ticket, ...trigger ? { trigger } : {} })
   }
+  /**
+   * Start work a person typed in the panel: one Trigger on the local Source, decided at once as an explicit request (its one
+   * sender is always allowed), and the Ticket it starts. Local work has no conversation to reply to, so its result stays on
+   * the Ticket and in its worker Session.
+   * @throws UserError when the Source is off or the request is not admissible.
+   */
+  startWork(input: { title?: string; text: string }): { ticketId: string } {
+    const text = input.text.trim()
+    const at = now()
+    const title = (input.title?.trim() || text.split('\n')[0]!.trim()).slice(0, 120)
+    const trigger = manualTrigger({ text, title, at })
+    const received = this.engine.receive(trigger)
+    if (received !== 'stored') {
+      throw new UserError('notAdmissible', { reason: received === 'filtered' ? 'the Local work Source is off' : 'this request was already received' })
+    }
+    const decision = this.engine.decide(trigger.id, { kind: 'accept', title, scope: 'local work', reason: { code: 'personRequest' } })
+    if (!decision.ticketId) throw new UserError('notAdmissible', { reason: reasonText(decision.reason) })
+    // Start the new Assignment on the next pass rather than waiting for an unrelated Trigger to wake the loop.
+    this.passes.request()
+    return { ticketId: decision.ticketId }
+  }
   checkSetup(): void { this.setup.check() }
   receive(trigger: Trigger): ReceiveResult { return this.passes.receive(trigger) }
   idle(): Promise<void> { return this.passes.idle() }
@@ -199,6 +221,8 @@ export class Runtime extends Service implements SourceHost {
   /** Hold evaluation, dispatch, and outbound delivery while paused or awaiting setup; sources still record incoming triggers. */
   private paused(): boolean { return !this.setup.configured() || this.store.settings().paused }
   private async initialize(): Promise<void> {
+    // The local Source needs no setup: work a person types in the panel can start at once.
+    this.disposers.push(this.sources.register(manualKind))
     // Register management HTTP routes before setup completes so operators can fix setup problems in the UI.
     this.disposers.push(registerHttp(this.ctx, this.httpHost()))
     if (!await this.setup.run(this.store.settings())) {
@@ -223,7 +247,8 @@ export class Runtime extends Service implements SourceHost {
       get deployment() { return setup.deployment },
       get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem },
       configured: () => setup.configured(), links: () => runtime.links(), ticketEnvironment: ticket => runtime.ticketEnvironment(ticket),
-      checkSetup: () => { setup.check() }, requestPass: () => { passes.request() }, models: () => this.ctx.sessionController.modelCatalog() }
+      checkSetup: () => { setup.check() }, startWork: input => runtime.startWork(input), requestPass: () => { passes.request() },
+      models: () => this.ctx.sessionController.modelCatalog() }
   }
   /** Idempotent stop; concurrent or repeated calls share the same shutdown promise. */
   stop(): Promise<void> { return this.stopping ??= this.shutdown() }

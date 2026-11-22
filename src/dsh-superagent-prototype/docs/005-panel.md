@@ -14,6 +14,10 @@ Opening the panel answers three questions, in this order:
 
 The tabs follow the workflow: **Overview**, **Source**, **Trigger**, **Eval**, **Execution**, and **Settings**. Until repository and account setup succeeds, Overview shows what is missing and links to the relevant setting.
 
+Overview also carries the **local work** form: a person types a request and it becomes a Ticket at once, decided as their
+explicit request on the local Source. Local work has no conversation to answer in, so its result stays on the Ticket and in
+its worker Session; it needs no repository or account setup.
+
 | Tab | Shows |
 | --- | --- |
 | Overview | Tickets needing action, system problems, activity counts for the last 24 hours, and Executor load. Each block links to its detailed page |

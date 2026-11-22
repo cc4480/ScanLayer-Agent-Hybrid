@@ -35,6 +35,8 @@ export interface Api {
   'POST tickets/:id/retry': { response: { retried: true } }
   'POST tickets/:id/stop': { response: { stopped: true } }
   'POST executor/pause': { body: { paused: boolean }; response: { paused: boolean } }
+  /** Work a person starts from the panel: no external conversation, so its result stays on the Ticket. */
+  'POST work': { body: { title?: string; text: string }; response: { ticketId: string } }
   'PUT settings/:block': { body: { value: unknown; revision: number }; response: { revision: number; restarting: boolean } }
   'GET policy/history': { response: HistoryView }
   'POST policy-sync/:id': { response: { policy: unknown } }
