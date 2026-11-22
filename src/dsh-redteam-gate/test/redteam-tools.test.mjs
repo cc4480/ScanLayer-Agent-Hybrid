@@ -24,6 +24,17 @@ test('the plugin loads and registers native scanners plus red-team tools, and ho
   assert.equal(registered.filter((n) => n.startsWith('ae_')).length, alterEgoCount())
 })
 
+test('the plugin Config satisfies the harness Standard Schema contract (a plain object stops the plugin loading)', () => {
+  // The harness calls Config['~standard'].validate(config) before activation. Without it the plugin
+  // does not start, and the scope gate and every tool it registers are missing.
+  const std = plugin.Config?.['~standard']
+  assert.ok(std, 'Config must expose ~standard')
+  assert.equal(typeof std.validate, 'function')
+  assert.deepEqual(std.validate({}), { value: { labHosts: [] } })
+  assert.deepEqual(std.validate({ labHosts: ['127.0.0.1'] }), { value: { labHosts: ['127.0.0.1'] } })
+  assert.deepEqual(std.validate(undefined), { value: { labHosts: [] } })
+})
+
 test('every target-sending red-team tool is gate-active', () => {
   for (const n of ['secscan_fetch', 'seclayer_probe', 'msfconsole']) assert.ok(ACTIVE_TOOLS.has(n), n)
   assert.equal(ACTIVE_TOOLS.has('recon_passive'), false)

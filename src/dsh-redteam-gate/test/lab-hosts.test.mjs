@@ -48,10 +48,12 @@ const scannable = async (url) => {
   }
 }
 
-test('Config declares a labHosts array and defaults to empty', () => {
-  assert.ok(Config.labHosts, 'Config.labHosts must exist so operators can see the setting')
-  assert.equal(Config.labHosts.type, 'array')
-  assert.deepEqual(Config.labHosts.default, [])
+test('Config is a Standard Schema that defaults labHosts to empty', () => {
+  // The harness validates through '~standard'; the labHosts setting is read from its validated value.
+  const std = Config['~standard']
+  assert.ok(std && typeof std.validate === 'function', 'Config must implement the Standard Schema validate')
+  assert.deepEqual(std.validate({}).value.labHosts, [])
+  assert.deepEqual(std.validate({ labHosts: ['127.0.0.1', 'lab.local:8080'] }).value.labHosts, ['127.0.0.1', 'lab.local:8080'])
 })
 
 test('without labHosts the loopback refusal is unchanged (fail closed)', async () => {

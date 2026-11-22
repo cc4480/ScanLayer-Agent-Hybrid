@@ -16,8 +16,20 @@ export const inject = ['tools']
  * only agree when the probe allowlist is set. apply() pushes this value into that variable so the
  * agreement comes from configuration instead of an ambient shell variable.
  */
+// The harness validates a plugin's Config through the Standard Schema interface ('~standard', see
+// vendor/cordis resolveConfig). A plain object without it fails at load with "reading 'validate'" and
+// the whole plugin does not activate. This object implements that interface directly, so the gate needs
+// no schema library. The labHosts entries are checked again by normalizeLabHosts in apply().
 export const Config = {
-  labHosts: { type: 'array', items: { type: 'string' }, default: [] },
+  '~standard': {
+    version: 1,
+    vendor: 'dsh-redteam-gate',
+    validate(input) {
+      const raw = input && typeof input === 'object' ? input : {}
+      const labHosts = Array.isArray(raw.labHosts) ? raw.labHosts.map((h) => String(h ?? '')) : []
+      return { value: { labHosts } }
+    },
+  },
 }
 
 // Ownership is proven locally by DNS TXT challenge (scripts/verify-domain.mjs). No server, no MCP token.
