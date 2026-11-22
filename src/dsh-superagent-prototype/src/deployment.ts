@@ -70,10 +70,31 @@ export function executable(name: string, path: string, exclude?: string): string
 }
 
 export type Probe = (argv: string[]) => Promise<string>
-/** Run startup checks through DSH's worker subprocess service with worker shims removed from PATH so a `gh` wrapper script reaches the real binary. */
+/** A leading `NAME=value` word of an `env` prefix. */
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/su
+/**
+ * Run startup checks through DSH's worker subprocess service with worker shims removed from PATH so a `gh` wrapper script reaches the real binary.
+ *
+ * Probe calls are written with an `env` prefix (`env PATH=… gh api user`), which Windows has no binary for, so the prefix is
+ * read here and applied as child environment entries instead: the same result on every platform.
+ */
 export function workerProbe(subprocess: SubprocessRuntime, stateDir: string, cwd: string, signal: AbortSignal): Probe {
   const path = withoutDirectory(process.env.PATH ?? '', workerBin(stateDir))
-  return argv => runAsWorker(subprocess, ['env', `PATH=${path}`, ...argv], cwd, AbortSignal.any([signal, AbortSignal.timeout(60_000)]))
+  return (argv) => {
+    const rest = [...argv]
+    const env: Record<string, string> = { PATH: path }
+    if (rest[0] === 'env') {
+      rest.shift()
+      for (let word = rest[0]; word !== undefined; word = rest[0]) {
+        const assignment = ASSIGNMENT.exec(word)
+        if (assignment === null) break
+        env[assignment[1] ?? ''] = assignment[2] ?? ''
+        rest.shift()
+      }
+    }
+    if (rest.length === 0) return Promise.reject(new Error('The probe names no program.'))
+    return runAsWorker(subprocess, rest, cwd, AbortSignal.any([signal, AbortSignal.timeout(60_000)]), env)
+  }
 }
 
 const GithubUser = z.object({ login: z.string().regex(/^[A-Za-z0-9-]+$/), id: z.number().int().positive() })
