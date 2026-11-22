@@ -249,6 +249,12 @@ it('lists in the same order in SQLite and in memory, and undoes a failed nested 
 it('creates the state directory for its owner alone, and the database readable by its owner alone', () => {
   const path = join(directory, 'state', 'orchestrator.sqlite')
   new Store(path).close()
+  if (process.platform === 'win32') {
+    // NTFS has no POSIX modes: the database's protection is the inherited folder ACL, which chmod cannot narrow.
+    expect(statSync(dirname(path)).isDirectory()).toBe(true)
+    expect(statSync(path).isFile()).toBe(true)
+    return
+  }
   expect([statSync(dirname(path)).mode & 0o777, statSync(path).mode & 0o777]).toEqual([0o700, 0o600])
 })
 
