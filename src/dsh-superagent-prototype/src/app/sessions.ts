@@ -261,7 +261,9 @@ export class Sessions {
     for (const tool of host.tools(agent, ticket)) register(tool.name, tool.description, tool.schema, tool.execute)
     if (master) {
       // The router's shell is whichever the profile provides (`bash` on POSIX, `pwsh` on Windows); naming an absent one fails the Session.
-      const shells = WORK_TOOLS.filter(name => (name === 'bash' || name === 'pwsh') && agent.ctx.tools.get(name))
+      // Read it through the parent scope, as workOnly does: the shells are preset tools, which the global view misses.
+      const parent = scopeParentOf(agent)
+      const shells = WORK_TOOLS.filter(name => (name === 'bash' || name === 'pwsh') && agent.ctx.tools.get(name, parent))
       binding.disposers.push(agent.ctx.tools.restrict({ allow: ['skill', 'read', 'read_image', 'job_output', 'job_list', 'job_kill', ...shells] }),
         agent.ctx.tools.guard(execution => noWait(execution, () => this.routed(agent))))
     } else {
