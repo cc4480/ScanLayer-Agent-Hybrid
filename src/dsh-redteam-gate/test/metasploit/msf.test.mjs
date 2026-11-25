@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { decideScope } from '../../src/scope.mjs'
 import {
-  buildCommands, parseCommandLine, targetsForMsf, decideMsfScope, parseOutput, runMsf,
+  buildCommands, parseCommandLine, targetsForMsf, decideMsfScope, parseOutput, runMsf, MSF_RUBY,
 } from '../../src/engines/metasploit/msf.mjs'
 
 const never = { isVerified: async () => false }
@@ -162,7 +163,8 @@ test('parseOutput on empty output reports nothing found', () => {
   assert.deepEqual(parseOutput(''), { completed: false, openPorts: [], positives: [], errors: [], sessions: [] })
 })
 
-test('live: portscan against 127.0.0.1 only through msfconsole', async () => {
+// Live: needs the Metasploit install msf.mjs launches (MSF_RUBY), like the other live tests need theirs.
+test('live: portscan against 127.0.0.1 only through msfconsole', { skip: !existsSync(MSF_RUBY) && `Metasploit not installed at ${MSF_RUBY}` }, async () => {
   const r = await runMsf(portscan('127.0.0.1'), { gate: never, timeoutMs: 230000 })
   console.log('--- msfconsole exit:', r.exitCode, 'status:', r.status)
   console.log(r.stdout)
