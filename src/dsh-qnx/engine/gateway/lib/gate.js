@@ -7,7 +7,10 @@
 //   4 per-tool argument rules             -> else deny arg_rule
 //   5 protected paths (gateway secrets)   -> else deny protected_path
 //   6 scope gate on every target in argv  -> else deny out_of_scope
-//   7 runner (which re-checks its own allowlist on the target)
+//   7 destructive tool in `ask` mode: an approver must say yes for this
+//     exact call (asked last, so nobody is asked about a call the gate would
+//     refuse anyway)                      -> else deny not_approved
+//   8 runner (which re-checks its own allowlist on the target)
 // Steps 1–6 happen before any byte goes to the runner, so a denial spawns
 // nothing and sends no packet. Every decision is a receipt in the audit chain.
 const net = require('net');
@@ -73,9 +76,10 @@ class RunnerClient {
 
 class Gate {
   /**
-   * @param {object} o {catalog, audit, runner: RunnerClient, engagements: () => doc, protectedPaths: string[], destructiveSeats?: Set}
+   * @param {object} o {catalog, audit, runner: RunnerClient, engagements: () => doc, protectedPaths: string[],
+   *   destructiveMode: 'off' | 'ask' | 'on', approve?: ({seat, tool, argv, run_id}) => Promise<{approved: boolean, by?: string, reason?: string}>}
    */
-  constructor(o) { Object.assign(this, o); }
+  constructor(o) { Object.assign(this, { destructiveMode: 'off' }, o); }
 
   async call({ seat, ident, args = [], opts = {}, run_id = null, call_index = null }) {
     const base = { kind: 'call', seat, run_id, call_index };
@@ -105,6 +109,14 @@ class Gate {
     const targets = sc.decisions.map((d) => ({ target: d.target, kind: d.kind, in_scope: d.in_scope, reason: d.reason, engagement: d.engagement || null }));
     if (!sc.allowed) return deny('out_of_scope', sc.reason, { tool: tool.name, argv_sha256, targets });
 
+    let approved_by = null;
+    if (tool.destructive && this.destructiveMode === 'ask') {
+      let verdict;
+      try { verdict = this.approve ? await this.approve({ seat, tool: tool.name, argv, run_id }) : { approved: false, reason: 'no approver is connected' }; } catch (e) { verdict = { approved: false, reason: e.message }; }
+      if (!verdict || !verdict.approved) return deny('not_approved', `${tool.name} is destructive and was not approved${verdict && verdict.reason ? `: ${verdict.reason}` : ''}`, { tool: tool.name, argv_sha256, targets });
+      approved_by = verdict.by || 'approver';
+    }
+
     const timeout = Math.max(1, Math.min(300000, Number(opts.timeout_ms) || 100000));
     let r;
     try { r = await this.runner.run(argv, timeout); } catch (e) {
@@ -117,7 +129,7 @@ class Gate {
     }
     const result = { exit: r.exit, signal: r.signal, stdout: r.stdout, stderr: r.stderr, truncated: r.truncated, timed_out: r.timed_out, duration_ms: r.duration_ms };
     const a = this.audit.append({
-      ...base, tool: tool.name, decision: 'allow', argv: argv, argv_sha256, targets, spawned: true,
+      ...base, tool: tool.name, decision: 'allow', argv: argv, argv_sha256, targets, spawned: true, ...(approved_by ? { approved_by } : {}),
       exit: r.exit, signal: r.signal, timed_out: r.timed_out, truncated: r.truncated,
       stdout_sha256: sha256(r.stdout), stderr_sha256: sha256(r.stderr), stdout_bytes: Buffer.byteLength(r.stdout), duration_ms: Date.now() - t0,
     });

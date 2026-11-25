@@ -74,6 +74,10 @@ export const STYLES = `
 .qx-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 13px; }
 .qx-facts dt { color: var(--dsw-alias-text-secondary); } .qx-facts dd { margin: 0; overflow-wrap: anywhere; }
 .qx-signed { padding: 10px 13px; border-radius: 8px; border: 1px solid var(--qx-verified); font-size: 13px; }
+.qx-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.qx-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--dsw-alias-text-secondary); }
+.qx-form .qx-input { min-width: 140px; }
+.qx-link { color: var(--qx-verified); font-size: 13px; }
 `
 
 /** The identity bar shared by every page: what the target is and the state of the gate. */
@@ -89,8 +93,8 @@ export function TargetBar({ state, t, title, subtitle }: { state: State; t: T; t
           <p className="qx-subtitle">{t('targetLabel')}: <b>{s.target.hostname}</b>, {os}. {subtitle}</p>
         </div>
         <div className="qx-gauges">
-          <Gauge value={`${String(s.catalog.visible)} / ${String(s.catalog.tools)}`} label={t('callable')} />
-          <Gauge value={s.policy.allow_destructive ? t('enabled') : t('off')} label={t('destructive')} tone={s.policy.allow_destructive ? 'bad' : 'good'} />
+          <Gauge value={`${String(s.policy.destructive_mode === 'ask' ? (s.catalog.free ?? s.catalog.visible) : s.catalog.visible)} / ${String(s.catalog.tools)}`} label={s.policy.destructive_mode === 'ask' ? t('callableAsk') : t('callable')} />
+          <Gauge value={s.policy.destructive_mode === 'ask' ? t('askEach') : s.policy.allow_destructive ? t('enabled') : t('off')} label={t('destructive')} tone={s.policy.destructive_mode === 'ask' ? 'warn' : s.policy.allow_destructive ? 'bad' : 'good'} />
           <Gauge value={String(s.engagements.verified.length)} label={t('engagements')} />
           <Gauge value={s.audit.ok ? t('intact') : t('broken')} label={`${t('chain')}, ${String(s.audit.count)} ${t('entries')}`} tone={s.audit.ok ? 'good' : 'bad'} />
           <Gauge value={netDenied ? t('denied') : t('notOsDenied')} label={t('sandboxNet')} tone={netDenied ? 'good' : 'warn'} />

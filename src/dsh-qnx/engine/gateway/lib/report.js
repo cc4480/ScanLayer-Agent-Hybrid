@@ -23,7 +23,8 @@ function buildReport({ kind, checkResults, auditFile, signer, catalogMeta, extra
         continue;
       }
       findings.push({
-        ...f, check: cr.check,
+        // a verified report re-collects findings from the board: keep the check that originally found each one
+        ...f, check: f.check || cr.check,
         evidence: ev.map((e) => {
           const a = byHash.get(e.receipt);
           return { ...e, seq: a.seq, argv: a.argv, exit: a.exit, stdout_sha256: a.stdout_sha256, ts: a.ts };

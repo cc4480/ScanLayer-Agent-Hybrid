@@ -40,7 +40,7 @@ function sandboxPosture(cfg = {}) {
 /**
  * @returns {Promise<{ok, value?, truncated?, calls, run_id, error?:{kind,message,tool?,call_index?,receipt?}}>}
  */
-function runProgram({ program, gate, audit, seat, catalogSnapshot, manifest, timeoutMs, cfg = {} }) {
+function runProgram({ program, gate, audit, seat, catalogSnapshot, manifest, timeoutMs, cfg = {}, actions = {} }) {
   const run_id = 'run_' + crypto.randomBytes(6).toString('hex');
   const program_sha256 = sha256(program || '');
   if (typeof program !== 'string' || !program.trim()) return Promise.resolve({ invalid: 'program must be a non-empty string' });
@@ -102,6 +102,17 @@ function runProgram({ program, gate, audit, seat, catalogSnapshot, manifest, tim
             return;
           }
           child.send({ type: 'result', id: m.id, json: JSON.stringify(r) });
+        });
+      } else if (m.type === 'action') {
+        queue = queue.then(async () => {
+          if (finished) return;
+          const fn = Object.prototype.hasOwnProperty.call(actions, m.name) ? actions[m.name] : undefined;
+          let reply;
+          if (!fn) reply = { error: `unknown action: ${m.name}` };
+          else {
+            try { reply = { value: await fn(seat) }; } catch (e) { reply = { error: e.message }; }
+          }
+          if (!finished) child.send({ type: 'result', id: m.id, json: JSON.stringify(reply) });
         });
       } else if (m.type === 'done') {
         queue.then(() => {

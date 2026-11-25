@@ -24,11 +24,48 @@ const GUIDE = [
   '  value comes back (40,000 chars max), so filter and summarize inside the program. There is no network, file system,',
   '  require or eval in the program.',
   '',
+  '',
+  'The security audit is available inside qnx_execute as `qnx`: `await qnx.checks()` lists the checks, `await qnx.scan()`',
+  'runs them all and signs a scan report, `await qnx.verify()` has Agent Smith (a separate seat) reproduce every finding,',
+  'and `await qnx.report()` signs the verified report with only the confirmed findings. A full audit is one program:',
+  '`const scan = await qnx.scan(); const verified = await qnx.verify(); return { scan, verified, report: await qnx.report() }`',
+  'with timeout_ms 300000. Report confirmed findings with their receipts; say which claims were refuted or unproven.',
+  '',
   'Scope: the target itself is always in scope. Any other address, host, CIDR or Qnet node (`/net/<node>/...`, `on -n`)',
   'needs an engagement the operator signed. A call outside scope, a destructive tool, or a refused argument aborts the run',
-  'with `scope_denied`. Report that plainly; never try to work around it. Every call and denial is in a hash-chained audit',
-  'log the user can see in the QNX sidebar pages, so cite the receipt when you report a finding.',
+  'with `scope_denied`. Report that plainly; never try to work around it. Destructive tools are off by default; when the',
+  'operator sets them to ask, each such call shows the user an approval prompt and runs only if they allow it. Every call',
+  'and denial is in a hash-chained audit log the user can see in the QNX sidebar pages, so cite the receipt.',
 ].join('\n')
+
+/** The qnx-audit skill: the full audit, step by step, for the model or the user to invoke. */
+export const AUDIT_SKILL = {
+  name: 'qnx-audit',
+  description: 'Run a full security audit of the attached QNX 8.0 target: the native checks, independent verification by Agent Smith, and a signed report of confirmed findings with receipts.',
+  content: [
+    '# QNX security audit',
+    '',
+    'Use the qnx_execute tool. Run the whole audit as one program, with timeout_ms 300000:',
+    '',
+    '```js',
+    'const scan = await qnx.scan()          // all checks, signed scan report',
+    'const verified = await qnx.verify()   // Agent Smith reproduces each finding from its own seat',
+    'const report = await qnx.report()     // signed report with only the confirmed findings',
+    'return { counts: scan.counts, checks: scan.checks, verdicts: verified.claims, confirmed: report.confirmed, signature: report.signature, chain: report.audit }',
+    '```',
+    '',
+    'Then answer the user with:',
+    '1. The target (QNX version, or that it is the stand-in) and whether the audit chain verified.',
+    '2. Each CONFIRMED finding: severity, title, and its receipt number. Lead with high severity.',
+    '3. The claims that were REFUTED or UNPROVEN, and why, in one line each. They are not findings.',
+    '4. Where to see the evidence: the Scan & verify page in the sidebar, which also opens the signed report.',
+    '',
+    'Never claim a finding that is not CONFIRMED. If a check failed to run, say which one and why.',
+  ].join('\n'),
+}
+
+/** Holds the agent whose qnx_execute call is running, so an approval prompt is asked on its behalf. */
+export const running: { agent: unknown } = { agent: undefined }
 
 const SEARCH_PARAMETERS = {
   type: 'object',
@@ -86,12 +123,13 @@ export function registerTools(ctx: Context, engine: () => Engine | undefined): A
     },
     {
       name: 'qnx_execute',
-      description: 'Run a JavaScript program against the QNX target. Its tools.* calls go through the scope gate and are receipted; only the return value comes back.',
+      description: 'Run a JavaScript program against the QNX target. Its tools.* calls go through the scope gate and are receipted; qnx.scan()/verify()/report() run the security audit. Only the return value comes back.',
       parameters: EXECUTE_PARAMETERS,
       output: textOutput,
-      execute: async (args: unknown) => {
+      execute: async (args: unknown, run?: { agent?: unknown }) => {
         const input = (typeof args === 'object' && args !== null ? args : {}) as { program?: unknown; timeout_ms?: unknown }
         if (typeof input.program !== 'string' || input.program.trim() === '') throw new Error('program must be a non-empty string.')
+        running.agent = run?.agent
         const r = await need().execute(AGENT_SEAT, input.program, typeof input.timeout_ms === 'number' ? input.timeout_ms : undefined)
         if (r.invalid !== undefined) throw new Error(r.invalid)
         if (r.ok === true) return text({ value: r.value, truncated: r.truncated, calls: r.calls, receipt: r.receipt })

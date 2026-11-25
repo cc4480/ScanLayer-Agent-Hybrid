@@ -21,7 +21,13 @@ export const ENGINE_DIR = resolve(here, '..', 'engine')
 /** The engine's public face, as `engine/gateway/server.js` returns it. */
 export interface Engine {
   readonly server: Server
-  readonly cfg: { state_dir: string; listen: { host: string; port: number }; catalog: string; runner: Record<string, unknown> }
+  readonly destructiveMode: 'off' | 'ask' | 'on'
+  catalog(): { allowlist(extra?: string[]): string }
+  addEngagement(seat: string, input: { id: string; targets: string[]; hours?: number }): { id: string; targets: string[]; expires_at: string }
+  revokeEngagement(seat: string, id: string): { removed: boolean }
+  reportHtml(kind: 'scan' | 'verified'): string
+  refreshCatalog(seat: string): Promise<{ tools: number; callable: number; hash: string }>
+  readonly cfg: { state_dir: string; listen: { host: string; port: number }; catalog: string; runner: Record<string, unknown>; inventory_path?: string }
   execute(seat: string, program: string, timeoutMs?: number): Promise<ExecuteResult>
   search(query: { query?: string; names?: string[]; limit?: number }): SearchResult
   runChecks(seat: string, only?: string[]): Promise<Record<string, unknown> & { findings: unknown[]; signature: { sig: string; key_id: string } }>
@@ -61,8 +67,14 @@ export interface SearchResult {
 }
 
 /** What the bundle configuration decides about the engine. */
+/** An approver for destructive calls in `ask` mode: says yes or no to one exact call. */
+export type Approver = (request: { seat: string; tool: string; argv: string[]; run_id: string | null }) => Promise<{ approved: boolean; by?: string; reason?: string }>
+
 export interface EngineOptions {
   readonly target: 'standin' | 'qnx'
+  /** Destructive tools: off (default), ask (each call needs the approver's yes), on. */
+  readonly destructive: 'off' | 'ask' | 'on'
+  readonly approve: Approver
   /** Engine config file; defaults to engine/standin/config.json or engine/qnx/config.json by target. */
   readonly config?: string | undefined
   readonly logger: { info(format: string, ...args: unknown[]): void; warn(format: string, ...args: unknown[]): void }
@@ -130,8 +142,14 @@ export async function startEngine(options: EngineOptions): Promise<Running> {
     createGateway(cfg: unknown): Engine
     loadConfig(file: string): Engine['cfg']
   }
-  const cfg = loadConfig(configFile)
+  const cfg = loadConfig(configFile) as Engine['cfg'] & { destructive?: string; approve?: Approver }
+  cfg.destructive = options.destructive
+  cfg.approve = options.approve
   const engine = createGateway(cfg)
+  // The stand-in's runner allowlist follows the live catalog and destructive mode (the runner re-reads it per request).
+  if (options.target === 'standin') {
+    writeFileSync(join(cfg.state_dir, 'runner.allow'), engine.catalog().allowlist(cfg.inventory_path ? [cfg.inventory_path] : []))
+  }
   const { host, port } = cfg.listen
   await new Promise<void>((ok, fail) => {
     engine.server.once('error', fail)

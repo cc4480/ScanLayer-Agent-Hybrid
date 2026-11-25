@@ -159,6 +159,7 @@ export function ScanPage({ t }: { t: T }) {
                 <div className="qx-row">
                   <button type="button" className="qx-button qx-primary" disabled={busy !== undefined} onClick={() => { void runChecks() }}>{busy === 'checks' ? t('runningChecks') : t('runChecks')}</button>
                   {report === undefined ? undefined : <span className="qx-meta">{report.findings.length} {t('findings')}, {t('signedWith')} <span className="qx-mono">{report.signature.key_id}</span>, {report.rejected.length} {t('unbacked')}</span>}
+                  {report === undefined ? undefined : <a className="qx-link" href="/qnx/api/report/scan.html" target="_blank" rel="noreferrer">{t('openScan')}</a>}
                 </div>
                 {report === undefined ? undefined : (
                   <>
@@ -208,7 +209,7 @@ export function ScanPage({ t }: { t: T }) {
                   </table>
                 )}
                 {verified === undefined ? undefined : (
-                  <p className="qx-signed"><b>{t('verifiedDone')}</b> {verified.findings.length} {t('confirmedFindings')}; {verified.board.refuted + verified.board.unproven} {t('leftOut')}. {t('chain')}: {verified.audit.verified ? t('intact') : t('broken')}, {verified.audit.entries} {t('entries')}. <span className="qx-mono">{verified.signature.sig.slice(0, 40)}…</span></p>
+                  <p className="qx-signed"><b>{t('verifiedDone')}</b> {verified.findings.length} {t('confirmedFindings')}; {verified.board.refuted + verified.board.unproven} {t('leftOut')}. {t('chain')}: {verified.audit.verified ? t('intact') : t('broken')}, {verified.audit.entries} {t('entries')}. <span className="qx-mono">{verified.signature.sig.slice(0, 40)}…</span> <a className="qx-link" href="/qnx/api/report/verified.html" target="_blank" rel="noreferrer">{t('openVerified')}</a></p>
                 )}
               </section>
             </div>
@@ -223,6 +224,20 @@ export function ScanPage({ t }: { t: T }) {
 export function ProofPage({ t }: { t: T }) {
   const { data, error, reload } = useQnxState()
   const [out, setOut] = useState<{ ok: boolean; text: string } | undefined>()
+  const [engage, setEngage] = useState({ id: '', targets: '', hours: '24' })
+  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>()
+  const act = async (fn: () => Promise<string>): Promise<void> => {
+    try { setNote({ ok: true, text: await fn() }) } catch (e) { setNote({ ok: false, text: (e as Error).message }) }
+    await reload()
+  }
+  const sign = (event: FormEvent): Promise<void> => {
+    event.preventDefault()
+    return act(async () => {
+      const r = await call<{ id: string; targets: string[]; expires_at: string }>('POST', 'engagements/add', { id: engage.id.trim(), targets: engage.targets.split(/[\s,]+/).filter(Boolean), hours: Number(engage.hours) })
+      setEngage({ id: '', targets: '', hours: '24' })
+      return `${t('engageSigned')}: ${r.id} (${r.targets.join(', ')}) ${t('until')} ${r.expires_at}`
+    })
+  }
   return (
     <Frame state={data} error={error} t={t}>
       {(s: State) => (
@@ -230,18 +245,35 @@ export function ProofPage({ t }: { t: T }) {
           <TargetBar state={s} t={t} title={t('proof')} subtitle={t('integrityHint')} />
           <section className="qx-section">
             <h2 className="qx-h2">{t('scope')}</h2>
-            <p className="qx-hint">{t('scopeHint')} <code className="qx-mono">node engine/gateway/cli.js engage add &lt;state&gt; --id lab --target 10.0.2.0/24</code></p>
+            <p className="qx-hint">{t('scopeHint')}</p>
             <dl className="qx-facts">
               <dt>{t('always')}</dt><dd className="qx-mono">{s.policy.self_scope.join(', ')}</dd>
               <dt>{t('engagements')}</dt>
               <dd>
-                {s.engagements.verified.length === 0 ? t('noEngagements') : s.engagements.verified.map(e => <div key={e.id}><b>{e.id}</b>: <span className="qx-mono">{e.targets.join(', ')}</span> {t('until')} {e.expires_at ?? '—'}</div>)}
+                {s.engagements.verified.length === 0 ? t('noEngagements') : s.engagements.verified.map(e => (
+                  <div key={e.id}><b>{e.id}</b>: <span className="qx-mono">{e.targets.join(', ')}</span> {t('until')} {e.expires_at ?? '—'}{' '}
+                    <button type="button" className="qx-button" style={{ padding: '1px 8px', fontSize: 12 }} onClick={() => { void act(async () => { await call('POST', 'engagements/revoke', { id: e.id }); return `${t('revoked')}: ${e.id}` }) }}>{t('revoke')}</button>
+                  </div>
+                ))}
                 {s.engagements.rejected.length === 0 ? undefined : <div>{t('rejected')}: {s.engagements.rejected.map(r => `${r.id} (${r.reason})`).join(', ')}</div>}
               </dd>
               <dt>{t('sandbox')}</dt><dd>{s.policy.sandbox.process}. Network: {s.policy.sandbox.network}.</dd>
               <dt>{t('listeners')}</dt><dd className="qx-mono">{s.catalog.listeners.map(l => `${l.proto} ${l.addr}:${String(l.port)}`).join(', ') || '—'}</dd>
               <dt>{t('verifierPort')}</dt><dd className="qx-mono">{s.bundle.mcp === undefined ? '—' : `${s.bundle.mcp}/mcp`}</dd>
             </dl>
+            <h3 className="qx-h2" style={{ fontSize: 14, marginTop: 8 }}>{t('engageAdd')}</h3>
+            <p className="qx-hint">{t('engageHint')}</p>
+            <form className="qx-form" onSubmit={e => { void sign(e) }}>
+              <label>{t('engageId')}<input className="qx-input" value={engage.id} placeholder="lab" onChange={e => { setEngage({ ...engage, id: e.target.value }) }} /></label>
+              <label style={{ flex: 1 }}>{t('engageTargets')}<input className="qx-input" value={engage.targets} placeholder="10.0.2.0/24, qnet:ecu2" onChange={e => { setEngage({ ...engage, targets: e.target.value }) }} /></label>
+              <label>{t('engageHours')}<input className="qx-input" style={{ minWidth: 70, width: 80 }} type="number" min="1" max="720" value={engage.hours} onChange={e => { setEngage({ ...engage, hours: e.target.value }) }} /></label>
+              <button className="qx-button qx-primary" type="submit">{t('engageSign')}</button>
+            </form>
+            <div className="qx-row" style={{ marginTop: 6 }}>
+              <button type="button" className="qx-button" onClick={() => { void act(async () => { const r = await call<{ tools: number; callable: number; free: number }>('POST', 'catalog/refresh'); return `${t('refreshed')}: ${String(r.tools)} tools, ${String(r.free)} callable freely` }) }}>{t('refresh')}</button>
+              <span className="qx-meta">{t('refreshHint')}</span>
+            </div>
+            {note === undefined ? undefined : <p className={`qx-note${note.ok ? '' : ' qx-error'}`}>{note.text}</p>}
           </section>
           <section className="qx-section">
             <h2 className="qx-h2">{t('integrity')}</h2>

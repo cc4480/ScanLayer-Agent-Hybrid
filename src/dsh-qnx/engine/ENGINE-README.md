@@ -50,7 +50,7 @@ All from [`docs/receipts/standin-2026-11-25.md`](docs/receipts/standin-2026-11-2
 - **Verification.** All 5 real findings came back CONFIRMED. The planted false claims came back REFUTED (phantom listener, phantom process) or UNPROVEN (forged receipt, out-of-scope reproduction), and none reached the verified report.
 - **Token surface (cl100k_base, a relative proxy):** 349 tokens for `search` + `execute`, against 3,210 tokens to list just the 57 callable utilities as classic MCP tools.
 - **Interop.** The official MCP TypeScript SDK client (`StreamableHTTPClientTransport`) connects, lists, searches and executes.
-- **Tests.** `pnpm test` (from `src/dsh-qnx`) runs 19 tests: unit tests (scope, engagements, catalog, argument rules, audit tamper) and hermetic end-to-end tests (real runner, real gateway, QNX-format fixtures).
+- **Tests.** `pnpm test` (from `src/dsh-qnx`) runs 24 tests: unit tests (scope, engagements, catalog, argument rules, audit tamper) and hermetic end-to-end tests (real runner, real gateway, QNX-format fixtures).
 
 ## Layout
 
@@ -78,7 +78,7 @@ Requirements: Linux, Node ≥ 22, a C compiler, `make`. `tcpdump` is only needed
 
 ```sh
 cd src/dsh-qnx
-pnpm test                             # builds the runner, runs the 19 engine tests
+pnpm test                             # builds the runner, runs the 24 engine tests
 sh engine/scripts/standin-up.sh       # headless: runner on :7781, engine MCP on :8095 (Ctrl-C stops both)
 # for the interface, run the harness with this bundle instead (see ../README.md)
 ```

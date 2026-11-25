@@ -53,8 +53,8 @@ export interface AuditEntry {
 /** The engine state the pages render. */
 export interface State {
   readonly target: { hostname: string; os: string; release: string; machine: string; qnx_version?: string }
-  readonly catalog: { tools: number; visible: number; listeners: Array<{ proto: string; addr: string; port: number }> }
-  readonly policy: { allow_destructive: boolean; sandbox: { process: string; network: string }; self_scope: string[] }
+  readonly catalog: { tools: number; visible: number; free?: number; listeners: Array<{ proto: string; addr: string; port: number }> }
+  readonly policy: { allow_destructive: boolean; destructive_mode?: 'off' | 'ask' | 'on'; sandbox: { process: string; network: string }; self_scope: string[] }
   readonly engagements: { verified: Array<{ id: string; targets: string[]; expires_at: string | null }>; rejected: Array<{ id: string; reason: string }>; error: string | null }
   readonly audit: { ok: boolean; count: number; head: string; bad_line?: number; reason?: string }
   readonly signing_key: { key_id: string }

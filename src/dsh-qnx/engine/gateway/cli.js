@@ -56,16 +56,9 @@ if (cmd === 'init') {
     const id = flag('id') || die('--id required');
     const targets = flag('target', true);
     if (!targets.length) die('at least one --target required (IPv4, exact CIDR, hostname, or qnet:<node>)');
-    for (const t of targets) {
-      const c = t.startsWith('qnet:') ? { kind: 'qnet' } : scope.classify(t);
-      if (!c || c.kind === 'unparseable') die(`not a valid target: ${t}`);
-    }
-    const hours = Number(flag('hours') || 24);
-    const e = { id, targets, operator: flag('operator') || process.env.USER || 'operator', issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + hours * 3600e3).toISOString() };
-    e.sig = scope.signEngagement(e, key);
-    doc.engagements = doc.engagements.filter((x) => x.id !== id).concat([e]);
-    fs.writeFileSync(file, JSON.stringify(doc, null, 2));
-    console.log(`engagement ${id} signed: ${targets.join(', ')} until ${e.expires_at}`);
+    let e;
+    try { e = scope.addEngagement(file, key, { id, targets, hours: Number(flag('hours') || 24), operator: flag('operator') || process.env.USER || 'operator' }); } catch (err) { die(err.message); }
+    console.log(`engagement ${id} signed: ${e.targets.join(', ')} until ${e.expires_at}`);
   } else if (sub === 'list') {
     const v = scope.loadEngagements(file, key);
     for (const e of v.engagements) console.log(`VERIFIED  ${e.id}  ${e.targets.join(', ')}  until ${e.expires_at}`);
@@ -93,7 +86,8 @@ if (cmd === 'init') {
   const { loadConfig } = require('./server');
   const { Catalog } = require('./lib/catalog');
   const cfg = loadConfig(argv[1] || die('usage: allowlist <config.json>'));
-  const c = Catalog.load(cfg.catalog, { allowDestructive: !!cfg.allow_destructive });
+  const mode = ['off', 'ask', 'on'].includes(cfg.destructive) ? cfg.destructive : (cfg.allow_destructive ? 'on' : 'off');
+  const c = Catalog.load(cfg.catalog, { destructiveMode: mode });
   process.stdout.write(c.allowlist([...(cfg.inventory_path ? [cfg.inventory_path] : []), ...flag('extra', true)]));
 } else {
   die('commands: init | engage add|list|revoke | verify-chain | verify-report | allowlist');

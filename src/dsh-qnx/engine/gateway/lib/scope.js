@@ -194,4 +194,40 @@ function check(toolName, args, catalog, engagementsDoc) {
   };
 }
 
-module.exports = { extractTargets, check, loadEngagements, signEngagement, classify, parseCidr, inCidr, selfSet };
+/** Validate one engagement target as the operator typed it: IPv4, exact CIDR, IPv6, hostname, or qnet:<node>. */
+function validTarget(t) {
+  if (typeof t !== 'string' || !t.trim()) return false;
+  if (t.startsWith('qnet:')) return /^qnet:[A-Za-z0-9._-]+$/.test(t);
+  const c = classify(t.trim());
+  return !!c && c.kind !== 'unparseable' && c.value.toLowerCase() === t.trim().toLowerCase().replace(/\.$/, '');
+}
+
+function readDoc(file) { try { const d = JSON.parse(fs.readFileSync(file, 'utf8')); return d && Array.isArray(d.engagements) ? d : { engagements: [] }; } catch { return { engagements: [] }; } }
+
+/** Sign and store an engagement with the operator key (the only way one becomes verified). Replaces one with the same id. */
+function addEngagement(file, key, { id, targets, hours = 24, operator = 'operator' }) {
+  if (!key) throw new Error('no operator key: engagements cannot be signed on this box');
+  if (typeof id !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(id)) throw new Error('id must be 1-64 letters, digits, dot, dash or underscore');
+  if (!Array.isArray(targets) || !targets.length || targets.length > 64) throw new Error('give 1 to 64 targets');
+  const bad = targets.filter((t) => !validTarget(t));
+  if (bad.length) throw new Error(`not a valid target: ${bad.join(', ')} (use an IPv4/IPv6 address, an exact CIDR, a hostname, or qnet:<node>)`);
+  const h = Number(hours);
+  if (!(h > 0 && h <= 24 * 30)) throw new Error('hours must be between 0 and 720');
+  const e = { id, targets: targets.map((t) => t.trim()), operator, issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + h * 3600e3).toISOString() };
+  e.sig = signEngagement(e, key);
+  const doc = readDoc(file);
+  doc.engagements = doc.engagements.filter((x) => x && x.id !== id).concat([e]);
+  fs.writeFileSync(file, JSON.stringify(doc, null, 2));
+  return e;
+}
+
+/** Remove an engagement by id. Returns whether one was removed. */
+function revokeEngagement(file, id) {
+  const doc = readDoc(file);
+  const before = doc.engagements.length;
+  doc.engagements = doc.engagements.filter((x) => x && x.id !== id);
+  fs.writeFileSync(file, JSON.stringify(doc, null, 2));
+  return doc.engagements.length < before;
+}
+
+module.exports = { extractTargets, check, loadEngagements, signEngagement, addEngagement, revokeEngagement, validTarget, classify, parseCidr, inCidr, selfSet };

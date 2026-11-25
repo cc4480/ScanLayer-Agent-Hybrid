@@ -131,6 +131,19 @@ function routes(options: ApiOptions): Record<string, Handler> {
     },
     'POST report/verified': async ({ engine }) => engine.verifiedReport(PANEL_SEAT),
     'GET seal': async ({ engine }) => engine.seal(),
+    'POST engagements/add': async ({ engine, req }) => {
+      const b = await readBody(req, options.maxBodyBytes)
+      const targets = Array.isArray(b.targets) ? b.targets.filter((t): t is string => typeof t === 'string') : []
+      try { return engine.addEngagement(PANEL_SEAT, { id: String(b.id ?? ''), targets, hours: typeof b.hours === 'number' ? b.hours : 24 }) } catch (error) { throw new ApiError(400, (error as Error).message) }
+    },
+    'POST engagements/revoke': async ({ engine, req }) => {
+      const b = await readBody(req, options.maxBodyBytes)
+      if (typeof b.id !== 'string') throw new ApiError(400, 'id is required.')
+      return engine.revokeEngagement(PANEL_SEAT, b.id)
+    },
+    'POST catalog/refresh': async ({ engine }) => {
+      try { return await engine.refreshCatalog(PANEL_SEAT) } catch (error) { throw new ApiError(409, (error as Error).message) }
+    },
   }
 }
 
@@ -167,6 +180,14 @@ export function registerApi(options: ApiOptions): () => void {
       if (verb === 'GET' && path === 'health') { json(res, 200, { running: engine !== undefined, error: options.engineError() ?? null, target: options.target }); return }
       if (engine === undefined) { json(res, 503, { error: options.engineError() ?? 'The QNX engine is starting.' }); return }
       if (verb === 'GET' && path === 'audit/stream') { stream(engine, req, res, Number(url.searchParams.get('after') ?? 0)); return }
+      const report = /^report\/(scan|verified)\.html$/.exec(path)
+      if (verb === 'GET' && report !== null) {
+        let html: string
+        try { html = engine.reportHtml(report[1] as 'scan' | 'verified') } catch { json(res, 404, { error: report[1] === 'scan' ? 'No scan report yet: run the checks.' : 'No verified report yet: sign one on the Scan & verify page.' }); return }
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'" })
+        res.end(html)
+        return
+      }
       const handler = table[`${verb} ${path}`]
       if (handler === undefined) { json(res, 404, { error: `No route ${verb} ${path}.` }); return }
       try {

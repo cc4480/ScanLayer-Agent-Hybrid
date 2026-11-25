@@ -34,7 +34,9 @@ const SYN = {
 class Catalog {
   constructor(doc, opts = {}) {
     this.doc = doc;
-    this.allowDestructive = !!opts.allowDestructive;
+    // off: destructive tools are not callable. ask: callable, but each call needs an approver's yes (see gate.js).
+    // on: callable. `allowDestructive: true` is the older spelling of on.
+    this.destructiveMode = opts.destructiveMode || (opts.allowDestructive ? 'on' : 'off');
     this.meta = doc.meta || {};
     const taken = new Set();
     this.tools = (doc.tools || []).map((t) => {
@@ -58,7 +60,8 @@ class Catalog {
 
   static load(file, opts) { return new Catalog(JSON.parse(fs.readFileSync(file, 'utf8')), opts); }
 
-  visible(t) { return t.cls !== 'destructive' || this.allowDestructive; }
+  get allowDestructive() { return this.destructiveMode !== 'off'; }
+  visible(t) { return t.cls !== 'destructive' || this.destructiveMode !== 'off'; }
   visibleTools() { return this.tools.filter((t) => this.visible(t)); }
 
   search({ query = '', names, limit = 8, include_hidden = false } = {}) {
@@ -93,6 +96,7 @@ class Catalog {
       network: t.network,
       callable: this.visible(t),
       ...(this.visible(t) ? {} : { why_not: 'destructive: off by default on QNX; an operator must enable destructive tools explicitly' }),
+      ...(t.destructive && this.destructiveMode === 'ask' ? { needs_approval: true, note: 'destructive: each call asks the operator first' } : {}),
     }));
     return { matches, catalog_size: this.tools.length, visible_size: this.visibleTools().length };
   }

@@ -15,6 +15,7 @@ const { runProgram, sandboxPosture, LIMITS } = require('./lib/sandbox');
 const scope = require('./lib/scope');
 const { buildReport, saveReport } = require('./lib/report');
 const { Board } = require('./lib/board');
+const { renderReportHtml } = require('./lib/report-html');
 const { sha256 } = require('./lib/canon');
 
 const SERVER_INFO = { name: 'qnx-agent-gateway', version: '0.1.0' };
@@ -55,6 +56,9 @@ function loadConfig(file) {
   c.catalog = r(c.catalog);
   c.manifest = r(c.manifest);
   c.checks_dir = r(c.checks_dir || path.join(__dirname, '..', 'checks'));
+  // inventory_path is a path on the target: resolve a relative one (the stand-in, where the target is this machine),
+  // but keep an absolute one exactly as written (a QNX path such as /system/..., which must not become C:\system\...).
+  if (c.inventory_path && !c.inventory_path.startsWith('/')) c.inventory_path = r(c.inventory_path);
   if (c.runner) { c.runner.token_file = r(c.runner.token_file); c.runner.path = r(c.runner.path); c.runner.allow_file = r(c.runner.allow_file); c.runner.spawn_log = r(c.runner.spawn_log); }
   return c;
 }
@@ -64,7 +68,9 @@ function createGateway(cfg) {
   fs.mkdirSync(cfg.state_dir, { recursive: true });
   const audit = new Audit(S('audit.log'));
   const signer = loadOrCreateKey(cfg.state_dir);
-  let catalog = Catalog.load(cfg.catalog, { allowDestructive: !!cfg.allow_destructive });
+  // Destructive tools: off (default on QNX), ask (each call needs an approver's yes) or on. allow_destructive: true = on.
+  const destructiveMode = ['off', 'ask', 'on'].includes(cfg.destructive) ? cfg.destructive : (cfg.allow_destructive ? 'on' : 'off');
+  let catalog = Catalog.load(cfg.catalog, { destructiveMode });
   const manifest = () => { try { return JSON.parse(fs.readFileSync(cfg.manifest, 'utf8')); } catch { return {}; } };
   const operatorKey = (() => { try { return fs.readFileSync(S('operator.key'), 'utf8').trim(); } catch { return null; } })();
   let engCache = null;
@@ -85,13 +91,42 @@ function createGateway(cfg) {
   if (runnerCfg.token_file) runnerCfg.token = fs.readFileSync(runnerCfg.token_file, 'utf8').trim();
   const runner = new RunnerClient(runnerCfg);
   const protectedPaths = [cfg.state_dir, ...(cfg.protected_paths || [])];
-  const gate = new Gate({ catalog, audit, runner, engagements, protectedPaths });
+  // The approver is supplied by whoever hosts the engine (the harness bundle asks the user); without one, `ask` denies.
+  const gate = new Gate({ catalog, audit, runner, engagements, protectedPaths, destructiveMode, approve: typeof cfg.approve === 'function' ? cfg.approve : undefined });
   const board = new Board(S('board.json'), S('audit.log'));
   const reportsDir = S('reports');
 
-  audit.append({ kind: 'gateway_start', seat: null, catalog_hash: catalog.hash, catalog_tools: catalog.tools.length, visible_tools: catalog.visibleTools().length, allow_destructive: !!cfg.allow_destructive, target: catalog.meta.hostname, os: catalog.meta.os, release: catalog.meta.release, signing_key: signer.keyId });
+  audit.append({ kind: 'gateway_start', seat: null, catalog_hash: catalog.hash, catalog_tools: catalog.tools.length, visible_tools: catalog.visibleTools().length, allow_destructive: destructiveMode !== 'off', destructive_mode: destructiveMode, target: catalog.meta.hostname, os: catalog.meta.os, release: catalog.meta.release, signing_key: signer.keyId });
 
-  const execute = (seat, program, timeoutMs) => runProgram({ program, gate, audit, seat, catalogSnapshot: catalog.snapshot(), manifest: manifest(), timeoutMs, cfg: cfg.sandbox || {} });
+  // Engine actions a program can call as qnx.checks()/scan()/verify()/report(): the audit from chat, receipted like the pages.
+  const actions = {
+    checks: async () => listChecks().map((f) => f.replace(/^\d+-/, '').replace(/\.js$/, '')),
+    scan: async (seat) => scanSummary(await runChecks(seat)),
+    verify: async (seat) => verifyLatest(seat),
+    report: async (seat) => reportSummary(verifiedReport(seat)),
+  };
+  const execute = (seat, program, timeoutMs) => runProgram({ program, gate, audit, seat, catalogSnapshot: catalog.snapshot(), manifest: manifest(), timeoutMs, cfg: cfg.sandbox || {}, actions });
+
+  const short = (h) => (h ? String(h).slice(0, 12) : null);
+  function scanSummary(r) {
+    return {
+      report: 'scan', signature: short(r.signature.sig), counts: r.counts, rejected: r.rejected.length,
+      checks: r.checks.map((c) => ({ check: c.check, ok: c.ok, findings: c.finding_count, ...(c.ok ? {} : { error: c.error && c.error.message }) })),
+      findings: r.findings.map((f) => ({ id: f.id, severity: f.severity, title: f.title, receipt: short(f.evidence[0] && f.evidence[0].receipt), seq: f.evidence[0] && f.evidence[0].seq })),
+    };
+  }
+  function reportSummary(r) {
+    return { report: 'verified', signature: short(r.signature.sig), audit: r.audit, confirmed: r.findings.map((f) => ({ id: f.id, severity: f.severity, title: f.title })), excluded: (r.board && r.board.excluded) || [] };
+  }
+  async function verifyLatest(seat) {
+    let rep;
+    try { rep = JSON.parse(fs.readFileSync(path.join(reportsDir, 'latest-scan.json'), 'utf8')); } catch { throw new Error('no scan yet: run qnx.scan() first'); }
+    const posted = board.post(rep, seat);
+    audit.append({ kind: 'board_post', seat, added: posted.added });
+    await runSmith(seat);
+    const mine = board.read().claims.filter((c) => c.report_sig === rep.signature.sig.slice(0, 32));
+    return { verified_by: 'smith (separate process and token)', claims: mine.map((c) => ({ id: c.finding.id, verdict: c.status, observed: c.verdict && c.verdict.observed })) };
+  }
 
   const listChecks = () => fs.readdirSync(cfg.checks_dir).filter((f) => f.endsWith('.js') && !f.startsWith('_')).sort();
   async function runChecks(seat, only) {
@@ -131,8 +166,8 @@ function createGateway(cfg) {
     const self = scope.selfSet(catalog.doc);
     return {
       seat, server: SERVER_INFO, target: catalog.meta,
-      catalog: { tools: catalog.tools.length, visible: catalog.visibleTools().length, destructive: catalog.tools.filter((t) => t.destructive).length, network: catalog.tools.filter((t) => t.network).length, known: catalog.tools.filter((t) => t.known).length, hash: catalog.hash, processes: (catalog.doc.processes || []).length, resource_managers: (catalog.doc.resource_managers || []).length, listeners: ((catalog.doc.network || {}).listeners || []), interface_ips: ((catalog.doc.network || {}).interface_ips || []) },
-      policy: { allow_destructive: !!cfg.allow_destructive, sandbox: sandboxPosture(cfg.sandbox || {}), self_scope: [...self.hosts, ...self.ips, '127.0.0.0/8', '::1'] },
+      catalog: { tools: catalog.tools.length, visible: catalog.visibleTools().length, free: catalog.tools.filter((t) => !t.destructive).length, destructive: catalog.tools.filter((t) => t.destructive).length, network: catalog.tools.filter((t) => t.network).length, known: catalog.tools.filter((t) => t.known).length, hash: catalog.hash, processes: (catalog.doc.processes || []).length, resource_managers: (catalog.doc.resource_managers || []).length, listeners: ((catalog.doc.network || {}).listeners || []), interface_ips: ((catalog.doc.network || {}).interface_ips || []) },
+      policy: { allow_destructive: destructiveMode !== 'off', destructive_mode: destructiveMode, sandbox: sandboxPosture(cfg.sandbox || {}), self_scope: [...self.hosts, ...self.ips, '127.0.0.0/8', '::1'] },
       engagements: { verified: e.engagements.map((x) => ({ id: x.id, targets: x.targets, expires_at: x.expires_at || null, operator: x.operator || null })), rejected: e.rejected, error: e.error },
       audit: chain, signing_key: { key_id: signer.keyId, public_pem: signer.pubPem },
       seats: Object.keys(seats),
@@ -147,14 +182,47 @@ function createGateway(cfg) {
 
   // Agent Smith runs as its OWN process with its OWN seat token and reaches this
   // engine over the loopback MCP listener, like any outside client.
-  function startSmith(seat, url) {
+  function runSmith(seat, url) {
     const tf = S('seat-smith.token');
-    if (!fs.existsSync(tf)) throw new Error('no smith seat token on this box');
+    if (!fs.existsSync(tf)) return Promise.reject(new Error('no smith seat token on this box'));
     const { execFile } = require('child_process');
     const { host = '127.0.0.1', port = 8095 } = cfg.listen || {};
-    execFile(process.execPath, [path.join(__dirname, '..', 'loop', 'smith.js'), '--url', url || `http://${host}:${port}`, '--token-file', tf], { timeout: 600000, env: {} }, (e, stdout, stderr) => {
-      audit.append({ kind: 'smith_run', seat, ok: !e, lines: stdout.trim().split('\n').length, error: e ? String(stderr || e.message).slice(0, 300) : null });
+    return new Promise((resolve) => {
+      execFile(process.execPath, [path.join(__dirname, '..', 'loop', 'smith.js'), '--url', url || `http://${host}:${port}`, '--token-file', tf], { timeout: 600000, env: {} }, (e, stdout, stderr) => {
+        audit.append({ kind: 'smith_run', seat, ok: !e, lines: stdout.trim().split('\n').length, error: e ? String(stderr || e.message).slice(0, 300) : null });
+        resolve({ ok: !e });
+      });
     });
+  }
+  function startSmith(seat, url) { runSmith(seat, url).catch(() => {}); }
+
+  // Engagements from the operator's pages: signed with the operator key on this box, like `cli.js engage add`.
+  function addEngagement(seat, { id, targets, hours }) {
+    const e = scope.addEngagement(S('engagements.json'), operatorKey, { id, targets, hours, operator: seat });
+    audit.append({ kind: 'engagement_add', seat, id: e.id, targets: e.targets, expires_at: e.expires_at });
+    return { id: e.id, targets: e.targets, expires_at: e.expires_at };
+  }
+  function revokeEngagement(seat, id) {
+    const removed = scope.revokeEngagement(S('engagements.json'), id);
+    audit.append({ kind: 'engagement_revoke', seat, id, removed });
+    return { removed };
+  }
+
+  function reportHtml(kind) {
+    const rep = JSON.parse(fs.readFileSync(path.join(reportsDir, `latest-${kind}.json`), 'utf8'));
+    return renderReportHtml(rep, signer.pubPem);
+  }
+
+  async function refreshCatalog(seat) {
+    if (!cfg.inventory_path) throw new Error('inventory_path is not configured');
+    const r = await runner.run([cfg.inventory_path, '-'], 60000, 8 * 1024 * 1024);
+    if (!r.ok || r.exit !== 0 || r.truncated) throw new Error(r.truncated ? 'inventory output exceeded 8 MiB' : `inventory failed: ${r.detail || r.stderr}`);
+    const doc = JSON.parse(r.stdout);
+    fs.writeFileSync(cfg.catalog, JSON.stringify(doc));
+    catalog = Catalog.load(cfg.catalog, { destructiveMode });
+    gate.catalog = catalog;
+    audit.append({ kind: 'catalog_refresh', seat, catalog_hash: catalog.hash, catalog_tools: catalog.tools.length });
+    return { tools: catalog.tools.length, callable: catalog.visibleTools().length, free: catalog.tools.filter((t) => !t.destructive).length, hash: catalog.hash };
   }
 
   // ---------------- MCP ----------------
@@ -292,15 +360,7 @@ function createGateway(cfg) {
       if (p === '/api/board/reset' && req.method === 'POST') { board.write({ claims: [] }); audit.append({ kind: 'board_reset', seat }); return json(res, 200, { ok: true }); }
       if (p === '/api/report/verified' && req.method === 'POST') return json(res, 200, verifiedReport(seat));
       if (p === '/api/catalog/refresh' && req.method === 'POST') {
-        if (!cfg.inventory_path) return json(res, 400, { error: 'inventory_path not configured' });
-        const r = await runner.run([cfg.inventory_path, '-'], 60000, 8 * 1024 * 1024);
-        if (!r.ok || r.exit !== 0 || r.truncated) return json(res, 502, { error: 'inventory failed', detail: r.truncated ? 'inventory output exceeded 8 MiB' : (r.detail || r.stderr) });
-        const doc = JSON.parse(r.stdout);
-        fs.writeFileSync(cfg.catalog, JSON.stringify(doc));
-        catalog = Catalog.load(cfg.catalog, { allowDestructive: !!cfg.allow_destructive });
-        gate.catalog = catalog;
-        audit.append({ kind: 'catalog_refresh', seat, catalog_hash: catalog.hash, catalog_tools: catalog.tools.length });
-        return json(res, 200, { ok: true, tools: catalog.tools.length, hash: catalog.hash });
+        try { return json(res, 200, await refreshCatalog(seat)); } catch (e) { return json(res, 502, { error: e.message }); }
       }
       return json(res, 404, { error: 'not found' });
     } catch (e) {
@@ -310,7 +370,7 @@ function createGateway(cfg) {
   server.requestTimeout = 0; // execute runs are bounded by the sandbox's own wall clock
   server.headersTimeout = 30000;
 
-  return { server, audit, gate, catalog: () => catalog, execute, runChecks, verifiedReport, board, signer, cfg, state, seal, startSmith, search: (q) => catalog.search(q), engagements, stateDir: cfg.state_dir };
+  return { server, audit, gate, catalog: () => catalog, execute, runChecks, verifiedReport, board, signer, cfg, state, seal, startSmith, runSmith, search: (q) => catalog.search(q), engagements, addEngagement, revokeEngagement, reportHtml, refreshCatalog, destructiveMode, actions, stateDir: cfg.state_dir };
 }
 
 if (require.main === module) {
@@ -321,7 +381,7 @@ if (require.main === module) {
   gw.server.listen(port, host, () => {
     const posture = sandboxPosture(cfg.sandbox || {});
     console.log(`qnx-agent engine: MCP on http://${host}:${port}/mcp`);
-    console.log(`target: ${gw.catalog().meta.os} ${gw.catalog().meta.release} "${gw.catalog().meta.hostname}"  tools: ${gw.catalog().tools.length} (${gw.catalog().visibleTools().length} callable)  destructive: ${cfg.allow_destructive ? 'ENABLED' : 'off'}`);
+    console.log(`target: ${gw.catalog().meta.os} ${gw.catalog().meta.release} "${gw.catalog().meta.hostname}"  tools: ${gw.catalog().tools.length} (${gw.catalog().visibleTools().length} callable)  destructive: ${gw.destructiveMode}`);
     console.log(`sandbox network: ${posture.network}`);
   });
 }

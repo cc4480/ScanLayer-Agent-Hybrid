@@ -13,13 +13,21 @@ Three entries in the left sidebar, each opening its own page in the main column:
 | Entry | Page |
 |:--|:--|
 | QNX target | The target's identity and gate state, the live **gate tape** (every call and denial, hash-linked), a program runner and tool search. These are the same two operations the agent's tools perform. |
-| Scan & verify | Five native checks against the image manifest, each finding linked to its receipt. A claims board where Agent Smith's seat reproduces every finding and returns CONFIRMED, REFUTED or UNPROVEN, and a signed verified report. |
-| Scope & proof | What the agent may reach (the target itself plus operator-signed engagements), the sandbox posture, chain verification and the signed seal. |
+| Scan & verify | Six native checks against the image manifest, each finding linked to its receipt. They include a QNX hardening check for `qconn`, `pdebug`, cleartext login services, Qnet exposure and the security policy. A claims board where Agent Smith's seat reproduces every finding and returns CONFIRMED, REFUTED or UNPROVEN. Signed scan and verified reports open as readable pages. |
+| Scope & proof | What the agent may reach (the target itself plus operator-signed engagements), with a form to sign and revoke engagements. Also the sandbox posture, a catalog refresh, chain verification and the signed seal. |
 
 Two tools for the agent, in Code Mode:
 
 - `qnx_search` finds tools on the target by intent and returns typed stubs.
 - `qnx_execute` runs a short program that calls those stubs. Only its return value comes back.
+
+The audit itself is available inside `qnx_execute`:
+
+- `qnx.scan()` runs the checks and signs a scan report;
+- `qnx.verify()` has Agent Smith reproduce each finding;
+- `qnx.report()` signs the verified report.
+
+So "audit the QNX target" works from chat. The bundle also registers a `qnx-audit` skill that walks the model through it.
 
 Every `tools.*` call a program makes passes the gate in this order: the tool exists on the target, it isn't destructive (off by default), its arguments pass the rules, it touches no protected path, and every target in its argv is in scope. Only then does it reach the runner on the target. A denial spawns nothing and sends no packet. A system-prompt section tells the model all of this.
 
@@ -33,6 +41,7 @@ Set on the bundle's row in the profile's `cordis.patch.yml`:
 |:--|:--|:--|
 | `target` | `standin` | `standin` builds and starts a Linux stand-in target on this machine (Linux only). `qnx` attaches to the QNX 8.0 QEMU guest's runner, forwarded to `127.0.0.1:7781` |
 | `engineConfig` | `''` | Engine config file; empty means `engine/standin/config.json` or `engine/qnx/config.json` by target |
+| `destructive` | `off` | Destructive tools (`slay`, `kill`, `shutdown`, drivers, anything unclassified). `off`: not callable. `ask`: each call the agent makes shows you the harness approval prompt and runs only if you allow it; a program you run from the QNX page counts as your approval. `on`: callable. Every approval is recorded in the audit chain |
 | `tools` | `true` | Register `qnx_search` and `qnx_execute` |
 | `guide` | `true` | Add the QNX section to the system prompt |
 | `maxBodyBytes` | `262144` | Largest accepted panel API request body |
@@ -64,8 +73,8 @@ sh ../dsh-qnx/engine/scripts/plant-standin-faults.sh   # give the checks somethi
 
 The pages read and act through `/qnx/api/*`:
 
-- reads: `state`, `audit`, `audit/stream` (NDJSON), `search`, `board`, `seal`, `health`
-- actions: `execute`, `checks`, `board/post`, `board/plant`, `board/reset`, `smith`, `report/verified`
+- reads: `state`, `audit`, `audit/stream` (NDJSON), `search`, `board`, `seal`, `health`, `report/scan.html`, `report/verified.html`
+- actions: `execute`, `checks`, `board/post`, `board/plant`, `board/reset`, `smith`, `report/verified`, `engagements/add`, `engagements/revoke`, `catalog/refresh`
 
 The route is owner-only (`auth: 'required'`) and refuses a request whose `Host` or `Origin` does not name this page. The operation set is closed, with no general command route. `execute` goes through the same gate and limits as the agent's tool.
 
@@ -89,9 +98,9 @@ test/bundle.test.mjs  applies the built Host half and calls the registered tools
 ## Tests
 
 ```sh
-pnpm run check                     # everything below: typecheck, build, 19 engine tests, 3 bundle tests
-pnpm test                          # 19 engine tests: unit + hermetic end-to-end + fake-QNX format fixtures
-pnpm run test:bundle               # build, then 3 bundle tests: registration, search, execute through the gate
+pnpm run check                     # everything below: typecheck, build, 24 engine tests, 6 bundle tests
+pnpm test                          # 24 engine tests: unit + hermetic end-to-end + fake-QNX format fixtures
+pnpm run test:bundle               # build, then 6 bundle tests: registration, tools, approvals, panel routes, the audit
 pnpm run prove                     # done-test receipts (stand-in) -> engine/docs/receipts/
 ```
 

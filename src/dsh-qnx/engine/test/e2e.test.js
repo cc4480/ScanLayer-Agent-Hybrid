@@ -237,3 +237,72 @@ test('runner output cap: an operator job may raise it (full inventory), an agent
   const r = await client().execute(`const x = await tools.cat([${JSON.stringify(big)}]); return { len: x.stdout.length, truncated: x.truncated }`);
   assert.deepEqual(r.value, { len: 40000, truncated: true }, 'agent calls keep the 40,000-character cap');
 });
+
+test('the audit from a program: qnx.checks(), qnx.scan(), qnx.verify(), qnx.report()', async () => {
+  const qconn = path.join(dir, 'qconn');
+  fs.copyFileSync('/bin/sleep', qconn); fs.chmodSync(qconn, 0o755);
+  const p = spawn(qconn, ['60'], { stdio: 'ignore' });
+  try {
+    await new Promise((r) => setTimeout(r, 300));
+    const r = await client().execute(`
+      const names = await qnx.checks();
+      const scan = await qnx.scan();
+      const verify = await qnx.verify();
+      const report = await qnx.report();
+      return { names, scanFindings: scan.findings.map((f) => f.id), signed: typeof scan.signature, verdicts: verify.claims.map((c) => c.id + '=' + c.verdict), confirmed: report.confirmed.map((f) => f.id), chain: report.audit.verified };`, 300000);
+    assert.equal(r.ok, true, JSON.stringify(r.error));
+    assert.ok(r.value.names.includes('qnx-hardening'));
+    assert.ok(r.value.scanFindings.includes('qnx-qconn'), 'the qnx-hardening check finds the running qconn');
+    assert.equal(r.value.signed, 'string');
+    assert.ok(r.value.verdicts.includes('qnx-qconn=CONFIRMED'), 'Agent Smith reproduces it from its own seat');
+    assert.ok(r.value.confirmed.includes('qnx-qconn'));
+    assert.equal(r.value.chain, true);
+    assert.match(gw.reportHtml('verified'), /qconn, the QNX target agent, is running/);
+    assert.doesNotMatch(gw.reportHtml('verified'), /<script/);
+  } finally { p.kill(); }
+});
+
+test('destructive tools in ask mode: refused without approval, run once approved, approval recorded', async () => {
+  const kill = gw.catalog().byName.get('kill');
+  fs.appendFileSync(path.join(dir, 'state', 'runner.allow'), kill.path + '\n');
+  const prev = { mode: gw.gate.destructiveMode, cmode: gw.catalog().destructiveMode, approve: gw.gate.approve };
+  gw.gate.destructiveMode = 'ask'; gw.catalog().destructiveMode = 'ask';
+  try {
+    const asked = [];
+    gw.gate.approve = async (req) => { asked.push(req.tool); return { approved: false, reason: 'the user said no' }; };
+    const before = spawned().length;
+    const no = await client().execute('return await tools.kill(["-0", "1"])');
+    assert.equal(no.error.code, 'not_approved');
+    assert.match(no.error.message, /the user said no/);
+    assert.deepEqual(asked, ['kill']);
+    assert.equal(spawned().length, before, 'a refused destructive call spawns nothing');
+    gw.gate.approve = async () => ({ approved: true, by: 'test-operator' });
+    const yes = await client().execute('const r = await tools.kill(["-0", "1"]); return r.receipt');
+    assert.equal(yes.ok, true, JSON.stringify(yes.error));
+    const line = fs.readFileSync(path.join(dir, 'state', 'audit.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((e) => e.hash === yes.value);
+    assert.equal(line.approved_by, 'test-operator');
+    gw.gate.approve = undefined;
+    const none = await client().execute('return await tools.kill(["-0", "1"])');
+    assert.match(none.error.message, /no approver is connected/, 'ask mode without an approver fails closed');
+  } finally { gw.gate.destructiveMode = prev.mode; gw.catalog().destructiveMode = prev.cmode; gw.gate.approve = prev.approve; }
+});
+
+test('engagements from the engine: signed, validated, revocable, audited', async () => {
+  assert.throws(() => gw.addEngagement('operator', { id: 'bad', targets: ['not a host!'] }), /not a valid target/);
+  assert.throws(() => gw.addEngagement('operator', { id: 'x y', targets: ['10.0.0.1'] }), /id must be/);
+  const e = gw.addEngagement('operator', { id: 'ui-lab', targets: ['192.0.2.0/24', 'qnet:ecu2'], hours: 1 });
+  assert.deepEqual(e.targets, ['192.0.2.0/24', 'qnet:ecu2']);
+  assert.ok(gw.engagements().engagements.some((x) => x.id === 'ui-lab'), 'it verifies with the operator key');
+  const ok = await client().execute('const r = await tools.ping(["-c", "1", "-W", "1", "192.0.2.9"]); return r.exit !== undefined', 20000);
+  assert.equal(ok.ok, true, JSON.stringify(ok.error));
+  assert.deepEqual(gw.revokeEngagement('operator', 'ui-lab'), { removed: true });
+  const denied = await client().execute('return await tools.ping(["-c", "1", "192.0.2.9"])');
+  assert.equal(denied.error.code, 'out_of_scope');
+});
+
+test('catalog refresh pulls the inventory through the runner', async () => {
+  fs.appendFileSync(path.join(dir, 'state', 'runner.allow'), path.join(ROOT, 'node-runtime', 'inventory-qnx.sh') + '\n');
+  gw.cfg.inventory_path = path.join(ROOT, 'node-runtime', 'inventory-qnx.sh');
+  const r = await gw.refreshCatalog('operator');
+  assert.ok(r.tools > 100 && r.callable > 10 && /^[0-9a-f]{64}$/.test(r.hash));
+});

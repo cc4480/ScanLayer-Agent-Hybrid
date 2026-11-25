@@ -26,8 +26,16 @@ function bridge(name, argsJson) {
     process.send({ type: 'call', id, tool: String(name), args: String(argsJson) });
   });
 }
+// Engine actions (scan, verify, report, list checks): not target commands, answered by the gateway itself.
+function actionBridge(name) {
+  return new Promise((resolve) => {
+    const id = nextId++;
+    pending.set(id, resolve);
+    process.send({ type: 'action', id, name: String(name) });
+  });
+}
 
-const BOOTSTRAP = String.raw`(function (bridge, catalogJson, manifestJson, seed) {
+const BOOTSTRAP = String.raw`(function (bridge, actionBridge, catalogJson, manifestJson, seed) {
   'use strict';
   const freezeDeep = (o) => { if (o && typeof o === 'object') { Object.values(o).forEach(freezeDeep); Object.freeze(o); } return o; };
   const callTool = (name, args, opts) => new Promise((resolve, reject) => {
@@ -88,6 +96,20 @@ const BOOTSTRAP = String.raw`(function (bridge, catalogJson, manifestJson, seed)
   let ticks = 0;
   const elapsed = () => ++ticks; // monotonic counter, not a clock
 
+  // The audit, as engine actions: the same receipted checks, verification and signed report the QNX pages run.
+  const action = (name) => new Promise((resolve, reject) => {
+    actionBridge(name).then((json) => {
+      const r = JSON.parse(json);
+      if (r.error) { const e = new Error(r.error); e.kind = 'action_error'; reject(e); } else resolve(freezeDeep(r.value));
+    });
+  });
+  const qnx = Object.freeze({
+    checks: () => action('checks'),
+    scan: () => action('scan'),
+    verify: () => action('verify'),
+    report: () => action('report'),
+  });
+  globalThis.qnx = qnx;
   globalThis.tools = tools;
   globalThis.catalog = freezeDeep(JSON.parse(catalogJson));
   globalThis.manifest = freezeDeep(JSON.parse(manifestJson));
@@ -108,7 +130,7 @@ process.on('message', async (m) => {
     name: 'qnx-agent-program',
   });
   try {
-    vm.runInContext(BOOTSTRAP, context, { timeout: 1000 })(bridge, m.catalog, m.manifest, m.seed || 1);
+    vm.runInContext(BOOTSTRAP, context, { timeout: 1000 })(bridge, actionBridge, m.catalog, m.manifest, m.seed || 1);
   } catch (e) {
     process.send({ type: 'done', ok: false, kind: 'runtime', message: 'bootstrap failed: ' + e.message });
     return;
