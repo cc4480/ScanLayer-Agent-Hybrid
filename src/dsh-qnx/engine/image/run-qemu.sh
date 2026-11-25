@@ -1,19 +1,31 @@
 #!/bin/sh
-# [SDP] Boot the QNX 8.0 x86_64 image in QEMU with user networking and the
-# runner port forwarded to the host: host 127.0.0.1:7781 -> guest :7781.
-# The serial console is logged to docs/phase0/ as the boot receipt.
+# [SDP] Boot the QNX 8.0 x86_64 image in QEMU.
 #
-# VERIFY at Phase 0: mkqnximage's own `--run` may already wrap QEMU; if so,
-# pass the hostfwd through it instead (keep the same port mapping).
+# Same devices as QNX's own sample command (QNX Everywhere "Additional QEMU specifications"):
+#   -drive output/disk-qemu.vmdk,if=ide  -kernel output/ifs.bin  virtio-net-pci  virtio-rng-pci  -serial mon:stdio
+# with one change: QNX's sample uses a sudo bridge (virbr0); this uses QEMU user-mode networking instead, so no
+# root is needed and the host reaches the guest through forwarded ports:
+#   127.0.0.1:7781 -> guest :7781   the qnx-runner (the harness's dsh-qnx bundle connects here)
+#   127.0.0.1:2222 -> guest :22     ssh root (phase0.sh survey; key from --ssh-ident)
+# KVM is used when /dev/kvm is usable; otherwise QEMU emulates (slower, still works).
+# The serial console is logged to docs/phase0/ as the boot receipt. Stop with Ctrl+A then x.
+#   DRY_RUN=1 sh image/run-qemu.sh   prints the command without starting QEMU
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${OUT:-$HERE/out}
+cd "$OUT"
+[ -f output/disk-qemu.vmdk ] && [ -f output/ifs.bin ] || { echo "no output/disk-qemu.vmdk + output/ifs.bin in $OUT — run image/build-image.sh first"; [ "${DRY_RUN:-}" = 1 ] || exit 1; }
+ACCEL=""
+if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then ACCEL="-enable-kvm -cpu host"; else echo "note: /dev/kvm not usable, QEMU will emulate (slower)" >&2; fi
 LOG="$HERE/../docs/phase0/qemu-serial-$(date -u +%Y%m%dT%H%M%SZ).log"
 mkdir -p "$(dirname "$LOG")"
-IMG=${IMG:-$(ls "$OUT"/output/disk-qemu.vmdk "$OUT"/output/*.img 2>/dev/null | head -1)}
-[ -n "$IMG" ] || { echo "no image under $OUT/output — build first (VERIFY output name)"; exit 1; }
-exec qemu-system-x86_64 -m 1G -smp 2 -nographic \
-  -drive file="$IMG",if=virtio \
-  -netdev user,id=n0,hostfwd=tcp:127.0.0.1:7781-:7781,hostfwd=tcp:127.0.0.1:2222-:22 \
-  -device virtio-net-pci,netdev=n0 \
-  -serial mon:stdio 2>&1 | tee "$LOG"
+set -- qemu-system-x86_64 $ACCEL -smp ${QEMU_SMP:-4} -m ${QEMU_MEM:-4G} \
+  -drive file=output/disk-qemu.vmdk,if=ide,id=drv0 \
+  -kernel output/ifs.bin \
+  -netdev user,id=net0,hostfwd=tcp:127.0.0.1:7781-:7781,hostfwd=tcp:127.0.0.1:2222-:22 \
+  -device virtio-net-pci,netdev=net0,mac=52:54:00:91:01:ea \
+  -object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
+  -pidfile output/qemu.pid -nographic -vga none -serial mon:stdio
+if [ "${DRY_RUN:-}" = 1 ]; then echo "$@"; exit 0; fi
+command -v qemu-system-x86_64 >/dev/null || { echo "qemu-system-x86_64 not installed (Ubuntu: sudo apt install qemu-system-x86)"; exit 1; }
+"$@" 2>&1 | tee "$LOG"

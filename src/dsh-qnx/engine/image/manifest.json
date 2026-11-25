@@ -1,6 +1,6 @@
 {
   "schema": "qnx-agent.manifest.v1",
-  "_comment": "DRAFT for the stock QNX 8.0 QEMU x86_64 image. Written before the SDP is installed: at Phase 0 every entry is checked against the real buildfile and the booted target, then pinned (cksum) from the clean image. Until then this file is a hypothesis, not a baseline.",
+  "_comment": "DRAFT for the stock QNX 8.0 QEMU x86_64 image, written before the SDP is installed. Phase 0 replaces it: scripts/phase0.sh writes qnx/manifest.json from the booted clean image (baseline-from-catalog.js) and the engine uses that one.",
   "os_release": "8.0.0",
   "services": [
     { "proto": "tcp", "port": 7781, "name": "qnx-runner", "required": true },
@@ -16,10 +16,10 @@
     { "name": "procnto-smp-instr", "path": "/proc/boot/procnto-smp-instr" },
     { "name": "libc", "path": "/proc/boot/libc.so.6" },
     { "name": "io-sock", "path": "/proc/boot/io-sock" },
-    { "name": "qnx-runner", "path": "/opt/qnx-agent/bin/qnx-runner" }
+    { "name": "qnx-runner", "path": "/system/qnx-agent/bin/qnx-runner" }
   ],
   "boot_image_allow": ["ldqnx-64.so.2", "*.so*", "startup-*", ".script", "*.cfg", "*.conf"],
   "network": { "interfaces": ["vtnet0", "lo0"], "forwarding": false, "default_route": true },
-  "writable_allow": ["/tmp", "/tmp/*", "/dev/shmem", "/dev/shmem/*", "/var/run", "/var/log/*"],
+  "writable_allow": ["/tmp", "/tmp/*", "/data/*", "/dev/shmem", "/dev/shmem/*", "/var/run", "/var/log/*"],
   "dev_world_writable_allow": ["/dev/null", "/dev/zero", "/dev/tty", "/dev/random", "/dev/urandom", "/dev/ptmx", "/dev/ptyp*", "/dev/ttyp*", "/dev/shmem", "/dev/socket", "/dev/name", "/dev/mqueue", "/dev/console"]
 }

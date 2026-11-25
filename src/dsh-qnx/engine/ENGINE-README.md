@@ -96,15 +96,33 @@ Connect any MCP client to `http://127.0.0.1:8095/mcp` with `Authorization: Beare
 
 ## Run it on QNX 8.0 [SDP — Phase 0]
 
+Needs an **Ubuntu host**: QNX documents QEMU images for Ubuntu. On Windows, use WSL2 Ubuntu or a Linux machine. You also need the SDP 8.0 (QNX Everywhere license) and `qemu-system-x86`.
+
 ```sh
 source ~/qnx800/qnxsdp-env.sh
-sh scripts/phase0.sh           # records SDP + qcc -V, builds the image (runner via qcc -Vgcc_ntox86_64), surveys the target
-sh image/run-qemu.sh           # QEMU x86_64, user networking, host :7781 -> guest :7781, serial log -> docs/phase0/
-node gateway/server.js qnx/config.json
-node scripts/prove.js qnx/config.json docs/receipts    # same proof, now on QNX
+sh engine/scripts/phase0.sh
 ```
 
-`image/build-image.sh` and `image/run-qemu.sh` were written before the SDP was installed. Steps marked **VERIFY** are checked against the real SDP at Phase 0. This repository ships source and build instructions only, **no QNX image or SDP files**.
+One script does the whole of Phase 0, and every receipt goes to `docs/phase0/`:
+
+1. Records the SDP and `qcc -V`.
+2. Builds the image with `mkqnximage`. The runner is cross-compiled with `qcc -Vgcc_ntox86_64`, and the agent's files go onto `/system` through `local/snippets/system_files.custom`. The runner starts at boot through `post_start.custom`.
+3. Boots the image in QEMU with user-mode networking. Host `127.0.0.1:7781` reaches the runner, and `127.0.0.1:2222` reaches root SSH (key installed through `--ssh-ident`).
+4. Runs a cross-compiled hello-world on the target.
+5. Surveys the runtime.
+6. Pulls the catalog through the runner, and installs the allowlist built from it.
+7. Writes `qnx/manifest.json` from the clean image and `qnx/config.json` for the engine.
+
+After that, boot the harness with `dsh-qnx` set to `target: qnx`, or run `node scripts/prove.js qnx/config.json docs/receipts`.
+
+Written from the QNX 8.0 `mkqnximage` and QNX Everywhere QEMU documentation, before the SDP was installed. Two details are marked **VERIFY** in `image/build-image.sh` to confirm at the first build:
+
+- whether `system_files.custom` target paths take a leading slash;
+- whether `--ssh-ident` wants the `.pub` file.
+
+A wrong line fails the build loudly, and the build log names it. The QEMU flags and the user-mode port forwards are checked against QEMU 8.2: the forwards open on the host without root.
+
+This repository ships source and build instructions only, **no QNX image or SDP files**.
 
 ## Origins
 

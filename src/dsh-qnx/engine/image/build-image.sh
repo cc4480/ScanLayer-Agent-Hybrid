@@ -1,47 +1,60 @@
 #!/bin/sh
 # [SDP] Build the QNX 8.0 x86_64 QEMU image with the agent's on-target pieces.
-# NOT YET RUN: written before the SDP is installed. Every step marked VERIFY is
-# checked against the real SDP at Phase 0 and corrected here, with receipts in
-# docs/phase0/.
+#
+# Follows the QNX 8.0 mkqnximage reference:
+#   https://www.qnx.com/developers/docs/8.0/com.qnx.doc.neutrino.utilities/topic/m/mkqnximage.html
+# - an image directory holds `local/` (options, snippets) and `output/` (the image);
+# - our files go in through local/snippets/system_files.custom (mkqnx6fsimg buildfile lines,
+#   `[attributes] target_path=host_path`) onto the read-only /system partition;
+# - the runner starts at boot from local/snippets/post_start.custom (ksh, included in post_startup.sh);
+# - --ssh-ident lets root log in over ssh without a password (used by phase0.sh for the survey).
+# Host: QNX lists QEMU images for Ubuntu hosts (on Windows, use WSL2 Ubuntu or a Linux machine).
+# Still to confirm at the first real build (marked VERIFY): whether system_files target paths take a leading
+# slash, and whether --ssh-ident wants the .pub file. A wrong line fails the build loudly; mkifs/mkqnx6fsimg
+# line numbers refer to files in output/build (per the reference's troubleshooting section).
 #
 #   source ~/qnx800/qnxsdp-env.sh
 #   sh image/build-image.sh            # builds into image/out/
-#   sh image/run-qemu.sh               # boots it, forwards the runner port
+#   sh image/run-qemu.sh               # boots it, forwards the runner and ssh ports
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 OUT=${OUT:-$HERE/out}
+STATE=${STATE:-$ROOT/qnx/state}
 
 : "${QNX_TARGET:?source qnxsdp-env.sh first (QNX_TARGET unset)}"
 command -v qcc >/dev/null || { echo "qcc not on PATH: source qnxsdp-env.sh"; exit 1; }
-command -v mkqnximage >/dev/null || { echo "mkqnximage not found (SDP 8.0 ships it under host tools) — VERIFY path"; exit 1; }
+command -v mkqnximage >/dev/null || { echo "mkqnximage not on PATH: source qnxsdp-env.sh"; exit 1; }
+for f in runner.token runner.allow qnx-ssh.pub; do
+  [ -f "$STATE/$f" ] || { echo "missing $STATE/$f — run scripts/phase0.sh (it creates the state first)"; exit 1; }
+done
 
-mkdir -p "$OUT/docs"
+mkdir -p "$OUT/local/snippets" "$OUT/docs"
 qcc -V > "$OUT/docs/qcc-V.txt" 2>&1 || true
 
 # 1. Cross-compile the runner for the target.
 make -C "$ROOT/node-runtime" CC="qcc -Vgcc_ntox86_64" CFLAGS="-O2 -std=c99 -Wall -Wextra" OUT=qnx-runner.x86_64
 file "$ROOT/node-runtime/qnx-runner.x86_64" > "$OUT/docs/runner-file.txt" 2>&1 || true
 
-# 2. Stage the agent's on-target files.
-STAGE="$OUT/stage/opt/qnx-agent"
-mkdir -p "$STAGE/bin" "$STAGE/etc"
-cp "$ROOT/node-runtime/qnx-runner.x86_64" "$STAGE/bin/qnx-runner"
-cp "$ROOT/node-runtime/inventory-qnx.sh" "$STAGE/bin/qnx-inventory"
-chmod 755 "$STAGE/bin/"*
-cp "$HERE/qnx-agent-start.sh" "$STAGE/bin/qnx-agent-start"
-chmod 755 "$STAGE/bin/qnx-agent-start"
-# runner.token and runner.allow are generated on the HOST by the gateway's
-# `cli.js init` / `cli.js allowlist` and copied in at build time — never typed.
-[ -f "$ROOT/qnx/state/runner.token" ] && cp "$ROOT/qnx/state/runner.token" "$STAGE/etc/runner.token" && chmod 600 "$STAGE/etc/runner.token"
-[ -f "$ROOT/qnx/state/runner.allow" ] && cp "$ROOT/qnx/state/runner.allow" "$STAGE/etc/runner.allow"
+# 2. Files onto /system (read-only partition): runner, inventory, start script, token, allowlist.
+#    VERIFY: target paths are relative to the partition root (/system); if the build rejects them, add a leading slash.
+cat > "$OUT/local/snippets/system_files.custom" <<EOF
+[perms=0755 uid=0 gid=0] qnx-agent/bin/qnx-runner=$ROOT/node-runtime/qnx-runner.x86_64
+[perms=0755 uid=0 gid=0] qnx-agent/bin/qnx-inventory=$ROOT/node-runtime/inventory-qnx.sh
+[perms=0755 uid=0 gid=0] qnx-agent/bin/qnx-agent-start=$HERE/qnx-agent-start.sh
+[perms=0600 uid=0 gid=0] qnx-agent/etc/runner.token=$STATE/runner.token
+[perms=0644 uid=0 gid=0] qnx-agent/etc/runner.allow=$STATE/runner.allow
+EOF
 
-# 3. Build the stock QEMU image with mkqnximage, adding the staged tree.
-#    VERIFY: mkqnximage option names for adding files and a startup hook in
-#    SDP 8.0 (expected: --type=qemu --arch=x86_64, a local snippets/extra-dirs
-#    mechanism for data files and post_start commands). Adjust here.
+# 3. Start the runner after the system is up.
+cat > "$OUT/local/snippets/post_start.custom" <<'EOF'
+# qnx-agent: on-target runner (argv only; token + allowlist; spawn log under /data)
+/system/qnx-agent/bin/qnx-agent-start
+EOF
+
+# 4. Build. Options persist in local/options, so later runs need only what changes.
 cd "$OUT"
-mkqnximage --type=qemu --arch=x86_64 --hostname=qnxagent --ssh-ident=none --build \
+mkqnximage --type=qemu --arch=x86_64 --hostname=qnxagent --ssh-ident="$STATE/qnx-ssh.pub" --build \
   ${MKQNXIMAGE_EXTRA:-} 2>&1 | tee "$OUT/docs/mkqnximage.log"
-
-echo "built in $OUT — next: sh image/run-qemu.sh"
+ls -la "$OUT/output" | tee -a "$OUT/docs/mkqnximage.log"
+echo "built in $OUT/output — next: sh image/run-qemu.sh"

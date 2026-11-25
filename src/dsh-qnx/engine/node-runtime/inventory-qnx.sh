@@ -13,7 +13,7 @@
 # Same JSON shape as the Parrot catalog where fields map.
 
 OUT=${1:-catalog.json}
-PATH=${QNX_INV_BIN:+$QNX_INV_BIN:}/proc/boot:/bin:/usr/bin:/sbin:/usr/sbin:$PATH  # QNX_INV_BIN: test fixtures only
+PATH=${QNX_INV_BIN:+$QNX_INV_BIN:}/proc/boot:/system/bin:/system/xbin:/bin:/usr/bin:/sbin:/usr/sbin:$PATH  # QNX_INV_BIN: test fixtures only
 export PATH LC_ALL=C
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -40,7 +40,7 @@ TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # ---------------- tools ----------------
 : > "$TMP/tools"
-for d in /proc/boot /bin /usr/bin /sbin /usr/sbin $(printf '%s' "$PATH" | tr ':' ' '); do
+for d in /proc/boot /system/bin /system/xbin /bin /usr/bin /sbin /usr/sbin $(printf '%s' "$PATH" | tr ':' ' '); do
   [ -d "$d" ] || continue
   for f in "$d"/*; do
     [ -f "$f" ] && [ -x "$f" ] || continue

@@ -98,5 +98,5 @@ pnpm run prove                     # done-test receipts (stand-in) -> engine/doc
 ## Limitations
 
 - The stand-in target needs Linux (`make`, `sh`, and `unshare` for the sandbox's network namespace). On Windows, use `target: qnx`.
-- `engine/scripts/phase0.sh` and the image scripts are POSIX `sh`. On a Windows host, run them from WSL or Git Bash.
+- Phase 0 (`engine/scripts/phase0.sh`) needs an Ubuntu host, because QNX documents QEMU images for Ubuntu. On Windows, use WSL2 Ubuntu or a Linux machine. Once it has run, the harness on the same machine attaches with `target: qnx`. On Windows, run Phase 0 in WSL2 against the Windows checkout (`/mnt/c/...`), so it writes `engine/qnx/config.json` where the Windows harness reads it. WSL2 forwards `localhost`, so the harness reaches the runner on `127.0.0.1:7781`.
 - The agent tools need the harness's model (a DeepSeek key or sign-in). The pages work without one.

@@ -23,7 +23,16 @@ const st = cfg.state_dir;
 const base = `http://${cfg.listen.host}:${cfg.listen.port}`;
 const tok = (s) => fs.readFileSync(path.join(st, `seat-${s}.token`), 'utf8').trim();
 const cli = (...a) => execFileSync(process.execPath, [path.join(__dirname, '..', 'gateway', 'cli.js'), ...a], { encoding: 'utf8' }).trim();
-const spawnCount = () => { try { return fs.readFileSync(cfg.runner.spawn_log || path.join(st, 'spawn.log'), 'utf8').split('\n').filter(Boolean).length; } catch { return 0; } };
+// The runner's spawn log is the target-side record of what ran: a local file on the stand-in, on the guest for QNX.
+const ssh = cfg.target_ssh;
+const spawnCount = () => {
+  if (ssh) {
+    const r = spawnSync('ssh', ['-i', path.resolve(path.dirname(path.resolve(cfgFile)), ssh.key), '-p', String(ssh.port), '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+      `${ssh.user}@${ssh.host}`, `cat ${ssh.spawn_log} 2>/dev/null | wc -l`], { encoding: 'utf8' });
+    return Number(String(r.stdout).trim()) || 0;
+  }
+  try { return fs.readFileSync(cfg.runner.spawn_log || path.join(st, 'spawn.log'), 'utf8').split('\n').filter(Boolean).length; } catch { return 0; }
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const md = [];
 const out = (s = '') => { md.push(s); console.log(s); };

@@ -4,7 +4,7 @@
 // resource managers ARE pathnames, so a world-writable /dev entry is an open
 // door to a driver.
 const roots = manifest.writable_scan_roots || (isQNX
-  ? ['/proc/boot', '/bin', '/sbin', '/usr', '/etc', '/opt', '/var', '/tmp', '/data', '/home']
+  ? ['/proc/boot', '/system', '/data', '/bin', '/sbin', '/usr', '/etc', '/var', '/tmp']
   : ['/bin', '/sbin', '/usr', '/etc', '/opt', '/var', '/tmp', '/home', '/root']);
 const allow = manifest.writable_allow || ['/tmp', '/var/tmp', '/dev/shm', '/var/lock', '/run/lock'];
 const findings = [];
@@ -14,7 +14,7 @@ const ww = await tools.find(wwArgs, { timeout_ms: 60000 });
 const stickyArgs = [...roots, '-xdev', '-type', 'd', '-perm', '-1002', '-print'];
 const sticky = await tools.find(stickyArgs, { timeout_ms: 60000 });
 const stickySet = new Set(parse.lines(sticky.stdout));
-const execDirs = isQNX ? /^\/(proc\/boot|bin|sbin|usr\/bin|usr\/sbin|usr\/lib|lib|etc)(\/|$)/ : /^\/(bin|sbin|usr\/bin|usr\/sbin|usr\/lib|lib|lib64|etc)(\/|$)/;
+const execDirs = isQNX ? /^\/(proc\/boot|system|bin|sbin|usr\/bin|usr\/sbin|usr\/lib|lib|etc)(\/|$)/ : /^\/(bin|sbin|usr\/bin|usr\/sbin|usr\/lib|lib|lib64|etc)(\/|$)/;
 
 for (const p of parse.lines(ww.stdout)) {
   if (matchesAny(p, allow)) continue;

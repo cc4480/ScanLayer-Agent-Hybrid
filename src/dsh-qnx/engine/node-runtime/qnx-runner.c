@@ -49,7 +49,7 @@
 #define MAX_TIMEOUT 300000
 #define MAX_REQ 65536
 #define MAX_ARGS 256
-#define CHILD_PATH "PATH=/proc/boot:/bin:/usr/bin:/sbin:/usr/sbin"
+#define CHILD_PATH "PATH=/proc/boot:/system/bin:/system/xbin:/bin:/usr/bin:/sbin:/usr/sbin"
 
 static const char *g_token = NULL;
 static const char *g_allow_file = NULL;
