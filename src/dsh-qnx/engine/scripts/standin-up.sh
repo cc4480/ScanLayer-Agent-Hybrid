@@ -1,5 +1,5 @@
 #!/bin/sh
-# One command: bring up the Linux stand-in target + gateway.
+# One command: bring up the Linux stand-in target + the engine, headless (no harness).
 #   sh scripts/standin-up.sh            (Ctrl-C stops both)
 # First run creates standin/state (seat tokens 0600, never printed), takes the
 # inventory, writes the baseline manifest and the runner allowlist.
@@ -16,5 +16,5 @@ node "$ROOT/gateway/cli.js" allowlist "$S/config.json" > "$S/state/runner.allow"
 RUNNER=$!
 trap 'kill $RUNNER 2>/dev/null' EXIT INT TERM
 sleep 0.3
-echo "operator token: $S/state/seat-operator.token  (paste into the console)"
+echo "seat tokens: $S/state/seat-*.token (MCP clients send one as a Bearer token; the harness pages need none)"
 node "$ROOT/gateway/server.js" "$S/config.json"

@@ -89,8 +89,9 @@ test/bundle.test.mjs  applies the built Host half and calls the registered tools
 ## Tests
 
 ```sh
+pnpm run check                     # everything below: typecheck, build, 19 engine tests, 3 bundle tests
 pnpm test                          # 19 engine tests: unit + hermetic end-to-end + fake-QNX format fixtures
-pnpm build && node --test test/bundle.test.mjs   # 3 bundle tests: registration, search, execute through the gate
+pnpm run test:bundle               # build, then 3 bundle tests: registration, search, execute through the gate
 pnpm run prove                     # done-test receipts (stand-in) -> engine/docs/receipts/
 ```
 

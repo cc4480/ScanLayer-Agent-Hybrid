@@ -40,7 +40,9 @@
     "typecheck": "tsc --noEmit",
     "build:runner": "make -C engine/node-runtime",
     "test": "make -sC engine/node-runtime && node --test engine/test/*.test.js",
-    "prove": "node engine/scripts/prove.js engine/standin/config.json engine/docs/receipts"
+    "prove": "node engine/scripts/prove.js engine/standin/config.json engine/docs/receipts",
+    "test:bundle": "tsdown && node --test test/bundle.test.mjs",
+    "check": "tsc --noEmit && pnpm run test && pnpm run test:bundle"
   },
   "engines": {
     "dsh": "^0.2.2-rc.5"

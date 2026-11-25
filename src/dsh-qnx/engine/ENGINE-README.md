@@ -50,7 +50,7 @@ All from [`docs/receipts/standin-2026-11-25.md`](docs/receipts/standin-2026-11-2
 - **Verification.** All 5 real findings came back CONFIRMED. The planted false claims came back REFUTED (phantom listener, phantom process) or UNPROVEN (forged receipt, out-of-scope reproduction), and none reached the verified report.
 - **Token surface (cl100k_base, a relative proxy):** 349 tokens for `search` + `execute`, against 3,210 tokens to list just the 57 callable utilities as classic MCP tools.
 - **Interop.** The official MCP TypeScript SDK client (`StreamableHTTPClientTransport`) connects, lists, searches and executes.
-- **Tests.** `npm test` runs 19 tests: unit tests (scope, engagements, catalog, argument rules, audit tamper) and hermetic end-to-end tests (real runner, real gateway, QNX-format fixtures).
+- **Tests.** `pnpm test` (from `src/dsh-qnx`) runs 19 tests: unit tests (scope, engagements, catalog, argument rules, audit tamper) and hermetic end-to-end tests (real runner, real gateway, QNX-format fixtures).
 
 ## Layout
 
@@ -77,19 +77,19 @@ docs/           architecture & threat model, demo script, receipts, submission c
 Requirements: Linux, Node ≥ 22, a C compiler, `make`. `tcpdump` is only needed for the zero-packets proof.
 
 ```sh
-cd qnx-agent
-npm test                       # builds the runner, runs 19 tests
-sh scripts/standin-up.sh       # runner on :7781, gateway on :8095 (Ctrl-C stops both)
-# for the UI, run it inside the harness instead (see ../README.md)
+cd src/dsh-qnx
+pnpm test                             # builds the runner, runs the 19 engine tests
+sh engine/scripts/standin-up.sh       # headless: runner on :7781, engine MCP on :8095 (Ctrl-C stops both)
+# for the interface, run the harness with this bundle instead (see ../README.md)
 ```
 
 In a second terminal:
 
 ```sh
-sh scripts/plant-standin-faults.sh     # give the checks something real to find
-npm run prove                          # every done-test, measured, -> docs/receipts/
-node gateway/cli.js verify-chain standin/state/audit.log
-sh scripts/plant-standin-faults.sh --clear
+sh engine/scripts/plant-standin-faults.sh     # give the checks something real to find
+pnpm run prove                                # every done-test, measured, -> engine/docs/receipts/
+node engine/gateway/cli.js verify-chain engine/standin/state/audit.log
+sh engine/scripts/plant-standin-faults.sh --clear
 ```
 
 Connect any MCP client to `http://127.0.0.1:8095/mcp` with `Authorization: Bearer <contents of seat-runner.token>`. Tokens live in 0600 files and are never printed.
