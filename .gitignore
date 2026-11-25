@@ -5,7 +5,7 @@
 # DSH_HOME: credential store, session transcripts, profile node_modules, logs, tokens
 .dsh/
 # Superagent state directory (sqlite database, locks, restart log, tokenised URL file)
-state/
+/state/
 # API key file and setup flag
 .env
 .setup-done
