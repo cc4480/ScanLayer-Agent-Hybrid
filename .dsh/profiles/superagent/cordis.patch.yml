@@ -85,17 +85,9 @@
         toolLoading: on-demand
         catalogDescriptionMaxLength: 160
 
-# QNX agent (hackathon): Code Mode gateway in front of a QNX 8.0 target (QEMU x86_64).
-# Exactly two tools: search + execute. Start it with: node qnx-agent/gateway/server.js <config.json>
-# (MCP3 repo, qnx-agent/). The token is the runner seat's file (seat-runner.token), seated on this box
-# as the QNX_AGENT_TOKEN credential — never pasted into chat.
-- insert:
-    - id: mcp-qnx
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        transport: streamable-http
-        serverName: qnx
-        url: http://127.0.0.1:8095/mcp
-        headers:
-          Authorization: 'Bearer ${credential:QNX_AGENT_TOKEN}'
-        expandTemplates: true
+# QNX agent (hackathon): the dsh-qnx bundle builds this harness for a QNX 8.0 target — three sidebar pages (QNX target,
+# Scan & verify, Scope & proof) and two agent tools (qnx_search, qnx_execute) behind its scope gate and audit chain.
+# On Windows it attaches to the QNX 8.0 QEMU guest; engine/scripts/phase0.sh writes src/dsh-qnx/engine/qnx/config.json.
+- id: dsh-qnx
+  config:
+    target: qnx

@@ -52,10 +52,17 @@ if (-not (Test-Path $setupDone)) {
     pnpm run build
     Pop-Location
 
+    Write-Host '[setup] Installing and building the QNX bundle (dsh-qnx)...'
+    Push-Location (Join-Path $Root 'src\dsh-qnx')
+    pnpm install
+    pnpm run build
+    Pop-Location
+
     Write-Host '[setup] Creating the superagent profile and linking the plugin...'
     Push-Location (Join-Path $Root 'src\deepseek-harness')
     pnpm dsh superagent --from-default-profile web --dump-config | Out-Null
     pnpm dsh plugin --profile superagent add "link:$(Join-Path $Root 'src\dsh-superagent-prototype')"
+    pnpm dsh plugin --profile superagent add "link:$(Join-Path $Root 'src\dsh-qnx')"
     Pop-Location
 
     Write-Host '[setup] Writing the superagent profile config...'

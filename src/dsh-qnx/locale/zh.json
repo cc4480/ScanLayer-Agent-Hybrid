@@ -1,0 +1,1 @@
+{ "meta": { "title": "QNX 智能体", "description": "为 QNX 8.0 目标构建的 DeepSeek Harness：实时闸门记录、按镜像清单扫描并独立验证，以及位于启动前范围闸门之后的两个 Code Mode 工具（qnx_search、qnx_execute），全部写入哈希链审计日志。" } }

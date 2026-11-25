@@ -4,6 +4,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-subagent-claude-code": "link:C:/Users/Cho-zen/OneDrive/Desktop/Deepseek super/src/deepseek-harness/packages/subagent/subagent-claude-code",
     "dsh-machine-control": "link:C:/Users/Cho-zen/OneDrive/Desktop/Deepseek super/src/dsh-machine-control",
+    "dsh-qnx": "link:C:/Users/Cho-zen/OneDrive/Desktop/Deepseek super/src/dsh-qnx",
     "dsh-redteam-gate": "link:C:/Users/Cho-zen/OneDrive/Desktop/Deepseek super/src/dsh-redteam-gate",
     "dsh-superagent": "link:C:/Users/Cho-zen/OneDrive/Desktop/Deepseek super/src/dsh-superagent-prototype"
   },
@@ -26,7 +27,8 @@
         "@deepseek-ai/dsh-subagent-claude-code",
         "@deepseek-ai/dsh-experimental-terminal-bundle",
         "@deepseek-ai/dsh-experimental-session-titles-bundle",
-        "dsh-machine-control"
+        "dsh-machine-control",
+        "dsh-qnx"
       ]
     }
   }

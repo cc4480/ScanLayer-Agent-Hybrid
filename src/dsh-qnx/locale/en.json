@@ -1,0 +1,1 @@
+{ "meta": { "title": "QNX agent", "description": "The DeepSeek Harness built for a QNX 8.0 target: a live gate tape, scans against the image manifest with independent verification, and two Code Mode tools (qnx_search, qnx_execute) behind a pre-spawn scope gate with a hash-chained audit log." } }

@@ -1,0 +1,2 @@
+#!/bin/sh
+case "$1" in -s) echo QNX;; -r) echo 8.0.0;; -v) echo 2025/01/30-12:00:00EST;; -m) echo x86_64;; -n) echo qnxagent;; -a) echo "QNX qnxagent 8.0.0 2025/01/30-12:00:00EST x86_64";; *) echo QNX;; esac

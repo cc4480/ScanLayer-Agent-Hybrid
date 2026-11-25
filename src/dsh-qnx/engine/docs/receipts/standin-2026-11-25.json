@@ -1,0 +1,891 @@
+{
+  "target": {
+    "hostname": "vm",
+    "os": "Linux",
+    "release": "6.18.44-fc-v880",
+    "version": "#1 SMP PREEMPT_DYNAMIC @0",
+    "machine": "x86_64",
+    "uname": "Linux vm 6.18.44-fc-v880 #1 SMP PREEMPT_DYNAMIC @0 x86_64 x86_64 x86_64 GNU/Linux",
+    "qnx_version": "",
+    "generated_at": "2026-11-25T02:15:18Z",
+    "tool_count": 1537,
+    "generator": "inventory-qnx.sh"
+  },
+  "proof3": {
+    "denied_spawned": 0,
+    "denied_packets": 0,
+    "allowed_spawned": 1,
+    "allowed_packets": 3
+  },
+  "ladder": {
+    "status401": 401,
+    "tools": [
+      "search",
+      "execute"
+    ]
+  },
+  "report": {
+    "schema": "qnx-agent.report.v1",
+    "kind": "scan",
+    "generated_at": "2026-11-25T02:15:31.091Z",
+    "target": {
+      "hostname": "vm",
+      "os": "Linux",
+      "release": "6.18.44-fc-v880",
+      "qnx_version": null,
+      "machine": "x86_64"
+    },
+    "audit": {
+      "verified": true,
+      "entries": 69,
+      "head": "a6ed0e53c9996f6617626dc7ee44ff57f34232d4c62a0c61e312b97fc3f9796f"
+    },
+    "checks": [
+      {
+        "check": "listeners-vs-intent",
+        "ok": true,
+        "run_receipt": "b1e4080435cb758092038c40811938127a88bcae08c44b55f69250eaa46261d6",
+        "error": null,
+        "finding_count": 1,
+        "summary": {
+          "listeners": 7,
+          "declared": 6,
+          "undeclared": 1,
+          "receipt": "518489dd0b1ef51c29fc5db6380c3cf2265d92735e8f76bb1dc2bb8b4c07e798"
+        }
+      },
+      {
+        "check": "writable-paths",
+        "ok": true,
+        "run_receipt": "9faa02f6b7d47955a1bee36225ed59bb21e469b8c3e26da98aa4642591dbcaa5",
+        "error": null,
+        "finding_count": 2,
+        "summary": {
+          "roots": [
+            "/bin",
+            "/sbin",
+            "/usr",
+            "/etc",
+            "/opt",
+            "/var",
+            "/tmp",
+            "/home",
+            "/root"
+          ],
+          "world_writable": 4,
+          "sticky_dirs": 3,
+          "scan_truncated": false,
+          "dev_entries": 112,
+          "receipts": [
+            "3498ad69929e39a3b60780676553d3879374013331b69e86b5ec178567315361",
+            "daaa30c1ca73a2ece2828247f8dd5c93c90e72e78faadcc2d04f90acff89403b",
+            "f01c4c3b2486a616eeaeb741476fc5bb24909e92ccf4bd32d83c956689a23dd4"
+          ]
+        }
+      },
+      {
+        "check": "component-versions",
+        "ok": true,
+        "run_receipt": "5eb48f41e0bf3c21cb433a35fec45cb03f1e6b1e4ff160d586fb0a920c524e0a",
+        "error": null,
+        "finding_count": 1,
+        "summary": {
+          "release": "6.18.44-fc-v880",
+          "components": [
+            {
+              "name": "uname",
+              "path": "/bin/uname",
+              "cksum": "4142748973",
+              "size": 35336,
+              "version": null
+            },
+            {
+              "name": "ls",
+              "path": "/bin/ls",
+              "cksum": "2071563387",
+              "size": 142312,
+              "version": null
+            },
+            {
+              "name": "netstat",
+              "path": "/usr/bin/netstat",
+              "cksum": "2077973730",
+              "size": 158304,
+              "version": null
+            },
+            {
+              "name": "find",
+              "path": "/usr/bin/find",
+              "cksum": "3553597306",
+              "size": 204264,
+              "version": null
+            },
+            {
+              "name": "ps",
+              "path": "/usr/bin/ps",
+              "cksum": "2401454963",
+              "size": 146424,
+              "version": null
+            },
+            {
+              "name": "qnx-runner",
+              "path": "qnx-agent/node-runtime/qnx-runner",
+              "cksum": "78357965",
+              "size": 30712,
+              "version": null
+            },
+            {
+              "name": "navd",
+              "path": "/usr/local/lib/qnx-agent-image/navd",
+              "cksum": "537152473",
+              "size": 51,
+              "version": null
+            }
+          ],
+          "receipt": "b7bc8aa534514916effdaabbce9a03ef00b380ded8e31cf3ff05eae6eebd03c5"
+        }
+      },
+      {
+        "check": "network-posture",
+        "ok": true,
+        "run_receipt": "e66bc011854fd7713804efd5ee3b079a2fe85c14fc7164b995ea84d904aac5e5",
+        "error": null,
+        "finding_count": 0,
+        "summary": {
+          "forwarding": "0",
+          "interfaces": [
+            {
+              "name": "eth0",
+              "up": true,
+              "flags": "UP,BROADCAST,RUNNING,MULTICAST"
+            },
+            {
+              "name": "ifb0",
+              "up": false,
+              "flags": "BROADCAST,NOARP"
+            },
+            {
+              "name": "ifb1",
+              "up": false,
+              "flags": "BROADCAST,NOARP"
+            },
+            {
+              "name": "lo",
+              "up": true,
+              "flags": "UP,LOOPBACK,RUNNING"
+            }
+          ],
+          "default_routes": [
+            "0.0.0.0         192.0.2.1       0.0.0.0         UG        0 0          0 eth0"
+          ],
+          "receipts": [
+            "15ca2a09bf62533c78417999db0e8e27476e4da7b42d76ca114f993027e36003",
+            "e9ab13b4f4b54a88a7b4fc3a5cc5869b8c5951ac2ef464db6d5d55cba812e4db",
+            "85453ab10483307ecda9fa4422ef0e8e65519c8e098c9d7a9ac98e29d53a0c89"
+          ]
+        }
+      },
+      {
+        "check": "process-baseline-diff",
+        "ok": true,
+        "run_receipt": "a6ed0e53c9996f6617626dc7ee44ff57f34232d4c62a0c61e312b97fc3f9796f",
+        "error": null,
+        "finding_count": 1,
+        "summary": {
+          "running": 101,
+          "distinct": 93,
+          "declared_patterns": 141,
+          "source": "ps -A -o pid= -o comm=",
+          "receipt": "ca8d6c5df260d67e889ab4dde41dffb98f1746ca3b122fe4527d05d5fed9fe5d"
+        }
+      }
+    ],
+    "findings": [
+      {
+        "id": "component-drift-navd",
+        "severity": "high",
+        "title": "Component navd changed: cksum 537152473, manifest says 3208744122",
+        "detail": "/usr/local/lib/qnx-agent-image/navd on the target is not the binary the image shipped.",
+        "evidence": [
+          {
+            "receipt": "c8e18aa74360c9b0236571450279d8e755628c6995f9731d61c8ba8737e023ec",
+            "tool": "cksum",
+            "args": [
+              "/usr/local/lib/qnx-agent-image/navd"
+            ],
+            "excerpt": "537152473 51 /usr/local/lib/qnx-agent-image/navd",
+            "seq": 60,
+            "argv": [
+              "/bin/cksum",
+              "/usr/local/lib/qnx-agent-image/navd"
+            ],
+            "exit": 0,
+            "stdout_sha256": "7a361ad784bf25be6089301e5c4d72d528fdfd46a61d60abf39baa84db717c99",
+            "ts": "2026-11-25T02:15:30.997Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "cksum",
+          "args": [
+            "/usr/local/lib/qnx-agent-image/navd"
+          ],
+          "expect": {
+            "type": "not_regex",
+            "pattern": "^3208744122 "
+          }
+        },
+        "check": "component-versions"
+      },
+      {
+        "id": "listener-tcp-4444",
+        "severity": "high",
+        "title": "Undeclared TCP listener on 0.0.0.0:4444",
+        "detail": "The image manifest declares 6 service(s); nothing declares tcp/4444. It is bound to every interface, so it is reachable from the network.",
+        "evidence": [
+          {
+            "receipt": "518489dd0b1ef51c29fc5db6380c3cf2265d92735e8f76bb1dc2bb8b4c07e798",
+            "tool": "netstat",
+            "args": [
+              "-an"
+            ],
+            "excerpt": "tcp        0      0 0.0.0.0:4444            0.0.0.0:*               LISTEN     ",
+            "seq": 45,
+            "argv": [
+              "/bin/netstat",
+              "-an"
+            ],
+            "exit": 0,
+            "stdout_sha256": "52044abf4346a60242e08ee353e55dcf6bbac0575be2b7ddf85361b5a0801fc6",
+            "ts": "2026-11-25T02:15:30.301Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "netstat",
+          "args": [
+            "-an"
+          ],
+          "expect": {
+            "type": "listener",
+            "proto": "tcp",
+            "port": 4444
+          }
+        },
+        "check": "listeners-vs-intent"
+      },
+      {
+        "id": "ww-/etc/qnx-agent-demo.conf",
+        "severity": "high",
+        "title": "World-writable path: /etc/qnx-agent-demo.conf",
+        "detail": "Writable by any process inside a system/executable location: a local process can replace what the system runs or reads.",
+        "evidence": [
+          {
+            "receipt": "3498ad69929e39a3b60780676553d3879374013331b69e86b5ec178567315361",
+            "tool": "find",
+            "args": [
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "excerpt": "/etc/qnx-agent-demo.conf",
+            "seq": 48,
+            "argv": [
+              "/bin/find",
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "exit": 0,
+            "stdout_sha256": "9af4ee0fecb5f1886b9fed4e27e7171b47b5f62173385123caf1d12f1ba15788",
+            "ts": "2026-11-25T02:15:30.751Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "ls",
+          "args": [
+            "-ld",
+            "/etc/qnx-agent-demo.conf"
+          ],
+          "expect": {
+            "type": "world_writable"
+          }
+        },
+        "check": "writable-paths"
+      },
+      {
+        "id": "proc-telemetryd",
+        "severity": "medium",
+        "title": "Undeclared process running: telemetryd (pid 6133)",
+        "detail": "The image manifest does not ship this process. Something started it after boot.",
+        "evidence": [
+          {
+            "receipt": "ca8d6c5df260d67e889ab4dde41dffb98f1746ca3b122fe4527d05d5fed9fe5d",
+            "tool": "ps",
+            "args": [
+              "-A",
+              "-o",
+              "pid=",
+              "-o",
+              "comm="
+            ],
+            "excerpt": " 6133 telemetryd",
+            "seq": 68,
+            "argv": [
+              "/bin/ps",
+              "-A",
+              "-o",
+              "pid=",
+              "-o",
+              "comm="
+            ],
+            "exit": 0,
+            "stdout_sha256": "f33c935f19e9bdf666906b4dc489d3927100d86f7463fcb4a675c00ef5bf77a8",
+            "ts": "2026-11-25T02:15:31.080Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "ps",
+          "args": [
+            "-A",
+            "-o",
+            "pid=",
+            "-o",
+            "comm="
+          ],
+          "expect": {
+            "type": "process",
+            "name": "telemetryd"
+          }
+        },
+        "check": "process-baseline-diff"
+      },
+      {
+        "id": "ww-/var/lib/php/sessions",
+        "severity": "low",
+        "title": "World-writable sticky directory: /var/lib/php/sessions",
+        "detail": "Sticky bit limits deletion to owners, but any process can create entries here.",
+        "evidence": [
+          {
+            "receipt": "3498ad69929e39a3b60780676553d3879374013331b69e86b5ec178567315361",
+            "tool": "find",
+            "args": [
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "excerpt": "/var/lib/php/sessions",
+            "seq": 48,
+            "argv": [
+              "/bin/find",
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "exit": 0,
+            "stdout_sha256": "9af4ee0fecb5f1886b9fed4e27e7171b47b5f62173385123caf1d12f1ba15788",
+            "ts": "2026-11-25T02:15:30.751Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "ls",
+          "args": [
+            "-ld",
+            "/var/lib/php/sessions"
+          ],
+          "expect": {
+            "type": "world_writable"
+          }
+        },
+        "check": "writable-paths"
+      }
+    ],
+    "rejected": [],
+    "counts": {
+      "critical": 0,
+      "high": 3,
+      "medium": 1,
+      "low": 1,
+      "info": 0
+    },
+    "seat": "runner",
+    "signature": {
+      "alg": "ed25519",
+      "key_id": "421cf44f8b71e05c",
+      "sig": "x9Mkt3e040Z3h17UxIrj6ccVFcU42ixa6n6C0ghYRaYH5x/b8a6+ysbm3ExgwpGqio3xGRKTJoDlDW1hWAbKBw=="
+    }
+  },
+  "verdicts": [
+    {
+      "id": "component-drift-navd",
+      "verdict": "CONFIRMED",
+      "observed": "no match for /^3208744122 /",
+      "run_receipt": "09787c288ad668e1ec635449c8a19b12f65e218116eeb5d5220a28232a810262"
+    },
+    {
+      "id": "listener-tcp-4444",
+      "verdict": "CONFIRMED",
+      "observed": "listener tcp 0.0.0.0:4444 present",
+      "run_receipt": "e3c22c994685a4f80040f92a98a22c153330ecc5d78fae8193705776a0f95d77"
+    },
+    {
+      "id": "ww-/etc/qnx-agent-demo.conf",
+      "verdict": "CONFIRMED",
+      "observed": "mode -rw-rw-rw-",
+      "run_receipt": "f958a8777636fede887eec25834ed026eb935b8720be1bae832665e7750925eb"
+    },
+    {
+      "id": "proc-telemetryd",
+      "verdict": "CONFIRMED",
+      "observed": "telemetryd running (pid 6133)",
+      "run_receipt": "bf2de924efce403e61bb41ddfdd084dd2cb22a13ea30ed07348a39aa64cdfcaf"
+    },
+    {
+      "id": "ww-/var/lib/php/sessions",
+      "verdict": "CONFIRMED",
+      "observed": "mode drwx-wx-wt",
+      "run_receipt": "bf7a21bca04df88d101f8866afa8f1af7a4b77267de59eda4d8a97ef9d00c4dd"
+    },
+    {
+      "id": "planted-false-listener-5555",
+      "verdict": "REFUTED",
+      "observed": "no tcp/5555 listener among 7",
+      "run_receipt": "a270df8c53364ff81d169c1ec1b5583c0c40f43ec4d82b12b8c3e19a2c95c1ab"
+    },
+    {
+      "id": "planted-false-process-ghostd",
+      "verdict": "REFUTED",
+      "observed": "ghostd not running",
+      "run_receipt": "3da9db184d832ddb386b0b2529ba2abf3c07004faff381e9442e0b8707ea9d20"
+    },
+    {
+      "id": "planted-false-forged-receipt",
+      "verdict": "UNPROVEN",
+      "observed": "claim cites receipts that are not in the audit chain"
+    },
+    {
+      "id": "planted-false-needs-out-of-scope",
+      "verdict": "UNPROVEN",
+      "observed": "could not reproduce: scope_denied/out_of_scope \u2014 203.0.113.9: no verified engagement covers this address",
+      "run_receipt": "259f4821f6b1a6aef21b74904134acccc4f59e4dd47c24537cbcecef9c23b865"
+    }
+  ],
+  "verified": {
+    "schema": "qnx-agent.report.v1",
+    "kind": "verified",
+    "generated_at": "2026-11-25T02:15:31.467Z",
+    "target": {
+      "hostname": "vm",
+      "os": "Linux",
+      "release": "6.18.44-fc-v880",
+      "qnx_version": null,
+      "machine": "x86_64"
+    },
+    "audit": {
+      "verified": true,
+      "entries": 114,
+      "head": "52062dd31c0cd47e8d84ee1c6a777d6a84edbc7cba698a7c93e4e26e49122a1f"
+    },
+    "checks": [
+      {
+        "check": "verification-loop",
+        "ok": true,
+        "run_receipt": null,
+        "error": null,
+        "finding_count": 5,
+        "summary": null
+      }
+    ],
+    "findings": [
+      {
+        "id": "component-drift-navd",
+        "severity": "high",
+        "title": "Component navd changed: cksum 537152473, manifest says 3208744122",
+        "detail": "/usr/local/lib/qnx-agent-image/navd on the target is not the binary the image shipped.",
+        "evidence": [
+          {
+            "receipt": "c8e18aa74360c9b0236571450279d8e755628c6995f9731d61c8ba8737e023ec",
+            "tool": "cksum",
+            "args": [
+              "/usr/local/lib/qnx-agent-image/navd"
+            ],
+            "excerpt": "537152473 51 /usr/local/lib/qnx-agent-image/navd",
+            "seq": 60,
+            "argv": [
+              "/bin/cksum",
+              "/usr/local/lib/qnx-agent-image/navd"
+            ],
+            "exit": 0,
+            "stdout_sha256": "7a361ad784bf25be6089301e5c4d72d528fdfd46a61d60abf39baa84db717c99",
+            "ts": "2026-11-25T02:15:30.997Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "cksum",
+          "args": [
+            "/usr/local/lib/qnx-agent-image/navd"
+          ],
+          "expect": {
+            "type": "not_regex",
+            "pattern": "^3208744122 "
+          }
+        },
+        "check": "verification-loop",
+        "verification": {
+          "verdict": "CONFIRMED",
+          "seat": "smith",
+          "run_receipt": "09787c288ad668e1ec635449c8a19b12f65e218116eeb5d5220a28232a810262",
+          "observed": "no match for /^3208744122 /",
+          "at": "2026-11-25T02:15:31.148Z"
+        }
+      },
+      {
+        "id": "listener-tcp-4444",
+        "severity": "high",
+        "title": "Undeclared TCP listener on 0.0.0.0:4444",
+        "detail": "The image manifest declares 6 service(s); nothing declares tcp/4444. It is bound to every interface, so it is reachable from the network.",
+        "evidence": [
+          {
+            "receipt": "518489dd0b1ef51c29fc5db6380c3cf2265d92735e8f76bb1dc2bb8b4c07e798",
+            "tool": "netstat",
+            "args": [
+              "-an"
+            ],
+            "excerpt": "tcp        0      0 0.0.0.0:4444            0.0.0.0:*               LISTEN     ",
+            "seq": 45,
+            "argv": [
+              "/bin/netstat",
+              "-an"
+            ],
+            "exit": 0,
+            "stdout_sha256": "52044abf4346a60242e08ee353e55dcf6bbac0575be2b7ddf85361b5a0801fc6",
+            "ts": "2026-11-25T02:15:30.301Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "netstat",
+          "args": [
+            "-an"
+          ],
+          "expect": {
+            "type": "listener",
+            "proto": "tcp",
+            "port": 4444
+          }
+        },
+        "check": "verification-loop",
+        "verification": {
+          "verdict": "CONFIRMED",
+          "seat": "smith",
+          "run_receipt": "e3c22c994685a4f80040f92a98a22c153330ecc5d78fae8193705776a0f95d77",
+          "observed": "listener tcp 0.0.0.0:4444 present",
+          "at": "2026-11-25T02:15:31.202Z"
+        }
+      },
+      {
+        "id": "ww-/etc/qnx-agent-demo.conf",
+        "severity": "high",
+        "title": "World-writable path: /etc/qnx-agent-demo.conf",
+        "detail": "Writable by any process inside a system/executable location: a local process can replace what the system runs or reads.",
+        "evidence": [
+          {
+            "receipt": "3498ad69929e39a3b60780676553d3879374013331b69e86b5ec178567315361",
+            "tool": "find",
+            "args": [
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "excerpt": "/etc/qnx-agent-demo.conf",
+            "seq": 48,
+            "argv": [
+              "/bin/find",
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "exit": 0,
+            "stdout_sha256": "9af4ee0fecb5f1886b9fed4e27e7171b47b5f62173385123caf1d12f1ba15788",
+            "ts": "2026-11-25T02:15:30.751Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "ls",
+          "args": [
+            "-ld",
+            "/etc/qnx-agent-demo.conf"
+          ],
+          "expect": {
+            "type": "world_writable"
+          }
+        },
+        "check": "verification-loop",
+        "verification": {
+          "verdict": "CONFIRMED",
+          "seat": "smith",
+          "run_receipt": "f958a8777636fede887eec25834ed026eb935b8720be1bae832665e7750925eb",
+          "observed": "mode -rw-rw-rw-",
+          "at": "2026-11-25T02:15:31.246Z"
+        }
+      },
+      {
+        "id": "proc-telemetryd",
+        "severity": "medium",
+        "title": "Undeclared process running: telemetryd (pid 6133)",
+        "detail": "The image manifest does not ship this process. Something started it after boot.",
+        "evidence": [
+          {
+            "receipt": "ca8d6c5df260d67e889ab4dde41dffb98f1746ca3b122fe4527d05d5fed9fe5d",
+            "tool": "ps",
+            "args": [
+              "-A",
+              "-o",
+              "pid=",
+              "-o",
+              "comm="
+            ],
+            "excerpt": " 6133 telemetryd",
+            "seq": 68,
+            "argv": [
+              "/bin/ps",
+              "-A",
+              "-o",
+              "pid=",
+              "-o",
+              "comm="
+            ],
+            "exit": 0,
+            "stdout_sha256": "f33c935f19e9bdf666906b4dc489d3927100d86f7463fcb4a675c00ef5bf77a8",
+            "ts": "2026-11-25T02:15:31.080Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "ps",
+          "args": [
+            "-A",
+            "-o",
+            "pid=",
+            "-o",
+            "comm="
+          ],
+          "expect": {
+            "type": "process",
+            "name": "telemetryd"
+          }
+        },
+        "check": "verification-loop",
+        "verification": {
+          "verdict": "CONFIRMED",
+          "seat": "smith",
+          "run_receipt": "bf2de924efce403e61bb41ddfdd084dd2cb22a13ea30ed07348a39aa64cdfcaf",
+          "observed": "telemetryd running (pid 6133)",
+          "at": "2026-11-25T02:15:31.295Z"
+        }
+      },
+      {
+        "id": "ww-/var/lib/php/sessions",
+        "severity": "low",
+        "title": "World-writable sticky directory: /var/lib/php/sessions",
+        "detail": "Sticky bit limits deletion to owners, but any process can create entries here.",
+        "evidence": [
+          {
+            "receipt": "3498ad69929e39a3b60780676553d3879374013331b69e86b5ec178567315361",
+            "tool": "find",
+            "args": [
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "excerpt": "/var/lib/php/sessions",
+            "seq": 48,
+            "argv": [
+              "/bin/find",
+              "/bin",
+              "/sbin",
+              "/usr",
+              "/etc",
+              "/opt",
+              "/var",
+              "/tmp",
+              "/home",
+              "/root",
+              "-xdev",
+              "-perm",
+              "-0002",
+              "!",
+              "-type",
+              "l",
+              "-print"
+            ],
+            "exit": 0,
+            "stdout_sha256": "9af4ee0fecb5f1886b9fed4e27e7171b47b5f62173385123caf1d12f1ba15788",
+            "ts": "2026-11-25T02:15:30.751Z"
+          }
+        ],
+        "reproduce": {
+          "tool": "ls",
+          "args": [
+            "-ld",
+            "/var/lib/php/sessions"
+          ],
+          "expect": {
+            "type": "world_writable"
+          }
+        },
+        "check": "verification-loop",
+        "verification": {
+          "verdict": "CONFIRMED",
+          "seat": "smith",
+          "run_receipt": "bf7a21bca04df88d101f8866afa8f1af7a4b77267de59eda4d8a97ef9d00c4dd",
+          "observed": "mode drwx-wx-wt",
+          "at": "2026-11-25T02:15:31.336Z"
+        }
+      }
+    ],
+    "rejected": [],
+    "counts": {
+      "critical": 0,
+      "high": 3,
+      "medium": 1,
+      "low": 1,
+      "info": 0
+    },
+    "seat": "operator",
+    "board": {
+      "total": 9,
+      "confirmed": 5,
+      "refuted": 2,
+      "unproven": 2,
+      "excluded": [
+        {
+          "id": "planted-false-listener-5555",
+          "status": "REFUTED",
+          "observed": "no tcp/5555 listener among 7"
+        },
+        {
+          "id": "planted-false-process-ghostd",
+          "status": "REFUTED",
+          "observed": "ghostd not running"
+        },
+        {
+          "id": "planted-false-forged-receipt",
+          "status": "UNPROVEN",
+          "observed": "claim cites receipts that are not in the audit chain"
+        },
+        {
+          "id": "planted-false-needs-out-of-scope",
+          "status": "UNPROVEN",
+          "observed": "could not reproduce: scope_denied/out_of_scope \u2014 203.0.113.9: no verified engagement covers this address"
+        }
+      ]
+    },
+    "signature": {
+      "alg": "ed25519",
+      "key_id": "421cf44f8b71e05c",
+      "sig": "rhG/XI8eHWDKB0ZzkUoZ+IBU3o+CofT9CcejWk8ECDhCtox+qGngLjkXWamwVmf5EcUm0Oyo9cISxJZAxmsODA=="
+    }
+  },
+  "seal": {
+    "schema": "qnx-agent.seal.v1",
+    "at": "2026-11-25T02:15:31.670Z",
+    "entries": 115,
+    "head": "243986dd89152e6510933294139aea066986366ba22e7e0b474eefe445f4bf2d",
+    "chain_ok": true,
+    "target": "vm",
+    "signature": {
+      "alg": "ed25519",
+      "key_id": "421cf44f8b71e05c",
+      "sig": "Epj2jcoshnXkjAClBTatLexSt1iiGioB7tMGmErwejm9vBJlzAs5Rz2SoC2ayN1qEzO1vulYV0qJSdcIxji/DA=="
+    },
+    "public_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAAQceaEj/BHcLD5dCTyzkESqV7qNiypQ1H6sqrW3uILk=\n-----END PUBLIC KEY-----\n"
+  }
+}
