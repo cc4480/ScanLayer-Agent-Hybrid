@@ -136,6 +136,9 @@ export async function startEngine(options: EngineOptions): Promise<Running> {
       ? `No QNX engine config at ${configFile}. Run engine/scripts/phase0.sh after installing the QNX SDP; it writes this file.`
       : `No engine config at ${configFile}.`)
   }
+  if (options.target === 'standin' && process.platform === 'win32') {
+    throw new Error('The stand-in target needs Linux (it runs the target on this machine). On Windows, set the dsh-qnx row to target: qnx and run Phase 0 in WSL2, or run the app itself in WSL2 with start-qnx.sh.')
+  }
   const runner = options.target === 'standin' ? prepareStandin(configFile, options.logger) : undefined
   if (runner !== undefined) await new Promise(r => setTimeout(r, 250))
   const { createGateway, loadConfig } = require(join(ENGINE_DIR, 'gateway', 'server.js')) as {

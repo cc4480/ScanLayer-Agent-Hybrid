@@ -16,6 +16,7 @@ const scope = require('./lib/scope');
 const { buildReport, saveReport } = require('./lib/report');
 const { Board } = require('./lib/board');
 const { renderReportHtml } = require('./lib/report-html');
+const { childEnv } = require('./lib/child-env');
 const { sha256 } = require('./lib/canon');
 
 const SERVER_INFO = { name: 'qnx-agent-gateway', version: '0.1.0' };
@@ -188,7 +189,7 @@ function createGateway(cfg) {
     const { execFile } = require('child_process');
     const { host = '127.0.0.1', port = 8095 } = cfg.listen || {};
     return new Promise((resolve) => {
-      execFile(process.execPath, [path.join(__dirname, '..', 'loop', 'smith.js'), '--url', url || `http://${host}:${port}`, '--token-file', tf], { timeout: 600000, env: {} }, (e, stdout, stderr) => {
+      execFile(process.execPath, [path.join(__dirname, '..', 'loop', 'smith.js'), '--url', url || `http://${host}:${port}`, '--token-file', tf], { timeout: 600000, env: childEnv() }, (e, stdout, stderr) => {
         audit.append({ kind: 'smith_run', seat, ok: !e, lines: stdout.trim().split('\n').length, error: e ? String(stderr || e.message).slice(0, 300) : null });
         resolve({ ok: !e });
       });

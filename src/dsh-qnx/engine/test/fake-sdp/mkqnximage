@@ -1,0 +1,31 @@
+#!/bin/sh
+# Rehearsal stand-in for mkqnximage. Checks what the real one would need from us, then "builds":
+#  - --type=qemu, --arch=x86_64, --build, --ssh-ident naming an existing ssh public key;
+#  - local/snippets/system_files.custom in mkqnx6fsimg form: `[attrs] target=host`, one pair of brackets,
+#    no spaces around '=', host files that exist; installs each to /system/<target> with its perms;
+#  - local/snippets/post_start.custom present (kept as output/post_start.sh for the stand-in QEMU to run at "boot").
+set -eu
+type=""; ident=""; build=0
+for a do case "$a" in --type=*) type=${a#--type=} ;; --ssh-ident=*) ident=${a#--ssh-ident=} ;; --build) build=1 ;; --arch=*|--hostname=*) ;; *) echo "mkqnximage(stand-in): unexpected option $a" >&2; exit 2 ;; esac; done
+[ "$type" = qemu ] || { echo "mkqnximage(stand-in): --type=qemu required" >&2; exit 2; }
+[ "$build" = 1 ] || { echo "mkqnximage(stand-in): --build required" >&2; exit 2; }
+[ -f "$ident" ] && grep -q '^ssh-' "$ident" || { echo "mkqnximage(stand-in): --ssh-ident must name an ssh public key, got '$ident'" >&2; exit 2; }
+S=local/snippets
+[ -f $S/system_files.custom ] && [ -f $S/post_start.custom ] || { echo "mkqnximage(stand-in): missing snippets" >&2; exit 2; }
+mkdir -p output
+n=0; line_no=0
+while IFS= read -r line || [ -n "$line" ]; do
+  line_no=$((line_no+1)); [ -z "$line" ] && continue
+  case "$line" in '#'*) continue ;; esac
+  attrs=$(printf '%s' "$line" | sed -n 's/^\[\([^]]*\)\] .*/\1/p')
+  spec=$(printf '%s' "$line" | sed 's/^\[[^]]*\] //')
+  case "$spec" in *' = '*|*' ='*|*'= '*) echo "system_files.custom:$line_no: spaces around '='" >&2; exit 3 ;; esac
+  target=${spec%%=*}; host=${spec#*=}
+  case "$target" in /*) echo "system_files.custom:$line_no: leading slash in target (stand-in assumes partition-relative paths)" >&2; exit 3 ;; esac
+  [ -f "$host" ] || { echo "system_files.custom:$line_no: host file not found: $host" >&2; exit 3; }
+  perms=$(printf '%s' "$attrs" | sed -n 's/.*perms=\([0-7]*\).*/\1/p'); perms=${perms:-0644}
+  install -D -m "$perms" "$host" "/system/$target"; n=$((n+1))
+done < $S/system_files.custom
+cp $S/post_start.custom output/post_start.sh
+: > output/disk-qemu.vmdk; : > output/ifs.bin
+echo "mkqnximage (Phase 0 rehearsal stand-in): installed $n files under /system, image in output/"

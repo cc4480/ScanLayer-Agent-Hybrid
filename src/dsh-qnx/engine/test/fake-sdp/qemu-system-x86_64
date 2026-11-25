@@ -1,0 +1,16 @@
+#!/bin/sh
+# Rehearsal stand-in for QEMU: checks the kernel, disk and port forwards it is given, then "boots" the guest (this
+# machine) by running the image's post_start hook, as QNX's post_startup.sh would, and stays up like a VM.
+set -eu
+pidfile=""; kernel=""; drive=""; fwd=""
+while [ $# -gt 0 ]; do case "$1" in
+  -pidfile) pidfile=$2; shift ;; -kernel) kernel=$2; shift ;; -drive) drive=$2; shift ;; -netdev) fwd=$2; shift ;;
+esac; shift; done
+[ -f "$kernel" ] || { echo "qemu(stand-in): kernel not found: $kernel" >&2; exit 1; }
+d=${drive#file=}; d=${d%%,*}; [ -f "$d" ] || { echo "qemu(stand-in): disk not found: $d" >&2; exit 1; }
+case "$fwd" in *hostfwd=tcp:*:7781-:7781*hostfwd=tcp:*:2222-:22*) ;; *) echo "qemu(stand-in): expected runner and ssh forwards, got $fwd" >&2; exit 1 ;; esac
+[ -n "$pidfile" ] && echo $$ > "$pidfile"
+echo "QNX 8.0 (Phase 0 rehearsal stand-in) booting..."
+sh output/post_start.sh
+echo "login:"
+exec sleep 86400

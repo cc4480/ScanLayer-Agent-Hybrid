@@ -7,6 +7,8 @@
 # root is needed and the host reaches the guest through forwarded ports:
 #   127.0.0.1:7781 -> guest :7781   the qnx-runner (the harness's dsh-qnx bundle connects here)
 #   127.0.0.1:2222 -> guest :22     ssh root (phase0.sh survey; key from --ssh-ident)
+# Under WSL2, Windows reaches these through WSL's localhost forwarding. If the Windows harness cannot reach
+# 127.0.0.1:7781, start this with QEMU_FWD_ADDR=0.0.0.0 (the runner still requires its token).
 # KVM is used when /dev/kvm is usable; otherwise QEMU emulates (slower, still works).
 # The serial console is logged to docs/phase0/ as the boot receipt. Stop with Ctrl+A then x.
 #   DRY_RUN=1 sh image/run-qemu.sh   prints the command without starting QEMU
@@ -22,7 +24,7 @@ mkdir -p "$(dirname "$LOG")"
 set -- qemu-system-x86_64 $ACCEL -smp ${QEMU_SMP:-4} -m ${QEMU_MEM:-4G} \
   -drive file=output/disk-qemu.vmdk,if=ide,id=drv0 \
   -kernel output/ifs.bin \
-  -netdev user,id=net0,hostfwd=tcp:127.0.0.1:7781-:7781,hostfwd=tcp:127.0.0.1:2222-:22 \
+  -netdev user,id=net0,hostfwd=tcp:${QEMU_FWD_ADDR:-127.0.0.1}:7781-:7781,hostfwd=tcp:${QEMU_FWD_ADDR:-127.0.0.1}:2222-:22 \
   -device virtio-net-pci,netdev=net0,mac=52:54:00:91:01:ea \
   -object rng-random,filename=/dev/urandom,id=rng0 -device virtio-rng-pci,rng=rng0 \
   -pidfile output/qemu.pid -nographic -vga none -serial mon:stdio

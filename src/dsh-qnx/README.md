@@ -98,14 +98,15 @@ test/bundle.test.mjs  applies the built Host half and calls the registered tools
 ## Tests
 
 ```sh
-pnpm run check                     # everything below: typecheck, build, 24 engine tests, 6 bundle tests
-pnpm test                          # 24 engine tests: unit + hermetic end-to-end + fake-QNX format fixtures
+pnpm run check                     # everything below: typecheck, build, 25 engine tests, 6 bundle tests
+pnpm test                          # 25 engine tests: unit + hermetic end-to-end + fake-QNX format fixtures
 pnpm run test:bundle               # build, then 6 bundle tests: registration, tools, approvals, panel routes, the audit
 pnpm run prove                     # done-test receipts (stand-in) -> engine/docs/receipts/
 ```
 
 ## Limitations
 
-- The stand-in target needs Linux (`make`, `sh`, and `unshare` for the sandbox's network namespace). On Windows, use `target: qnx`.
+- The stand-in target needs Linux (`make`, `sh`, and `unshare` for the sandbox's network namespace). On Windows, use `target: qnx`; the engine refuses the stand-in there with that explanation.
+- On Windows, child processes get only the environment variables Windows needs (`SystemRoot` and similar) instead of an empty environment, because Winsock cannot open the local socket Agent Smith uses without them. Secrets never pass through.
 - Phase 0 (`engine/scripts/phase0.sh`) needs an Ubuntu host, because QNX documents QEMU images for Ubuntu. On Windows, use WSL2 Ubuntu or a Linux machine. Once it has run, the harness on the same machine attaches with `target: qnx`. On Windows, run Phase 0 in WSL2 against the Windows checkout (`/mnt/c/...`), so it writes `engine/qnx/config.json` where the Windows harness reads it. WSL2 forwards `localhost`, so the harness reaches the runner on `127.0.0.1:7781`.
 - The agent tools need the harness's model (a DeepSeek key or sign-in). The pages work without one.

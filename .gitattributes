@@ -1,4 +1,9 @@
 # Shell scripts run under Linux and WSL (QNX Phase 0, the stand-in target), so they must keep LF line endings even in
 # a Windows checkout with core.autocrlf: a CRLF shell script fails before its first command.
 *.sh text eol=lf
+# Built by make/cc inside WSL from a Windows checkout during Phase 0: CRLF breaks make recipes.
+Makefile text eol=lf
+*.c text eol=lf
+*.h text eol=lf
 src/dsh-qnx/engine/test/fixtures/fake-qnx/* text eol=lf
+src/dsh-qnx/engine/test/fake-sdp/* text eol=lf

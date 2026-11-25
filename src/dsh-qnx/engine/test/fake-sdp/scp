@@ -1,0 +1,7 @@
+#!/bin/sh
+# Rehearsal stand-in for scp to the guest: checks the key and port, then copies on this machine.
+key=""; port=""
+while [ $# -gt 0 ]; do case "$1" in -i) key=$2; shift ;; -P) port=$2; shift ;; -o) shift ;; -*) ;; *) break ;; esac; shift; done
+[ -f "$key" ] && [ "$port" = 2222 ] || { echo "scp(stand-in): expected -i <key> -P 2222" >&2; exit 1; }
+src=$1; dst=${2#*:}
+mkdir -p "$(dirname "$dst")" && cp "$src" "$dst"

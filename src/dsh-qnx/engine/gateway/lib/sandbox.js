@@ -9,6 +9,7 @@ const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const { sha256 } = require('./canon');
+const { childEnv } = require('./child-env');
 
 const LIMITS = { programChars: 32768, defaultTimeoutMs: 120000, maxTimeoutMs: 300000, maxCalls: 200, resultChars: 40000, heapMb: 128 };
 const CHILD = path.join(__dirname, 'sandbox-child.js');
@@ -34,7 +35,7 @@ function childCommand(cfg) {
 
 function sandboxPosture(cfg = {}) {
   const c = childCommand(cfg);
-  return { process: 'separate node process per run, empty env, permission model (fs/child_process/worker denied), host codegen disabled', network: c.network, limits: LIMITS };
+  return { process: `separate node process per run, ${process.platform === 'win32' ? 'env limited to what Windows needs' : 'empty env'}, permission model (fs/child_process/worker denied), host codegen disabled`, network: c.network, limits: LIMITS };
 }
 
 /**
@@ -54,7 +55,7 @@ function runProgram({ program, gate, audit, seat, catalogSnapshot, manifest, tim
 
   return new Promise((resolve) => {
     const { cmd, args } = childCommand(cfg);
-    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: {} });
+    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: childEnv() });
     let stderr = '';
     child.stderr.on('data', (d) => { if (stderr.length < 4000) stderr += d; });
     let finished = false;

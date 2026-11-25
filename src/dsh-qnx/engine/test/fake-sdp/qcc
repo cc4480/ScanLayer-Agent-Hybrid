@@ -1,0 +1,6 @@
+#!/bin/sh
+# Rehearsal stand-in for QNX qcc: `qcc -V` prints a version; any -V<target> is dropped and the rest goes to cc.
+# Builds a host (Linux) binary, so the "guest" in the rehearsal (this machine) can run it.
+[ "$1" = "-V" ] && { echo "qcc (Phase 0 rehearsal stand-in): cc $(cc -dumpversion)"; exit 0; }
+for a do shift; case "$a" in -V*) ;; *) set -- "$@" "$a" ;; esac; done
+exec cc "$@"

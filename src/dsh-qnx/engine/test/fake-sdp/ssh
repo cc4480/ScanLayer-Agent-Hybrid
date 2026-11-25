@@ -1,0 +1,9 @@
+#!/bin/sh
+# Rehearsal stand-in for ssh to the guest: checks it was given a key and the forwarded port, then runs the command
+# on this machine (the rehearsal's guest).
+key=""; port=""
+while [ $# -gt 0 ]; do case "$1" in
+  -i) key=$2; shift ;; -p) port=$2; shift ;; -o) shift ;; -*) ;; *@*) shift; break ;; *) break ;;
+esac; shift; done
+[ -f "$key" ] && [ "$port" = 2222 ] || { echo "ssh(stand-in): expected -i <key> -p 2222, got key='$key' port='$port'" >&2; exit 255; }
+exec sh -c "$*"

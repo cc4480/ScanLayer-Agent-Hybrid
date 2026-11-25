@@ -136,3 +136,11 @@ test('audit chain: verifies, detects a one-byte tamper, refuses to extend a brok
   const l2 = fs.readFileSync(f2, 'utf8').split('\n'); l2.splice(1, 1); fs.writeFileSync(f2, l2.join('\n'));
   assert.equal(verifyChain(f2).ok, false);
 });
+
+test('child processes: empty env on POSIX; on Windows only what the OS needs (Winsock needs SystemRoot), never secrets', () => {
+  const { childEnv } = require('../gateway/lib/child-env');
+  const host = { SystemRoot: 'C:\\Windows', windir: 'C:\\Windows', TEMP: 'C:\\T', DEEPSEEK_API_KEY: 'sk-secret', PATH: 'C:\\bin', USERPROFILE: 'C:\\Users\\x' };
+  assert.deepEqual(childEnv('linux', host), {});
+  assert.deepEqual(childEnv('darwin', host), {});
+  assert.deepEqual(childEnv('win32', host), { SystemRoot: 'C:\\Windows', windir: 'C:\\Windows', TEMP: 'C:\\T' });
+});
