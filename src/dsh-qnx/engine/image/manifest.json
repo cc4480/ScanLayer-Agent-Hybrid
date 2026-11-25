@@ -1,0 +1,25 @@
+{
+  "schema": "qnx-agent.manifest.v1",
+  "_comment": "DRAFT for the stock QNX 8.0 QEMU x86_64 image. Written before the SDP is installed: at Phase 0 every entry is checked against the real buildfile and the booted target, then pinned (cksum) from the clean image. Until then this file is a hypothesis, not a baseline.",
+  "os_release": "8.0.0",
+  "services": [
+    { "proto": "tcp", "port": 7781, "name": "qnx-runner", "required": true },
+    { "proto": "tcp", "port": 22, "name": "sshd" }
+  ],
+  "processes": [
+    "procnto-smp-instr", "slogger2", "pipe", "random", "devc-pty", "devc-ser8250", "devc-con*",
+    "io-sock", "dhcpcd", "devb-*", "fs-*", "pci-server", "mqueue", "sshd", "ksh", "sh", "login",
+    "qnx-runner", "tcpdump"
+  ],
+  "required_processes": ["procnto-smp-instr", "slogger2", "io-sock", "qnx-runner"],
+  "components": [
+    { "name": "procnto-smp-instr", "path": "/proc/boot/procnto-smp-instr" },
+    { "name": "libc", "path": "/proc/boot/libc.so.6" },
+    { "name": "io-sock", "path": "/proc/boot/io-sock" },
+    { "name": "qnx-runner", "path": "/opt/qnx-agent/bin/qnx-runner" }
+  ],
+  "boot_image_allow": ["ldqnx-64.so.2", "*.so*", "startup-*", ".script", "*.cfg", "*.conf"],
+  "network": { "interfaces": ["vtnet0", "lo0"], "forwarding": false, "default_route": true },
+  "writable_allow": ["/tmp", "/tmp/*", "/dev/shmem", "/dev/shmem/*", "/var/run", "/var/log/*"],
+  "dev_world_writable_allow": ["/dev/null", "/dev/zero", "/dev/tty", "/dev/random", "/dev/urandom", "/dev/ptmx", "/dev/ptyp*", "/dev/ttyp*", "/dev/shmem", "/dev/socket", "/dev/name", "/dev/mqueue", "/dev/console"]
+}

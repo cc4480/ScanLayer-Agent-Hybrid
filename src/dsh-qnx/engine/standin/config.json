@@ -1,0 +1,12 @@
+{
+  "_comment": "Linux stand-in target (pre-SDP). The same gateway points at the QNX QEMU guest by changing runner.host/port and catalog.",
+  "listen": { "host": "127.0.0.1", "port": 8095 },
+  "state_dir": "state",
+  "catalog": "state/catalog.json",
+  "manifest": "manifest.json",
+  "checks_dir": "../checks",
+  "inventory_path": "../node-runtime/inventory-qnx.sh",
+  "runner": { "mode": "tcp", "host": "127.0.0.1", "port": 7781, "token_file": "state/runner.token" },
+  "allow_destructive": false,
+  "sandbox": { "netns": "auto" }
+}

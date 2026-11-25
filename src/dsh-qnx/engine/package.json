@@ -1,0 +1,6 @@
+{
+  "name": "dsh-qnx-engine",
+  "private": true,
+  "type": "commonjs",
+  "description": "QNX agent engine: scope gate, on-target runner, inventory, audit chain, checks and verification board (CommonJS, zero dependencies)."
+}

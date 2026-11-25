@@ -84,3 +84,10 @@
         expandTemplates: true
         toolLoading: on-demand
         catalogDescriptionMaxLength: 160
+
+# QNX agent (hackathon): the dsh-qnx bundle builds this harness for a QNX 8.0 target — three sidebar pages (QNX target,
+# Scan & verify, Scope & proof) and two agent tools (qnx_search, qnx_execute) behind its scope gate and audit chain.
+# On Windows it attaches to the QNX 8.0 QEMU guest; engine/scripts/phase0.sh writes src/dsh-qnx/engine/qnx/config.json.
+- id: dsh-qnx
+  config:
+    target: qnx

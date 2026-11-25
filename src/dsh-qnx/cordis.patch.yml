@@ -1,0 +1,6 @@
+# QNX bundle: the Host half starts the QNX agent engine (scope gate, audit chain, checks, verification board) and registers
+# qnx_search + qnx_execute; the Client half adds three sidebar pages. Defaults run the Linux stand-in target; set
+# `target: qnx` once the QNX 8.0 QEMU guest is up (engine/scripts/phase0.sh writes engine/qnx/config.json).
+- insert:
+    - id: dsh-qnx
+      name: dsh-qnx

@@ -1,0 +1,8 @@
+# secrets, logs and per-box state — never committed
+standin/state/
+qnx/state/
+standin/manifest.json
+image/out/
+node-runtime/qnx-runner
+node-runtime/qnx-runner.x86_64
+docs/phase0/*.log

@@ -1,0 +1,9 @@
+#!/bin/sh
+cat <<'X'
+     pid Arguments
+       1 /proc/boot/procnto-smp-instr
+    4098 /proc/boot/slogger2 -s 4096
+    4099 /proc/boot/io-sock -m phy -d vtnet_pci
+    8200 /opt/qnx-agent/bin/qnx-runner --listen 7781 --token-file /opt/qnx-agent/etc/runner.token
+   12301 ksh
+X

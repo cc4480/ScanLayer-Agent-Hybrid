@@ -1,0 +1,21 @@
+#!/bin/sh
+if [ "$1" = "-rn" ]; then cat <<'X'
+Routing tables
+
+Internet:
+Destination        Gateway            Flags     Netif Expire
+default            10.0.2.2           UGS      vtnet0
+10.0.2.0/24        link#1             U        vtnet0
+127.0.0.1          link#2             UH          lo0
+X
+else cat <<'X'
+Active Internet connections (including servers)
+Proto Recv-Q Send-Q Local Address          Foreign Address        (state)
+tcp4       0      0 *.7781                 *.*                    LISTEN
+tcp4       0      0 10.0.2.15.22           10.0.2.2.51234         ESTABLISHED
+tcp6       0      0 *.22                   *.*                    LISTEN
+tcp4       0      0 *.22                   *.*                    LISTEN
+tcp4       0      0 127.0.0.1.8000         *.*                    LISTEN
+udp4       0      0 *.68                   *.*
+X
+fi
