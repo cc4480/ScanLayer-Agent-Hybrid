@@ -12,8 +12,12 @@
 # Done-test: QEMU boots, hello-world runs on the target, the survey is written with receipts, the runner answers.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-D="$ROOT/docs/phase0"; S="$ROOT/qnx/state"; OUT="$ROOT/image/out"
-mkdir -p "$D" "$S"
+D="$ROOT/docs/phase0"; S="$ROOT/qnx/state"
+# The ssh key and the image live on the Linux side ($HOME), not in the checkout: a checkout on a Windows drive
+# (/mnt/c under WSL) cannot make a key private, so ssh refuses it, and a multi-GB image in a synced folder is slow.
+K="${QNX_AGENT_HOME:-$HOME/.qnx-agent}"; OUT="$K/image"; KEY="$K/qnx-ssh"
+export OUT
+mkdir -p "$D" "$S" "$K"; chmod 700 "$K"
 : "${QNX_HOST:?source qnxsdp-env.sh first}"
 for t in qcc mkqnximage qemu-system-x86_64 ssh scp ssh-keygen node; do command -v $t >/dev/null || { echo "missing: $t"; exit 1; }; done
 grep -qi ubuntu /etc/os-release 2>/dev/null || echo "note: QNX documents QEMU images for Ubuntu hosts; continuing anyway" >&2
@@ -25,17 +29,18 @@ echo "1. SDP recorded -> docs/phase0/sdp.txt"
 
 # 2. State: seats + runner token (cli init), an ssh key for root, and a first allowlist that lets only the inventory run.
 [ -f "$S/seats.json" ] || node "$ROOT/gateway/cli.js" init "$S"
-[ -f "$S/qnx-ssh" ] || ssh-keygen -q -t ed25519 -N '' -C qnx-agent-phase0 -f "$S/qnx-ssh"
+[ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N '' -C qnx-agent-phase0 -f "$KEY"
 printf '/system/qnx-agent/bin/qnx-inventory\n' > "$S/runner.allow"
-echo "2. state ready (tokens 0600, ssh key qnx/state/qnx-ssh)"
+echo "2. state ready (tokens in qnx/state, ssh key $KEY)"
 
 # 3. Image
-STATE="$S" sh "$ROOT/image/build-image.sh"
-echo "3. image built"
+STATE="$S" SSH_PUB="$KEY.pub" sh "$ROOT/image/build-image.sh"
+cp "$OUT/docs/"* "$D/"
+echo "3. image built in $OUT/output (build receipts -> docs/phase0/)"
 
 # 4. Boot (QEMU in the background; its serial console is the boot receipt), then wait for ssh.
-SSH="ssh -i $S/qnx-ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=$S/known_hosts -o ConnectTimeout=5 root@127.0.0.1"
-SCP="scp -i $S/qnx-ssh -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=$S/known_hosts"
+SSH="ssh -i $KEY -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=$K/known_hosts -o ConnectTimeout=5 root@127.0.0.1"
+SCP="scp -i $KEY -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=$K/known_hosts"
 ( sh "$ROOT/image/run-qemu.sh" </dev/null >"$D/qemu-console.log" 2>&1 & )
 i=0; until $SSH true 2>/dev/null; do i=$((i+1)); [ $i -gt 120 ] && { echo "guest did not answer ssh in 10 min; see docs/phase0/qemu-console.log"; exit 1; }; sleep 5; done
 echo "4. QNX is up (ssh on 127.0.0.1:2222)"
@@ -62,8 +67,8 @@ node -e '
 const { RunnerClient } = require(process.argv[1] + "/gateway/lib/gate");
 const fs = require("fs");
 const r = new RunnerClient({ mode: "tcp", host: "127.0.0.1", port: 7781, token: fs.readFileSync(process.argv[2], "utf8").trim() });
-r.run(["/system/qnx-agent/bin/qnx-inventory", "-"], 60000).then((x) => {
-  if (!x.ok || x.exit !== 0) { console.error(JSON.stringify(x).slice(0, 600)); process.exit(1); }
+r.run(["/system/qnx-agent/bin/qnx-inventory", "-"], 60000, 8 * 1024 * 1024).then((x) => {
+  if (!x.ok || x.exit !== 0 || x.truncated) { console.error(JSON.stringify(x).slice(0, 600)); process.exit(1); }
   fs.writeFileSync(process.argv[3], x.stdout); console.error("catalog: " + JSON.parse(x.stdout).meta.tool_count + " tools");
 }).catch((e) => { console.error(e.message); process.exit(1); });' "$ROOT" "$S/runner.token" "$S/catalog.json"
 node -e '
@@ -72,8 +77,8 @@ const c = JSON.parse(fs.readFileSync(src, "utf8"));
 c._comment = "QNX 8.0 QEMU guest, written by scripts/phase0.sh. The runner runs in the guest, forwarded to 127.0.0.1:7781.";
 c.inventory_path = "/system/qnx-agent/bin/qnx-inventory";
 c.manifest = "manifest.json";
-c.target_ssh = { host: "127.0.0.1", port: 2222, user: "root", key: "state/qnx-ssh", spawn_log: "/data/qnx-agent/spawn.log" };
-fs.writeFileSync(dst, JSON.stringify(c, null, 2) + "\n");' "$ROOT/standin/config.json" "$ROOT/qnx/config.json"
+c.target_ssh = { host: "127.0.0.1", port: 2222, user: "root", key: process.argv[3], spawn_log: "/data/qnx-agent/spawn.log" };
+fs.writeFileSync(dst, JSON.stringify(c, null, 2) + "\n");' "$ROOT/standin/config.json" "$ROOT/qnx/config.json" "$KEY"
 node "$ROOT/gateway/cli.js" allowlist "$ROOT/qnx/config.json" > "$S/runner.allow.full"
 $SCP "$S/runner.allow.full" root@127.0.0.1:/data/qnx-agent/runner.allow
 echo "7. catalog pulled through the runner; allowlist of $(wc -l < "$S/runner.allow.full") tools installed on the target"
@@ -84,6 +89,6 @@ node "$ROOT/scripts/baseline-from-catalog.js" "$S/catalog.json" "$ROOT/qnx/manif
 cp "$ROOT/qnx/manifest.json" "$D/manifest-clean-image.json"
 echo "8. engine config -> qnx/config.json (manifest: clean-image baseline)"
 echo
-echo "Phase 0 done. QEMU keeps running (stop: kill \$(cat image/out/output/qemu.pid)). Next:"
+echo "Phase 0 done. QEMU keeps running (stop: kill \$(cat $OUT/output/qemu.pid)). Next:"
 echo "  harness: set dsh-qnx  target: qnx  and boot it, or headless:  node gateway/server.js qnx/config.json"
 echo "  proof:   node scripts/prove.js qnx/config.json docs/receipts"

@@ -38,8 +38,10 @@ function argRuleViolation(tool, args) {
 
 class RunnerClient {
   constructor(cfg) { this.cfg = cfg; }
-  run(argv, timeoutMs) {
-    const req = JSON.stringify({ token: this.cfg.token, argv, timeout_ms: timeoutMs }) + '\n';
+  // maxOutput is for operator jobs (the inventory pull); Gate.call never passes it, so agent calls keep the runner's
+  // default 40,000-character cap.
+  run(argv, timeoutMs, maxOutput) {
+    const req = JSON.stringify({ token: this.cfg.token, argv, timeout_ms: timeoutMs, ...(maxOutput ? { max_output: maxOutput } : {}) }) + '\n';
     const wait = timeoutMs + 15000;
     return new Promise((resolve, reject) => {
       let buf = '';

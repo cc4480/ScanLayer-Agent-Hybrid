@@ -21,12 +21,13 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 OUT=${OUT:-$HERE/out}
 STATE=${STATE:-$ROOT/qnx/state}
+SSH_PUB=${SSH_PUB:-$HOME/.qnx-agent/qnx-ssh.pub}
 
 : "${QNX_TARGET:?source qnxsdp-env.sh first (QNX_TARGET unset)}"
 command -v qcc >/dev/null || { echo "qcc not on PATH: source qnxsdp-env.sh"; exit 1; }
 command -v mkqnximage >/dev/null || { echo "mkqnximage not on PATH: source qnxsdp-env.sh"; exit 1; }
-for f in runner.token runner.allow qnx-ssh.pub; do
-  [ -f "$STATE/$f" ] || { echo "missing $STATE/$f — run scripts/phase0.sh (it creates the state first)"; exit 1; }
+for f in "$STATE/runner.token" "$STATE/runner.allow" "$SSH_PUB"; do
+  [ -f "$f" ] || { echo "missing $f — run scripts/phase0.sh (it creates the state and key first)"; exit 1; }
 done
 
 mkdir -p "$OUT/local/snippets" "$OUT/docs"
@@ -54,7 +55,7 @@ EOF
 
 # 4. Build. Options persist in local/options, so later runs need only what changes.
 cd "$OUT"
-mkqnximage --type=qemu --arch=x86_64 --hostname=qnxagent --ssh-ident="$STATE/qnx-ssh.pub" --build \
+mkqnximage --type=qemu --arch=x86_64 --hostname=qnxagent --ssh-ident="$SSH_PUB" --build \
   ${MKQNXIMAGE_EXTRA:-} 2>&1 | tee "$OUT/docs/mkqnximage.log"
 ls -la "$OUT/output" | tee -a "$OUT/docs/mkqnximage.log"
 echo "built in $OUT/output — next: sh image/run-qemu.sh"

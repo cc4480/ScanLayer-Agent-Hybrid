@@ -1,0 +1,4 @@
+# Shell scripts run under Linux and WSL (QNX Phase 0, the stand-in target), so they must keep LF line endings even in
+# a Windows checkout with core.autocrlf: a CRLF shell script fails before its first command.
+*.sh text eol=lf
+src/dsh-qnx/engine/test/fixtures/fake-qnx/* text eol=lf

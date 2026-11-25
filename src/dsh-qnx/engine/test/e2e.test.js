@@ -219,3 +219,21 @@ test('QNX formats: sandbox parsers read BSD netstat, pidin arg and ls -l', async
   assert.deepEqual(r.value.up, ['lo0', 'vtnet0']);
   assert.deepEqual(r.value.ls.map((x) => x.mode[0] + x.name), ['cnull', 'bhd0', 'lstdin']);
 });
+
+test('runner output cap: an operator job may raise it (full inventory), an agent call through the gate may not', async () => {
+  const { RunnerClient } = require('../gateway/lib/gate');
+  const tok = fs.readFileSync(path.join(dir, 'state', 'runner.token'), 'utf8').trim();
+  const inv = path.join(ROOT, 'node-runtime', 'inventory-qnx.sh');
+  fs.appendFileSync(path.join(dir, 'state', 'runner.allow'), inv + '\n');
+  const rc = new RunnerClient({ mode: 'tcp', host: '127.0.0.1', port: gw.cfg.runner.port, token: tok });
+  const capped = await rc.run([inv, '-'], 60000);
+  assert.equal(capped.truncated, true, 'the default cap applies without max_output');
+  assert.equal(capped.stdout.length, 40000);
+  const full = await rc.run([inv, '-'], 60000, 8 * 1024 * 1024);
+  assert.equal(full.truncated, false);
+  assert.ok(JSON.parse(full.stdout).tools.length > 100, 'the full catalog parses');
+  const big = path.join(dir, 'big.txt');
+  fs.writeFileSync(big, 'y'.repeat(100000));
+  const r = await client().execute(`const x = await tools.cat([${JSON.stringify(big)}]); return { len: x.stdout.length, truncated: x.truncated }`);
+  assert.deepEqual(r.value, { len: 40000, truncated: true }, 'agent calls keep the 40,000-character cap');
+});

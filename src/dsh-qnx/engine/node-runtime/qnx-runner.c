@@ -7,7 +7,9 @@
  * (the stand-in target used before the SDP lands).
  *
  * Protocol: line-delimited JSON. One request line in, one response line out.
- *   request : {"token":"...","argv":["/bin/ls","-l"],"timeout_ms":100000}
+ *   request : {"token":"...","argv":["/bin/ls","-l"],"timeout_ms":100000[,"max_output":N]}
+ *             max_output raises the per-stream cap above 40,000 (up to 8 MiB) for operator jobs such as
+ *             pulling the inventory; the gateway's gate never sends it, so agent calls keep the default.
  *   response: {"ok":true,"exit":0,"signal":0,"stdout":"...","stderr":"...",
  *              "truncated":false,"timed_out":false,"duration_ms":12}
  *   error   : {"ok":false,"error":"<code>","detail":"..."}
@@ -44,7 +46,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#define OUT_CAP 40000          /* chars per stream, Parrot value */
+#define OUT_CAP 40000          /* default chars per stream (Parrot value): every agent call gets this */
+#define MAX_OUT_CAP 8388608    /* ceiling for an explicit max_output: operator jobs such as the inventory */
 #define DEFAULT_TIMEOUT 100000 /* ms, Parrot value */
 #define MAX_TIMEOUT 300000
 #define MAX_REQ 65536
@@ -118,6 +121,7 @@ typedef struct {
     char *argv[MAX_ARGS + 1];
     int argc;
     long timeout_ms;
+    long max_output;
     int has_argv;
 } req_t;
 
@@ -207,6 +211,7 @@ static void req_free(req_t *r) {
 static int parse_request(const char *line, req_t *r, const char **why) {
     memset(r, 0, sizeof *r);
     r->timeout_ms = DEFAULT_TIMEOUT;
+    r->max_output = OUT_CAP;
     const char *p = skip_ws(line);
     if (*p != '{') { *why = "request is not a JSON object"; return -1; }
     p = skip_ws(p + 1);
@@ -227,6 +232,12 @@ static int parse_request(const char *line, req_t *r, const char **why) {
             long v = strtol(p, &end, 10);
             if (end == p || v <= 0) { free(key); *why = "timeout_ms must be a positive integer"; return -1; }
             r->timeout_ms = v > MAX_TIMEOUT ? MAX_TIMEOUT : v;
+            p = end;
+        } else if (strcmp(key, "max_output") == 0) {
+            char *end;
+            long v = strtol(p, &end, 10);
+            if (end == p || v <= 0) { free(key); *why = "max_output must be a positive integer"; return -1; }
+            r->max_output = v > MAX_OUT_CAP ? MAX_OUT_CAP : v;
             p = end;
         } else if (strcmp(key, "argv") == 0) {
             if (*p != '[') { free(key); *why = "argv must be an array"; return -1; }
@@ -366,7 +377,8 @@ static void handle(int in_fd, int out_fd) {
             ssize_t k = read(fds[i].fd, chunk, sizeof chunk);
             if (k <= 0) { close(fds[i].fd); fds[i].fd = -1; open_fds--; continue; }
             buf_t *dst = i == 0 ? &out : &err;
-            size_t room = dst->n < OUT_CAP ? OUT_CAP - dst->n : 0;
+            size_t cap = (size_t)r.max_output;
+            size_t room = dst->n < cap ? cap - dst->n : 0;
             if ((size_t)k > room) truncated = 1;
             if (room) buf_put(dst, chunk, (size_t)k < room ? (size_t)k : room);
         }

@@ -293,8 +293,8 @@ function createGateway(cfg) {
       if (p === '/api/report/verified' && req.method === 'POST') return json(res, 200, verifiedReport(seat));
       if (p === '/api/catalog/refresh' && req.method === 'POST') {
         if (!cfg.inventory_path) return json(res, 400, { error: 'inventory_path not configured' });
-        const r = await runner.run([cfg.inventory_path, '-'], 60000);
-        if (!r.ok || r.exit !== 0) return json(res, 502, { error: 'inventory failed', detail: r.detail || r.stderr });
+        const r = await runner.run([cfg.inventory_path, '-'], 60000, 8 * 1024 * 1024);
+        if (!r.ok || r.exit !== 0 || r.truncated) return json(res, 502, { error: 'inventory failed', detail: r.truncated ? 'inventory output exceeded 8 MiB' : (r.detail || r.stderr) });
         const doc = JSON.parse(r.stdout);
         fs.writeFileSync(cfg.catalog, JSON.stringify(doc));
         catalog = Catalog.load(cfg.catalog, { allowDestructive: !!cfg.allow_destructive });
