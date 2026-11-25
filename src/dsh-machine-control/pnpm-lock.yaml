@@ -11,6 +11,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: link:../deepseek-harness/vendor/cordis
         version: link:../deepseek-harness/vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: link:../deepseek-harness/packages/core/agent
+        version: link:../deepseek-harness/packages/core/agent
       '@deepseek-ai/dsh-client-locale':
         specifier: link:../deepseek-harness/packages/client/locale
         version: link:../deepseek-harness/packages/client/locale
@@ -23,6 +26,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-plugin-manager':
         specifier: link:../deepseek-harness/packages/client/ui-plugin-manager
         version: link:../deepseek-harness/packages/client/ui-plugin-manager
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: link:../deepseek-harness/packages/client/ui-renderer
+        version: link:../deepseek-harness/packages/client/ui-renderer
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: link:../deepseek-harness/packages/client/ui-sidebar
         version: link:../deepseek-harness/packages/client/ui-sidebar
@@ -32,12 +38,24 @@ importers:
       '@deepseek-ai/dsh-host-webserver':
         specifier: link:../deepseek-harness/packages/host/webserver
         version: link:../deepseek-harness/packages/host/webserver
+      '@deepseek-ai/dsh-sandbox':
+        specifier: link:../deepseek-harness/packages/sandbox/sandbox
+        version: link:../deepseek-harness/packages/sandbox/sandbox
       '@deepseek-ai/dsh-shell':
         specifier: link:../deepseek-harness/packages/shell/shell
         version: link:../deepseek-harness/packages/shell/shell
+      '@deepseek-ai/dsh-subprocess':
+        specifier: link:../deepseek-harness/packages/subprocess/subprocess
+        version: link:../deepseek-harness/packages/subprocess/subprocess
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: link:../deepseek-harness/packages/core/system-prompt
+        version: link:../deepseek-harness/packages/core/system-prompt
       '@deepseek-ai/dsh-tools':
         specifier: link:../deepseek-harness/packages/core/tools
         version: link:../deepseek-harness/packages/core/tools
+      '@deepseek-ai/schemastery':
+        specifier: link:../deepseek-harness/vendor/schemastery
+        version: link:../deepseek-harness/vendor/schemastery
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.5
