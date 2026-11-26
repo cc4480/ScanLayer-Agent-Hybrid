@@ -4,10 +4,14 @@ window.__ModuleLoader__.load({
     const React = require('react');
     const h = React.createElement;
 
-    // The local SecLayer instance. The app itself is the interface: its dashboard
-    // lists scans, its scan view is the live ticker, and /r/<token> is the report.
-    // Nothing here re-renders any of that — the Browser tab loads the app.
-    const APP = 'http://127.0.0.1:4700';
+    // Both local scanners, each on its own loopback port. The app is the
+    // interface: its dashboard lists scans, an in-progress scan shows the live
+    // ticker, and a finished one opens its own report page. Nothing here
+    // re-renders any of that — the Browser tab loads the app itself.
+    const APPS = [
+      { key: 'seclayer', name: 'Seclayer', url: 'http://127.0.0.1:4700', hint: 'SecLayer on 4700 — scans, live progress, reports' },
+      { key: 'secscan', name: 'Secscan', url: 'http://127.0.0.1:4701', hint: 'SecScan on 4701 — scans, monitors, reports' },
+    ];
 
     const btn = {
       font: 'inherit', fontSize: 12, lineHeight: 1.2, cursor: 'pointer',
@@ -15,25 +19,30 @@ window.__ModuleLoader__.load({
       background: 'transparent', color: 'var(--fg, #e6e6ea)',
     };
 
-    function SecLayerBar() {
-      // Provided by the host through the slot; when absent, fall back to a new
-      // tab so the control never becomes a dead button.
-      const open = SecLayerBar.open;
-      const go = (path) => () => open(APP + path);
+    function ScannerBar() {
+      const open = ScannerBar.open;
       return h('div', {
         style: { display: 'flex', gap: 6, alignItems: 'center', padding: '2px 0' },
       },
-        h('span', { style: { fontSize: 11, opacity: 0.6, marginRight: 2 } }, 'SecLayer'),
-        h('button', { type: 'button', style: btn, onClick: go('/'), title: 'Scans, live progress and reports' }, 'Dashboard'),
-        h('button', { type: 'button', style: btn, onClick: go('/'), title: 'Scans in progress show their live ticker' }, 'Live scans'),
+        h('span', { style: { fontSize: 11, opacity: 0.6, marginRight: 2 } }, 'Scanners'),
+        APPS.map((app) =>
+          h('button', {
+            key: app.key,
+            type: 'button',
+            style: btn,
+            title: app.hint,
+            onClick: () => open(app.url + '/'),
+          }, app.name),
+        ),
       );
     }
 
     return {
       inject: ['slots', 'sidebarRight'],
       apply(ctx) {
-        // One place that knows how to open a Browser tab.
-        SecLayerBar.open = (url) => {
+        // One place that knows how to open a Browser tab; fall back to a normal
+        // tab so the control never becomes a dead button.
+        ScannerBar.open = (url) => {
           try {
             ctx.sidebarRight.openTab('browser', { params: { url } });
           } catch {
@@ -42,7 +51,7 @@ window.__ModuleLoader__.load({
         };
         ctx.effect(() => ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
           name: 'conversation.composer.dock', id: 'seclayer-panel', order: 5,
-        }, SecLayerBar)), 'seclayer-panel.slot');
+        }, ScannerBar)), 'seclayer-panel.slot');
       },
     };
   },
