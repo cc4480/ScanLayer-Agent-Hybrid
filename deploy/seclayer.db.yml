@@ -1,0 +1,22 @@
+# Postgres for the containerised stack. Production mode refuses the SQLite
+# fallback by design (server/db.ts: assertNotSilentlyFallingBack), so the
+# container path always pairs SecLayer with a real database.
+services:
+  db:
+    image: postgres:16
+    container_name: stack-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: seclayer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: seclayer
+    volumes:
+      - stack-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U seclayer -d seclayer']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  stack-pg:
