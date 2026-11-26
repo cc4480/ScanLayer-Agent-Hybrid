@@ -8,6 +8,7 @@ import { scanWebapp, scanSeclayer } from './scan-adapters.mjs'
 import { normalizeDomain } from './verifier.mjs'
 import { createTicker } from './scan-ticker.mjs'
 import { renderScanReportHtml } from './report-template.mjs'
+import { buildSeclayerReportData } from './report-data.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPORTS_DIR = path.join(HERE, '..', 'reports')
@@ -77,9 +78,14 @@ export async function generateScanReportHandler(args, verifier, { write = (line)
 
   const seclayer = await scanSeclayer(verifier, gate.url, { aggressive, emit: ticker.onSeclayerEvent })
   const vibescan = includeWebapp ? await scanWebapp(verifier, gate.url, tier, { onTest: ticker.onVibeTest }) : undefined
-  write('[SYSTEM] Scan complete. Generating report...')
+  write('[SYSTEM] Scan complete. Compiling findings and executive summary...')
 
-  const html = renderScanReportHtml({ target: gate.host, seclayer, vibescan, tickerLines: ticker.lines() })
+  // Real score/grade/posture/executive-summary pipeline (compileStaticFindings, generateAiReport,
+  // compileScanEvidence, scoring.ts) — not re-implemented here, just called.
+  const data = await buildSeclayerReportData(gate.url, seclayer)
+  write('[SYSTEM] Report ready.')
+
+  const html = renderScanReportHtml({ target: gate.host, seclayer, vibescan, data, tickerLines: ticker.lines() })
 
   fs.mkdirSync(REPORTS_DIR, { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
