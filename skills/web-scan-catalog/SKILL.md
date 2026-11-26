@@ -1,13 +1,16 @@
 ---
 name: web-scan-catalog
-description: Complete check catalogs for the two local scanners (SecLayer 156 checks, SecScan 197 checks) and the exact command to run each check by hand. Use when asked to scan a site without the scanner apps, to reproduce or explain a scanner finding, or to see what the scanners actually test. Prefer the MCP tools when they are available.
+description: Check catalogs for the two local scanners (SecLayer 156 web checks, SecScan 197 web checks) plus the local Windows host assessment (ports, firewall, SSH, SMB, databases, accounts, secrets, overlay networks), each with the exact command and pass/fail oracle. Use when asked to scan a site or this machine without the scanner apps, to reproduce a finding, or to see what is actually tested. Prefer the MCP tools and the apps when they are available.
 ---
 
-# Web scan catalog — run the checks yourself
+# Scan catalog — web checks and the local host
 
 Both local scanners are black-box HTTP/DNS testers whose value is the catalog: a fixed
 list of checks, each with a pass/fail oracle. When the apps are unavailable, or the user
 wants a scan without spinning one up, this file is that catalog plus the commands.
+
+Part 3 covers the machine itself — the scanners only take URLs and never audit the host
+they run on.
 
 **Prefer the apps when they are up** — `mcp__seclayer__seclayer_scan` and
 `mcp__secscan__scan_url` own scoring, the report and the fix prompts. This skill is the
@@ -17,6 +20,8 @@ fallback and the reference, not a replacement for the report.
 
 - Only scan a site the user owns or has authorised. A URL is not authorisation.
 - Non-destructive: no writes, no deletes, no brute force. Rate-limit yourself (~1 req/s).
+- No credential guessing on the host without explicit permission — read the lockout
+  threshold first and treat password tests as the owner's decision.
 - Every finding needs evidence: the request and the response fragment that proves it.
 - Never claim a check passed if you skipped it — say "not run" and why.
 - Return findings inline (severity, evidence, fix). Write no report document unless asked.
@@ -568,6 +573,184 @@ Part 1; repo checks need the repository, not the URL.
 
 ---
 
+
+---
+
+# Part 3 — Local host (this Windows machine)
+
+The two scanners only take URLs; neither audits the box they run on. These are the
+read-only checks for the machine itself — the same set used in the 2026-11-26 host
+pentest. Run them as the normal user: several are admin-gated and must be reported as
+"not tested", never as passes.
+
+## 3.1 Identity, patch level, support window
+
+```powershell
+Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber,LastBootUpTime
+(Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").UBR
+Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 6
+```
+
+Report the build/UBR and the newest cumulative update. Windows 10 22H2 left mainstream
+support 2025-10-14 — still-patching means ESU is active, not that the OS is supported.
+
+## 3.2 Listening surface and firewall
+
+```powershell
+Get-NetTCPConnection -State Listen | ForEach-Object {
+  $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
+  [pscustomobject]@{ Addr=$_.LocalAddress; Port=$_.LocalPort; Pid=$_.OwningProcess; Name=$p.ProcessName; Path=$p.Path }
+} | Sort-Object Port | Format-Table -AutoSize
+Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction
+netsh advfirewall firewall show rule name=all dir=in verbose   # find Action: Allow + LocalPort
+```
+
+Flag a listener when **all three** line up: bound to `0.0.0.0`/`::`, an inbound allow rule
+whose RemoteIP is `Any`, and a service that authenticates weakly or not at all. Loopback
+(`127.0.0.1`) listeners are not exposed, however odd the service.
+
+Prove reachability from a *different* namespace — not from the host to itself, where
+Windows skips the inbound filter. WSL is a separate address space and is the cheap way:
+
+```bash
+# in WSL (172.x -> the host LAN IP):
+for p in 22 135 139 445 5432 8765 3240 7680; do timeout 2 bash -c "exec 3<>/dev/tcp/192.168.1.100/$p" 2>/dev/null && echo "$p OPEN" || echo "$p filtered"; done
+```
+
+Caveats: a `LocalSubnet`-scoped rule will not match WSL (different subnet) even though a
+LAN peer matches it — say which rule governs and from where. Self-connections to the
+Tailscale address prove binding only.
+
+## 3.3 SSH
+
+```powershell
+Get-CimInstance Win32_Service -Filter "Name='sshd'" | Select-Object State,StartName,PathName
+Get-Content "C:\ProgramData\ssh\sshd_config" | Where-Object { $_ -match "^\s*(PasswordAuthentication|PermitRootLogin|PubkeyAuthentication|AllowUsers|Port)" }
+Get-ChildItem "C:\ProgramData\ssh" -Force
+ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 -v user@127.0.0.1 exit 2>&1 | Select-String "Authentications that can continue"
+```
+
+The handshake line is the definitive answer on offered methods (`publickey, password,
+keyboard-interactive`). `sshd -T` needs administrator; the config file plus the handshake
+is enough. Findings: password auth offered while a firewall rule allows `Any`; account
+policy below 12 characters.
+
+## 3.4 SMB
+
+```powershell
+Get-SmbServerConfiguration | Select-Object EnableSMB1Protocol,EnableSMB2Protocol,RequireSecuritySignature,EnableSecuritySignature,EncryptData
+Get-SmbShare | Select-Object Name,Path
+```
+
+`RequireSecuritySignature=False` with 445 reachable from the local subnet is NTLM-relay
+exposure — the finding, not the admin shares themselves. SMB1 disabled is a pass.
+
+## 3.5 RDP and WinRM
+
+```powershell
+(Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server").fDenyTSConnections  # 1 = disabled
+Get-Service WinRM | Select-Object Status,StartType
+```
+
+## 3.6 Databases (the local PostgreSQL case)
+
+```powershell
+Get-CimInstance Win32_Service | Where-Object { $_.Name -like "*postgres*" } | Select-Object Name,State,StartName,PathName
+Get-NetTCPConnection -State Listen -LocalPort 5432 | Select-Object LocalAddress
+Get-Content "C:\Program Files\PostgreSQL\17\data\pg_hba.conf" | Where-Object { $_ -notmatch "^\s*#" -and $_.Trim() }
+```
+
+A listener on `0.0.0.0:5432` whose `pg_hba.conf` allows only `127.0.0.1/32` and `::1/128`
+is contained by ACL + firewall, but is one config edit from exposure: report as hardening,
+not as an open database.
+
+## 3.7 Accounts, policy, lockout
+
+```powershell
+Get-LocalUser | Select-Object Name,Enabled,PasswordRequired,PasswordLastSet
+Get-LocalGroupMember -Group Administrators
+net accounts   # minimum length, history, max age, lockout threshold
+```
+
+**Never guess passwords.** Read the lockout threshold first; on this box it is 10, so a
+credential test is a decision for the owner, not a routine check. Report a policy of
+minimum length 0 as a finding on its own.
+
+## 3.8 Local privilege hygiene
+
+```powershell
+Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" | Select-Object EnableLUA,ConsentPromptBehaviorAdmin,PromptOnSecureDesktop
+Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer" -Name AlwaysInstallElevated
+Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" | Select-Object AutoAdminLogon,DefaultUserName
+cmdkey /list
+Get-CimInstance Win32_Service | Where-Object { $_.PathName -and $_.PathName -notmatch '^"' -and $_.PathName -match '^[A-Za-z]:\\[^ ]+ .+\\[^ ]+\.exe' } | Select-Object Name,PathName,StartName
+```
+
+Unquoted service path only matters if the parent directory is writable by a non-admin —
+check the ACL (`icacls`) before calling it exploitable. `WindowsApps` and `Program Files`
+are not.
+
+## 3.9 Endpoint protection and disk protection
+
+```powershell
+Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,IsTamperProtected,AntivirusSignatureLastUpdated
+Get-MpPreference | Select-Object ExclusionPath,ExclusionProcess   # administrator only
+manage-bde -status C:                                            # administrator only
+bcdedit /enum "{current}" | Select-String "path"                 # winload.efi = UEFI
+```
+
+Anything that returns nothing or "must be an administrator" is **not tested**. Do not
+infer "BitLocker off" from an empty result.
+
+## 3.10 Secrets on disk and their ACLs
+
+```powershell
+Get-ChildItem C:\sh -Filter ".env" -Recurse -Force | Select-Object FullName,Length
+icacls "C:\sh\seclayer-hybrid\.env"
+git -C C:\sh\seclayer-hybrid log --all --oneline -- .env
+Get-ChildItem "C:\Users\$env:USERNAME\.ssh" -Force
+```
+
+Findings: `BUILTIN\Users:(RX)` or `Authenticated Users:(M)` on a file holding keys; a
+`.env` that ever appeared in git history. On a single-account box this is defence in
+depth, not a live bypass — say so.
+
+## 3.11 Overlay networks (Tailscale and friends)
+
+```powershell
+& "C:\Program Files\Tailscale\tailscale.exe" status
+& "C:\Program Files\Tailscale\tailscale.exe" serve status
+& "C:\Program Files\Tailscale\tailscale.exe" funnel status
+& "C:\Program Files\Tailscale\tailscale.exe" debug prefs | Select-String "RunSSH|ShieldsUp"
+```
+
+A listener bound to the Tailscale IP is reachable by every peer unless the tailnet ACL
+says otherwise; a firewall rule with RemoteIP `Any` does not distinguish the tailnet.
+
+## 3.12 Loopback services (the scanners and the GUI)
+
+3080 (DSH Web), 4700/4701 (apps), 4710/4711 (view proxy) must all bind `127.0.0.1` only.
+Verify with `Get-NetTCPConnection -State Listen`. Anything bound to `0.0.0.0` in that list
+is the finding.
+
+## 3.13 Gotchas that cost time
+
+| Symptom | Cause |
+|---|---|
+| `-SkipHttpErrorCheck` not found | Windows PowerShell 5.1; use `curl.exe` or `.NET` HttpClient |
+| `sshd -T` prints nothing | needs administrator; use the handshake instead |
+| Firewall rule scan returns nothing | `LocalPort` can be `Any`; filter on the rule's program or the netsh text |
+| WSL sees a port closed that a LAN peer can reach | `LocalSubnet` scope does not cover 172.22.x |
+| `net use` hangs | prompts for credentials; wrap in a job with a timeout |
+| BitLocker/TPM/Defender exclusions empty | non-admin; report "not tested" |
+
+## 3.14 Host severity floor
+
+`High` = remote path to code/credential access (unauthenticated USB/IP on a Public
+profile, SMB relay on a LAN, SSH password auth from any network); `Medium` = a control
+missing with a plausible chain; `Low` = hardening with containment already in place
+(loopback-only DB bound to 0.0.0.0, permissive ACLs on a single-account box).
+
 # Reporting a manual scan
 
 Return, in this order:
@@ -576,7 +759,7 @@ Return, in this order:
 2. **Findings** — each with id, severity, title, the exact request, the evidence fragment,
    the impact in one sentence, and the fix.
 3. **What ran vs skipped** — counts per group, with the skip reason (no ownership, no
-   browser, no repository, target down).
+   browser, no repository, target down, needs administrator for a host check).
 4. **Coverage gaps** — name them explicitly; a clean result says nothing about a skipped check.
 
 Severity floor: critical = live secret or RCE-class proof; high = auth bypass, injection
