@@ -252,6 +252,20 @@ These are deliberate, local-only choices. **None of them may reach a deployment.
 - `ALLOW_UNVERIFIED_ACTIVE_PROBES=true` — active probes run with no ownership proof.
   Anyone who can use the instance can aim exploits at any domain.
 - `ALLOW_MISSING_EMAIL_PROVIDER=true` — sign-in codes go to the container log.
+- **No scan limits (set 2026-11-26, operator request).** Both apps run uncapped:
+  - SecLayer (`.env`): `FREE_MODE=true` (no credits), `DISABLE_RATE_LIMITS=true`
+    (every route limiter is a no-op — now honoured in production by
+    `server/config.ts`, not just dev), `ENABLE_BROWSER_RENDERING=true` (headless
+    crawl + DOM-XSS proof), `MAX_CONCURRENT_SCANS=8`. The aggressive tier runs
+    **by default** (`aggressiveProbes !== false`) on dashboard and MCP scans alike.
+  - SecScan (`.env.docker`, wired through `docker-compose.yml`):
+    `FREE_TRIAL_SCAN_LIMIT=1000000`, `SCAN_LIMIT_PER_HOUR/DAY` and their
+    `_PER_IP` twins at 100000, `SCAN_DAILY_LIMIT_ANON/ACCOUNT=100000`.
+  - To restore the shipped limits, unset those variables in the two env files
+    (`DISABLE_RATE_LIMITS` included). Do not put product defaults back in code.
+- DSH's MCP client aborts a tool call after 60 s, so a long aggressive scan
+  times out client-side while the app still finishes and saves it. Both `*-mcp`
+  rows carry `toolCallTimeoutMs: 330000`, effective on the next DSH start.
 - Both apps publish **loopback only**; keys are local and regenerable.
 - The view proxy strips framing headers; it listens on `127.0.0.1` only.
 - Machine-wide `DATABASE_URL` (stale Postgres) still exists. Containers ignore it;
