@@ -44,18 +44,26 @@ Running it found six real defects in the engine, all fixed:
 
 ## Current result
 
-22 detection checks, 0 missed; 0 false positives on the controls. One full
+28 detection checks, 0 missed; 0 false positives on the controls. One full
 aggressive scan of the app takes ~10s; the raw-socket CRLF proxy target takes
 ~26s (every probe gets a fixed answer there, so several retry). The engine
-reports ~98 findings across both targets.
+reports ~94 findings across both targets.
 
 ## Known gaps in this testbed
 
-- Not yet planted/reached: stored XSS, IDOR/BOLA over discovered endpoints,
-  price tampering, webhook signature bypass, prototype pollution, weak-token
-  entropy, SCA (vulnerable library), directory listing, verbose errors. Most
-  routes exist in the app already; the open question for each is whether the
-  probe cannot reach it (harness wiring) or cannot detect it (engine gap).
+Still unproven, in the order they will be taken:
+
+1. **Weak-token entropy** — `/api/token` returns an 8-char `resetToken`, but the
+   check runs over crawl captures and that JSON endpoint is apparently not one.
+2. **SCA (vulnerable library)** — `lodash@4.17.15` is in the page markup but the
+   library scan does not report it; probably needs to appear in a JS capture.
+3. **Directory listing** — `/uploads/` serves an "Index of" page; no finding.
+4. **Verbose errors** — the 404 leaks a stack trace; no finding.
+5. **IDOR/BOLA** — deliberately last: it needs two authenticated identities and
+   endpoints the crawler can reach, so it is a bigger fixture than the rest.
+
+For each, the open question is whether the probe cannot *reach* the plant
+(harness wiring) or cannot *detect* it (engine gap).
 
 ## Resolved since the first pass
 

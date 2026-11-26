@@ -192,6 +192,56 @@ function rootRoute(req, u, body) {
   return null
 }
 
+// ---- planted business-logic / parsing bugs --------------------------------
+// Price tampering: the total is computed from the CLIENT'S unit price.
+function checkout(bodyText) {
+  let price = 0
+  let qty = 1
+  try {
+    const j = JSON.parse(bodyText || '{}')
+    price = Number(j?.items?.[0]?.price ?? 0)
+    qty = Number(j?.items?.[0]?.quantity ?? 1)
+  } catch { /* ignore */ }
+  return json({ status: 'ok', currency: 'usd', total: Math.round(price * qty * 100) / 100 })
+}
+
+// Webhook bypass: a bad signature is rejected for usd but the check is skipped
+// for every other currency.
+function stripeWebhook(bodyText) {
+  let currency = 'usd'
+  try { currency = String(JSON.parse(bodyText || '{}')?.data?.object?.currency || 'usd') } catch { /* ignore */ }
+  if (currency === 'usd') return json({ error: 'invalid signature' }, 400)
+  return json({ received: true, currency })
+}
+
+// Prototype pollution: a naive deep merge, then a response formatter that reads
+// `json spaces` off the object WITHOUT an own-property guard — so polluting
+// Object.prototype changes the formatting of every later JSON response.
+function mergeVulnerable(target, src) {
+  for (const key of Object.keys(src)) {
+    const v = src[key]
+    if (v && typeof v === 'object') {
+      if (!target[key]) target[key] = {}
+      mergeVulnerable(target[key], v)
+    } else {
+      target[key] = v
+    }
+  }
+  return target
+}
+
+function jsonEcho(bodyText) {
+  let parsed = {}
+  try { parsed = JSON.parse(bodyText || '{}') } catch { /* ignore */ }
+  // Seed with one own key: JSON.stringify({}, null, 2) is "{}" with no indentation,
+  // so an empty object would hide the gadget's formatting change.
+  const merged = mergeVulnerable({ echo: true }, parsed)
+  const space = merged['json spaces']          // inherited after pollution
+  const out = JSON.stringify(merged, null, space)
+  delete Object.prototype['json spaces']       // leave the process clean
+  return { status: 200, headers: { 'Content-Type': 'application/json' }, body: out }
+}
+
 const ROUTES = {
   // ---- ROOT (target of the root-URL exploit probes) -------------------------
   '/': (req, u, body) => {
@@ -200,6 +250,8 @@ const ROUTES = {
       resolveXmlEntities(body)
       return { status: 200, headers: { 'Content-Type': 'application/xml' }, body: '<?xml version="1.0"?><root>ok</root>' }
     }
+    // JSON body: merged into an object and echoed (the prototype-pollution sink).
+    if (req.method === 'POST' && /json/i.test(req.headers['content-type'] || '')) return jsonEcho(body)
     const planted = rootRoute(req, u, body)
     if (planted) return planted
     // Reflect any Origin with credentials (CORS) and the Host header into the
@@ -273,7 +325,9 @@ const ROUTES = {
   '/vuln/guestbook': (req, u, body) => {
     if (req.method === 'POST') {
       comments.push(new URLSearchParams(body).get('comment') || '')
-      return { status: 302, headers: { Location: '/vuln/guestbook' }, body: '' }
+      // Render on POST as well as on GET: a stored-XSS probe may re-fetch the
+      // action URL, the page it was discovered on, or read the POST response.
+      return html(`<h2>Guestbook</h2>${comments.map((c) => `<div>${c}</div>`).join('')}`)
     }
     return html(`<h2>Guestbook</h2>${comments.map((c) => `<div>${c}</div>`).join('')}`)
   },
@@ -412,7 +466,13 @@ const ROUTES = {
   },
 
   // ---- BUSINESS LOGIC / WEBHOOK -------------------------------------------
-  '/vuln/checkout': (req, u, body) => {
+  // ---- BUSINESS LOGIC / WEBHOOK / PARSING ---------------------------------
+  '/api/checkout': (req, u, body) => checkout(body),
+  '/vuln/checkout': (req, u, body) => checkout(body),
+  '/api/webhooks/stripe': (req, u, body) => stripeWebhook(body),
+  '/api/echo': (req, u, body) => jsonEcho(body),
+
+  '/vuln/checkout-legacy': (req, u, body) => {
     let price = 4200
     try { price = Number(JSON.parse(body || '{}').price ?? price) } catch { /* ignore */ }
     return json({ status: 'ok', charged: price, sku: 'pro-plan' })
