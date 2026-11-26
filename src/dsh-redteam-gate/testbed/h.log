@@ -1,5 +1,0 @@
-merged: 48 findings (32 overlaps removed)
-  secscan: 31
-  seclayer: 17
-  score 10 grade F posture CRITICAL
-wrote hybrid-report.html
