@@ -102,6 +102,7 @@ columns inside §4/§11 change.
 
 ```powershell
 msedge --headless=new --disable-gpu --no-first-run --hide-scrollbars \
+  --virtual-time-budget=4000 \
   --window-size=1400,15000 --screenshot=preview.png "file:///<path>.html"
 ```
 
