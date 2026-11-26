@@ -20,8 +20,17 @@ $DesktopExe = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
 function Say($m) { Write-Host $m }
 function Have-Engine {
     if (-not (Test-Path $DockerExe)) { return $false }
-    $null = & $DockerExe info --format '{{.ServerVersion}}' 2>$null
-    return ($LASTEXITCODE -eq 0)
+    # When the engine is down, docker.exe writes to stderr. Under
+    # $ErrorActionPreference='Stop' (set at the top of this script) that becomes a
+    # terminating NativeCommandError, so the script used to die here — before it
+    # could reach the "start Docker Desktop" branch below. Every run from a fresh
+    # logon hit exactly that. Scope the preference around the call instead.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $null = & $DockerExe info --format '{{.ServerVersion}}' 2>$null } catch { }
+    $ok = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prev
+    return $ok
 }
 
 if (-not (Test-Path $DockerExe)) {
