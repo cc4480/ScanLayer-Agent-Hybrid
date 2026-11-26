@@ -9,6 +9,7 @@ Every document in this folder is generated from **two skills**. No exceptions.
 
 **Flow**
 
+0. One command scaffolds it: `powershell -ExecutionPolicy Bypass -File tools\host-report\new-report.ps1 -HostName <H> -Platform windows|linux|ios -Posture <0-100> -Medium <n> ...`
 1. Load both skills before writing anything.
 2. Collect the data first: commands and raw output, not prose.
 3. Copy `skills/local-host-report/assets/template.html` and replace content only.

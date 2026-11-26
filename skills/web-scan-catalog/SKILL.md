@@ -1,6 +1,8 @@
 ---
 name: web-scan-catalog
-description: Check catalogs for the two local scanners (SecLayer 156 web checks, SecScan 197 web checks) plus the local Windows host assessment (ports, firewall, SSH, SMB, databases, accounts, secrets, overlay networks), each with the exact command and pass/fail oracle. Use when asked to scan a site or this machine without the scanner apps, to reproduce a finding, or to see what is actually tested. Prefer the MCP tools and the apps when they are available.
+description: >-
+  Check catalogs for the two local scanners (SecLayer 156 web checks, SecScan 197 web checks) plus the local host assessment (Windows, Linux, iOS: ports, firewall, SSH, SMB, databases, accounts, secrets, overlay networks), each with the exact command and pass/fail oracle. Use when asked to scan a site or this machine without the scanner apps, to reproduce a finding, or to see what is actually tested. Prefer the MCP tools and the apps when they are available.
+  Trigger phrases: "scan this machine", "what do the scanners test", "run the checks by hand", "reproduce this finding", "which checks exist".
 ---
 
 # Scan catalog — web checks and the local host

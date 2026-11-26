@@ -55,6 +55,16 @@ fix prompt. DSH shows those pages; it never re-renders them.
    by an agent without this brief. Re-derive from the app.
 6. **Only then** start, and say in your answer which path you used.
 
+**Natural-language triggers — what the request means:**
+
+| The user says | The path |
+|---|---|
+| "scan example.com", "scan my site", "check this URL" | the apps: `mcp__seclayer__*` / `mcp__secscan__*`, hand back the app link |
+| "scan this machine", "scan my laptop/PC/box", "pentest this box", "audit this machine" | host assessment: load `web-scan-catalog` + `local-host-report`, run `tools\\host-report\\new-report.ps1`, fill it, hand back the HTML |
+| "host report", "local machine report", "Windows/Linux/iOS report", "where is the host report" | `local-host-report` — the file in `reports/` |
+| "what do the scanners test", "reproduce this finding" | `web-scan-catalog` (read-only catalog) |
+| "where is my report" after a web scan | `4710/r/<shareToken>` — never write one |
+
 ---
 
 ## 3. Hard rules — no exceptions

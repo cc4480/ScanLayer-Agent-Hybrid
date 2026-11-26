@@ -1,6 +1,8 @@
 ---
 name: local-host-report
-description: The canonical HTML report template for local-machine pentests (Windows, Linux, iOS/iPadOS) — exact section order, visual system, animations, data tables and JSON export. Load this before writing any host report so every report looks and reads the same. Do not restyle, reorder or simplify it; replace content only.
+description: >-
+  The canonical HTML report template for local-machine pentests (Windows, Linux, iOS/iPadOS) — exact section order, visual system, animations, data tables and JSON export. Load before writing any host report; replace content only, never restyle or reorder.
+  Trigger phrases: "scan this machine", "pentest this box", "audit my laptop", "host report", "local machine report", "Windows/Linux/iOS report", "make a security report for this PC", "where is the host report".
 ---
 
 # Local host report — the one template
@@ -83,6 +85,21 @@ the user explicitly asks to publish one.
 
 Keep the same 11 top-level sections for all three; only the group names and table
 columns inside §4/§11 change.
+
+## One command
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\host-report\new-report.ps1 `
+  -HostName WORKSTATION-01 -Platform windows -Date 2026-11-26 `
+  -Os "Windows 11 Pro 24H2" -Build "10.0.26100" -Addresses "192.0.2.10 / 100.64.0.10" `
+  -Posture 62 -Critical 0 -High 0 -Medium 3 -Low 4 -Info 3 -Checks 65
+```
+
+Scaffolds `reports/host-pentest-<HOST>-<DATE>.html` from the template: hero, counters,
+gauge, summary, footer and the embedded JSON host are substituted; markup is validated;
+a preview is rendered. `-Platform linux|ios` switches the label and OS defaults;
+`-SkipRender` skips the screenshot. It never invents findings — you still fill §2, §4,
+§6–§8 and §11 from real captures.
 
 ## Fill procedure
 
