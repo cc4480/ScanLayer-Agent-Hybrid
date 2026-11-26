@@ -66,6 +66,10 @@ test('scope pre-execute hook denies an unverified target for the new tools', asy
 })
 
 test('live: webapp_scan completes against a loopback lab site', async (t) => {
+  // Lab targets need the engine's private-target allowance; set it only for this test.
+  const prev = process.env.ALLOW_PRIVATE_SCAN_TARGETS
+  process.env.ALLOW_PRIVATE_SCAN_TARGETS = 'true'
+  t.after(() => { if (prev === undefined) delete process.env.ALLOW_PRIVATE_SCAN_TARGETS; else process.env.ALLOW_PRIVATE_SCAN_TARGETS = prev })
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' })
     res.end('<!doctype html><title>lab</title><h1>lab site</h1>')

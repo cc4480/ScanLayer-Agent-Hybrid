@@ -1,0 +1,4 @@
+
+# Test artifacts written by the scan-core suites (SQLite databases, backups)
+src/engines/seclayer-core/data.sqlite*
+src/engines/seclayer-core/backups/

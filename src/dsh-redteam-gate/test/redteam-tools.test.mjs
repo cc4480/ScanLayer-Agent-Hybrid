@@ -17,9 +17,10 @@ test('the plugin loads and registers native scanners plus red-team tools, and ho
   assert.deepEqual(hooks, ['tools/pre-execute'])
   for (const n of ['nmap', 'nuclei', 'ffuf', 'gobuster', 'sqlmap', 'nikto', 'john']) assert.ok(registered.includes(n), n)
   for (const n of ['secscan_fetch', 'seclayer_probe', 'msfconsole', 'recon_passive']) assert.ok(registered.includes(n), n)
-  // The 11 scanner and red-team tools, plus one ae_ tool per registered AlterEgo catalog entry.
+  for (const n of ['webapp_scan', 'seclayer_scan']) assert.ok(registered.includes(n), n)
+  // The 13 scanner, red-team and verbatim-scan tools, plus one ae_ tool per registered AlterEgo catalog entry.
   const harness = registered.filter((n) => !n.startsWith('ae_'))
-  assert.equal(harness.length, 11)
+  assert.equal(harness.length, 13)
   assert.ok(registered.some((n) => n.startsWith('ae_')), 'AlterEgo tools are registered')
   assert.equal(registered.filter((n) => n.startsWith('ae_')).length, alterEgoCount())
 })

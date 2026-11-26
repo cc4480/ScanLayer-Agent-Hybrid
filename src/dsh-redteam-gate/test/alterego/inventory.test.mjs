@@ -11,7 +11,7 @@ const INVENTORY = path.join(here, '..', '..', 'src', 'engines', 'alterego', 'inv
 function rows() {
   const text = fs.readFileSync(INVENTORY, 'utf8')
   return text
-    .split('\n')
+    .split(/\r?\n/)
     .map((line) => line.match(/^\| (\d+) \| ([a-z_]+) \| (.*?) \| (.*?) \| (.*?) \| (.*?) \|$/))
     .filter(Boolean)
     .map((m) => ({ n: Number(m[1]), name: m[2], purpose: m[3], risk: m[4], tier: m[5], status: m[6] }))
