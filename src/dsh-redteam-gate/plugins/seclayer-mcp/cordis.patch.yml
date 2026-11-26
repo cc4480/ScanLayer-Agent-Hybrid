@@ -1,8 +1,15 @@
 # SecLayer's official MCP server, unchanged, as its own section.
 #
 # stdio transport: DSH runs `npx -y @seclayer/mcp` and speaks MCP over the pipe.
-# The key is referenced as ${credential:SECLAYER_API_KEY} — never copied into this
-# file — and the client redacts every resolved value from diagnostics.
+#
+# It points at the LOCAL instance of the SecLayer app (127.0.0.1:4700), not the
+# live service, because the app's own source is on this machine — no live-account
+# key is involved. That local instance runs from C:/sh/src/seclayer.io2026 with
+# SQLite and DEV_SKIP_AUTH, and its API key was minted by its own POST /api/keys.
+#
+# The key is referenced as ${credential:SECLAYER_API_KEY}, never written here; it
+# lives in the gitignored project .env. The client redacts resolved values from
+# diagnostics.
 #
 # Tools appear as mcp__seclayer__* and cannot collide with the SecScan section.
 - insert:
@@ -18,5 +25,6 @@
         expandTemplates: true
         env:
           SECLAYER_API_KEY: '${credential:SECLAYER_API_KEY}'
+          # Local app instance; override with SECLAYER_API_URL for the live service.
           SECLAYER_API_URL: '${credential:SECLAYER_API_URL}'
         failOnStartupError: false
