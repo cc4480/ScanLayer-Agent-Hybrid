@@ -1,9 +1,11 @@
 // Harness tool wrappers for the scan handlers. The handlers hold the logic; this file only adds the
 // harness schema, the same way redteam-tools.mjs does for its tools.
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { renderText } from './render.mjs'
 import { webappScanHandler, seclayerScanHandler, domainVerifyStartHandler, domainVerifyCheckHandler } from './scan-handlers.mjs'
 
-const TEXT = { schema: { type: 'string' } }
+// defineTool requires output.render; without it every call fails with "userRender is not a function".
+const TEXT = { schema: { type: 'string' }, render: renderText }
 
 /**
  * @param {{isVerified: (domain: string) => Promise<boolean>}} verifier

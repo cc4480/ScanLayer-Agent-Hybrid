@@ -23,15 +23,22 @@ if (-not $env:DEEPSEEK_API_KEY) {
     $userKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
     if ($userKey) { $env:DEEPSEEK_API_KEY = $userKey }
 }
-if (-not $env:DEEPSEEK_API_KEY) {
-    $envFile = Join-Path $Root '.env'
-    if (Test-Path $envFile) {
-        foreach ($line in Get-Content $envFile) {
-            if ($line -match '^\s*DEEPSEEK_API_KEY\s*=\s*(.+?)\s*$') {
-                $env:DEEPSEEK_API_KEY = $Matches[1]
-            }
+# .env supplies DEEPSEEK_API_KEY (if not already set) and DATABASE_URL (the scan engine's Postgres).
+$envFile = Join-Path $Root '.env'
+if (Test-Path $envFile) {
+    foreach ($line in Get-Content $envFile) {
+        if (-not $env:DEEPSEEK_API_KEY -and $line -match '^\s*DEEPSEEK_API_KEY\s*=\s*(.+?)\s*$') {
+            $env:DEEPSEEK_API_KEY = $Matches[1]
+        }
+        if (-not $env:DATABASE_URL -and $line -match '^\s*DATABASE_URL\s*=\s*(.+?)\s*$') {
+            $env:DATABASE_URL = $Matches[1]
         }
     }
+}
+# The scan engines in src\dsh-redteam-gate are TypeScript; the harness process must load them through tsx.
+$env:NODE_OPTIONS = '--import tsx'
+if (-not $env:DATABASE_URL) {
+    Write-Host '[warn] DATABASE_URL is not set in .env - webapp_scan will fail until it points at a migrated Postgres database.'
 }
 
 # --- first-run setup -----------------------------------------------------------
@@ -63,6 +70,16 @@ if (-not (Test-Path $setupDone)) {
     pnpm dsh superagent --from-default-profile web --dump-config | Out-Null
     pnpm dsh plugin --profile superagent add "link:$(Join-Path $Root 'src\dsh-superagent-prototype')"
     pnpm dsh plugin --profile superagent add "link:$(Join-Path $Root 'src\dsh-qnx')"
+    Pop-Location
+
+    Write-Host '[setup] Installing the scan gate and linking it into the web and superagent profiles...'
+    Push-Location (Join-Path $Root 'src\dsh-redteam-gate')
+    npm install
+    if ($env:DATABASE_URL) { npx tsx src/engines/vibescan-core/lib/db/src/migrate.ts }
+    Pop-Location
+    Push-Location (Join-Path $Root 'src\deepseek-harness')
+    pnpm dsh plugin --profile superagent add "link:$(Join-Path $Root 'src\dsh-redteam-gate')"
+    pnpm dsh plugin --profile web add "link:$(Join-Path $Root 'src\dsh-redteam-gate')"
     Pop-Location
 
     Write-Host '[setup] Writing the superagent profile config...'
