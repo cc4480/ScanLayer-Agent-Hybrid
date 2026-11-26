@@ -139,7 +139,7 @@ for (const diag of diags) {  const compiled = compileStaticFindings(diag)
 }
 
 const pad = (s, n) => String(s ?? '').padEnd(n).slice(0, n)
-console.log(`\n=== ${rows.length} finding(s) from the testbed ===\n`)
+console.log(`\n=== ${rows.length} finding(s) from the testbed (raw, both engines) ===\n`)
 console.log(`${pad('source', 9)} ${pad('severity', 9)} ${pad('confidence', 11)} finding`)
 console.log('-'.repeat(96))
 for (const r of rows.sort((a, b) => a.src.localeCompare(b.src))) {
@@ -147,6 +147,25 @@ for (const r of rows.sort((a, b) => a.src.localeCompare(b.src))) {
 }
 
 const expectedFile = path.join(HERE, 'expected.json')
+
+// SecScan is the base; SecLayer is folded in for the checks it does not have.
+const { mergeEngines } = await import('../src/engine-merge.mjs')
+const merged = mergeEngines(rows.map((r) => ({
+  engine: r.src === 'vibescan' ? 'secscan' : 'seclayer',
+  name: r.name,
+  severity: r.sev,
+  confidence: r.conf,
+})))
+console.log(`\n=== merged report: ${merged.merged.length} finding(s), ${merged.dropped.length} overlap(s) removed ===\n`)
+console.log(`${pad('reported by', 12)} ${pad('severity', 9)} ${pad('issue', 18)} finding`)
+console.log('-'.repeat(100))
+for (const f of merged.merged) {
+  console.log(`${pad(f.engine, 12)} ${pad(f.severity, 9)} ${pad(f.key ?? 'seclayer-only', 18)} ${f.name}`)
+}
+if (merged.dropped.length) {
+  console.log('\n-- removed as duplicates of a SecScan finding --')
+  for (const d of merged.dropped) console.log(`  ${pad(d.severity, 9)} ${pad(d.key, 18)} ${d.name}`)
+}
 if (process.argv.includes('--ticker')) {
   console.log('\n=== engine ticker (probe lines) ===\n')
   for (const line of ticker.filter((l) => /PROBE|rate.?limit|SSRF|injection|XSS|aggressive/i.test(l))) {

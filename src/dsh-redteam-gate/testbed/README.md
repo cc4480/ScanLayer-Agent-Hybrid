@@ -64,6 +64,30 @@ owns the exposure/passive catalog (`.env`, backup archive, phpinfo, git config,
 package manifest, verbose error pages, cookie flags, CORS wildcard, directory
 listing) and is markedly faster (9.4s vs 10-26s per target).
 
+## One report, no overlap
+
+`src/engine-merge.mjs` folds the two engines into a single finding list:
+
+- **SecScan is the base.** A SecScan finding always wins and is never repeated.
+- **SecLayer contributes only what SecScan does not have.** A SecLayer finding is
+  dropped when SecScan already covered its issue key.
+- The join key is a canonical ISSUE KEY (`headers:csp`, `cookies:httponly`,
+  `injection:ssrf`, …), not a title — the engines name the same issue differently
+  ("Missing Content-Security-Policy (CSP)" vs "Missing CSP Header"), which is why
+  a title-based dedup would leave duplicates behind.
+- A finding whose name matches no key is treated as SecLayer-only and **always
+  kept**. The safe direction: a mis-keyed finding is reported twice rather than
+  lost.
+- Coverage is SecScan's decision only. SecLayer's own findings are not folded into
+  the covered set, so two legitimate findings of the same kind on different
+  targets both survive.
+
+On the testbed: **158 raw rows → 73 merged, 85 overlaps removed.** What survives
+from SecLayer is exactly the active/exploit surface SecScan lacks — command
+injection, SSRF and blind SSRF, SSTI, XXE, CRLF/host-header injection, prototype
+pollution, price tampering, webhook bypass, GraphQL introspection, weak-token
+entropy, and HSTS (SecScan has no HSTS check).
+
 ## Current result
 
 40 detection checks, 0 missed; 0 false positives on the controls, across both
