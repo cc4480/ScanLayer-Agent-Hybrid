@@ -1,4 +1,4 @@
-﻿// OS command injection active probe. Oracle-first: inject an arithmetic
+// OS command injection active probe. Oracle-first: inject an arithmetic
 // expression with random operands and look for the COMPUTED SUM in the response.
 // The literal payload never contains the sum, so its appearance can only mean the
 // backend evaluated our injected command â€” a proof that can't be a coincidental

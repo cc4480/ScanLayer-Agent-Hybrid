@@ -1,4 +1,4 @@
-﻿// SQL injection active probe. Injects an escaped SQL boundary into the "id"
+// SQL injection active probe. Injects an escaped SQL boundary into the "id"
 // parameter and looks for a raw database-engine error in the response â€” a
 // signature a benign value never produces, so its appearance proves input is
 // reaching the SQL engine unescaped.

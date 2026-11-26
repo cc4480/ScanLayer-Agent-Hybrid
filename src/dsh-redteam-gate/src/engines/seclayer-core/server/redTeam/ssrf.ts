@@ -1,4 +1,4 @@
-﻿// Reflected SSRF active probe. Asks the app to fetch its own loopback SSH port
+// Reflected SSRF active probe. Asks the app to fetch its own loopback SSH port
 // and looks for an SSH service banner in the response â€” internal-only content a
 // public target could not otherwise return, so its presence proves the server
 // fetched an attacker-chosen internal address on our behalf. The blind (no

@@ -1,4 +1,4 @@
-﻿// Reflected XSS active probe. Submits a unique <script> marker in the "q"
+// Reflected XSS active probe. Submits a unique <script> marker in the "q"
 // parameter and confirms it is echoed back into an HTML response in a context
 // where the browser would actually execute it (not a JSON echo, HTML comment,
 // <textarea>/<title>, etc.). Reflection alone is not XSS â€” the execution gate

@@ -1,4 +1,4 @@
-﻿import { crawlSite, targetsFromHtml, dedupeTargets, paramsOf, InjectableTarget } from "./crawler.js";
+import { crawlSite, targetsFromHtml, dedupeTargets, paramsOf, InjectableTarget } from "./crawler.js";
 import { SCANNER_USER_AGENT } from "./config.js";
 import { discoverAndParseApi } from "./openapi.js";
 import { runTemplates, selectTemplates } from "./templateEngine.js";

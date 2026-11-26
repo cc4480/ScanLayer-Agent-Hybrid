@@ -1,4 +1,4 @@
-﻿// Out-of-band (blind) SSRF probe. Reflection only catches SSRF that echoes
+// Out-of-band (blind) SSRF probe. Reflection only catches SSRF that echoes
 // internal content back inline; this catches the blind case by injecting a
 // unique collaborator URL and watching for the target to call it. A recorded
 // callback is the proof â€” see server/oob.ts and buildOobEvidence. Runs only
