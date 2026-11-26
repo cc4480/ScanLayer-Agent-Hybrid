@@ -112,11 +112,11 @@ test('report: "What changed since last scan" renders deltas when provided, and o
   assert.match(withChange, /Cross-Tenant Access/)
 })
 
-test('report: AI-verified badge only appears when aiReasoning is present (a real DeepSeek call ran)', () => {
+test('report: the AI badge only appears when aiReasoning is present (a real DeepSeek call ran)', () => {
   const local = renderScanReportHtml({ target: 'mine.example', data: fakeData({ aiReport: { score: 100, findings: [], aiSummary: 'ok' } }) })
-  assert.ok(!local.includes('DeepSeek AI Analyst Verified'))
+  assert.ok(!local.includes('AI analyst'))
   const ai = renderScanReportHtml({ target: 'mine.example', data: fakeData({ aiReport: { score: 100, findings: [], aiSummary: 'ok', aiReasoning: 'because...' } }) })
-  assert.ok(ai.includes('DeepSeek AI Analyst Verified'))
+  assert.ok(ai.includes('AI analyst'))
 })
 
 test('report: pillar grid shows every category with its real count and badge', () => {
@@ -140,7 +140,40 @@ test('report: embeds the full ticker transcript', () => {
   const html = renderScanReportHtml({ target: 'mine.example', tickerLines: ['[SYSTEM] Starting scan...', '[PROBE] → SQLi: firing...'] })
   assert.match(html, /Starting scan/)
   assert.match(html, /SQLi: firing/)
-  assert.match(html, /Live Scan Ticker \(2 line\(s\)\)/)
+  assert.match(html, /Scan log \(2 line\(s\)\)/)
+})
+
+// The report used to open with the raw remediation prompt, then a score, then
+// three summary panels, and only reached the findings several screens down. The
+// order is now the one a reader expects: contents, summary, findings, remediation,
+// coverage, attack surface, evidence, log.
+test('report: sections are ordered and reachable from the contents rail', () => {
+  const html = renderScanReportHtml({ target: 'mine.example', data: fakeData({ fixPrompt: '# plan', aiReport: { score: 70, findings: [finding()], aiSummary: 'x' } }), tickerLines: ['[SYSTEM] x'] })
+  const order = ['id="summary"', 'id="findings"', 'id="fixplan"', 'id="coverage"', 'id="surface"', 'id="evidence"', 'id="log"']
+  const positions = order.map((needle) => html.indexOf(needle))
+  positions.forEach((p, i) => assert.ok(p > 0, `missing section ${order[i]}`))
+  for (let i = 1; i < positions.length; i++) {
+    assert.ok(positions[i - 1] < positions[i], `${order[i - 1]} must precede ${order[i]}`)
+  }
+  // The contents rail links to every section it names.
+  for (const id of ['summary', 'findings', 'fixplan', 'coverage', 'surface', 'evidence', 'log']) {
+    assert.match(html, new RegExp(`href="#${id}"`), `contents rail is missing #${id}`)
+  }
+})
+
+test('report: the findings table lists every finding, severity-ordered, linked to its detail card', () => {
+  const findings = [
+    finding({ severity: 'low', title: 'Minor thing' }),
+    finding({ severity: 'critical', title: 'Worst thing' }),
+    finding({ severity: 'medium', title: 'Middle thing' }),
+  ]
+  const html = renderScanReportHtml({ target: 'mine.example', data: fakeData({ aiReport: { score: 40, findings, aiSummary: 'x' } }) })
+  assert.match(html, /<table class="summary">/)
+  assert.ok(html.indexOf('Worst thing') < html.indexOf('Middle thing'), 'most severe first')
+  assert.ok(html.indexOf('Middle thing') < html.indexOf('Minor thing'), 'most severe first')
+  assert.match(html, /href="#finding-1"/)
+  assert.match(html, /id="finding-1"/)
+  assert.match(html, /id="finding-3"/)
 })
 
 test('report: network/coverage panels use evidence and coverage, not raw seclayer fields', () => {
@@ -153,14 +186,17 @@ test('report: network/coverage panels use evidence and coverage, not raw seclaye
   assert.match(html, /nginx/)
 })
 
-test('report: the Complete Fix Prompt panel leads the report and is copyable', () => {
+test('report: the remediation prompt follows the findings and is copyable', () => {
   const prompt = '# Security Remediation Plan — mine.example\n\n- Issues to fix: 1 — 1 high'
   const html = renderScanReportHtml({ target: 'mine.example', data: fakeData({ fixPrompt: prompt, aiReport: { score: 70, findings: [finding()], aiSummary: 'x' } }) })
-  assert.match(html, /Complete Fix Prompt/)
-  assert.match(html, /1 issue &middot; paste into any AI coding agent/)
+  assert.match(html, /Complete fix prompt/i)
+  assert.match(html, /paste into any AI coding agent/)
   assert.match(html, /id="complete-fix-prompt"/)
   assert.match(html, /Security Remediation Plan/)
-  assert.ok(html.indexOf('Complete Fix Prompt') < html.indexOf('What Changed Since Last Scan'), 'panel sits above the rest of the report')
+  // It is a remediation appendix now, not the first thing a reader sees: after
+  // the findings it explains, and before the coverage/evidence sections.
+  assert.ok(html.indexOf('id="findings"') < html.indexOf('id="fixplan"'), 'remediation follows the findings')
+  assert.ok(html.indexOf('id="fixplan"') < html.indexOf('id="coverage"'), 'remediation precedes coverage')
 })
 
 test('report: no fix-prompt panel when the scan found nothing to fix', () => {

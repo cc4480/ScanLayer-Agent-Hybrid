@@ -2,11 +2,11 @@
 // oracle: inject a template expression that multiplies two random operands and
 // look for the COMPUTED PRODUCT in the response. The literal payload only ever
 // contains "A*B", never the product, so the product's appearance can only mean
-// the backend template engine evaluated our expression — a proof that can't be a
+// the backend template engine evaluated our expression â€” a proof that can't be a
 // coincidental page string. Non-destructive: it computes a number, nothing else.
 import crypto from "crypto";
 import { buildProbeEvidence } from "../evidence.js";
-import { probeFetch } from "../redTeam/probeHttp.js";
+import { probeFetch, probeUrl } from "../redTeam/probeHttp.js";
 import type { ProbeContext, RedTeamFinding } from "../redTeam/types.js";
 
 // Common template syntaxes across engines: Jinja2/Twig/Nunjucks, Freemarker/
@@ -19,14 +19,14 @@ const SYNTAXES = (a: number, b: number): string[] => [
 ];
 
 export async function probeSsti(ctx: ProbeContext): Promise<RedTeamFinding | null> {
-  // 4-digit operands → an 7-8 digit product that is extremely unlikely to appear
+  // 4-digit operands â†’ an 7-8 digit product that is extremely unlikely to appear
   // by coincidence, and whose factors never appear literally as the product.
   const a = 1000 + crypto.randomInt(8999);
   const b = 1000 + crypto.randomInt(8999);
   const product = String(a * b);
 
   for (const expr of SYNTAXES(a, b)) {
-    const attackUrl = `${ctx.url}/?name=${encodeURIComponent(expr)}`;
+    const attackUrl = probeUrl(ctx.url, `name=${encodeURIComponent(expr)}`);
     let body: string;
     let res: Response;
     try {
@@ -37,7 +37,7 @@ export async function probeSsti(ctx: ProbeContext): Promise<RedTeamFinding | nul
     }
     const idx = body.indexOf(product);
     // The product must appear AND the raw expression must NOT be reflected as-is
-    // (if "A*B" is echoed verbatim the engine didn't evaluate it — that's just
+    // (if "A*B" is echoed verbatim the engine didn't evaluate it â€” that's just
     // reflection, not SSTI).
     if (idx !== -1 && !body.includes(expr)) {
       return {
@@ -55,8 +55,8 @@ export async function probeSsti(ctx: ProbeContext): Promise<RedTeamFinding | nul
           body,
           matchIndex: idx,
           quote: product,
-          why: `We injected the template expression "${expr}"; the response contained ${product}, the exact product of ${a}×${b}. The literal payload never contains that number, so the server-side template engine must have evaluated our expression.`,
-          demonstration: `We placed the template expression "${expr}" in the "name" parameter and the server rendered ${product} — the computed product of ${a} and ${b}. Only a backend that evaluated our expression as a template could produce that value, which is the hallmark of SSTI (and a frequent path to remote code execution).`,
+          why: `We injected the template expression "${expr}"; the response contained ${product}, the exact product of ${a}Ã—${b}. The literal payload never contains that number, so the server-side template engine must have evaluated our expression.`,
+          demonstration: `We placed the template expression "${expr}" in the "name" parameter and the server rendered ${product} â€” the computed product of ${a} and ${b}. Only a backend that evaluated our expression as a template could produce that value, which is the hallmark of SSTI (and a frequent path to remote code execution).`,
         }),
       };
     }

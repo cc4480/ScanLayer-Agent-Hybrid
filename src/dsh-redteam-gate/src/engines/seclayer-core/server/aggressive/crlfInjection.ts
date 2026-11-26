@@ -1,11 +1,12 @@
 // CRLF / HTTP response-header injection active probe (AGGRESSIVE tier). Injects
 // an encoded CRLF followed by a unique marker header into common parameters and
-// checks whether that header appears in the RESPONSE — proof the app writes
+// checks whether that header appears in the RESPONSE â€” proof the app writes
 // unsanitized input into the response headers (enabling response splitting,
 // header/cookie injection, and cache poisoning). Non-destructive: it only sets a
 // harmless custom header on the probe's own response.
 import crypto from "crypto";
 import { aggFetchRaw, buildHeaderEvidence } from "./aggHttp.js";
+import { probeUrl } from "../redTeam/probeHttp.js";
 import type { ProbeContext, RedTeamFinding } from "../redTeam/types.js";
 
 const CRLF_PARAMS = ["redirect", "url", "next", "lang", "page", "q", "return"];
@@ -18,7 +19,7 @@ export async function probeCrlf(ctx: ProbeContext): Promise<RedTeamFinding | nul
 
   for (const param of CRLF_PARAMS) {
     for (const seq of seqs) {
-      const attackUrl = `${ctx.url}/?${param}=probe${seq}`;
+      const attackUrl = probeUrl(ctx.url, `${param}=probe${seq}`);
       let res: Response;
       try {
         res = await aggFetchRaw(attackUrl, { headers: ctx.fuzzHeaders });
@@ -43,7 +44,7 @@ export async function probeCrlf(ctx: ProbeContext): Promise<RedTeamFinding | nul
             proofHeaders: [`${marker}: ${res.headers.get(marker)}`],
             quote: marker,
             why: `We injected an encoded newline plus "${marker}" into the "${param}" parameter, and the server emitted "${marker}" as a real response header. Only input written unsanitized into the response header block can produce a new header this way.`,
-            demonstration: `We put a CRLF sequence in the "${param}" parameter and the server added our own header "${marker}" to its response. That means an attacker can inject arbitrary headers — including Set-Cookie or a split response body — into what victims receive.`,
+            demonstration: `We put a CRLF sequence in the "${param}" parameter and the server added our own header "${marker}" to its response. That means an attacker can inject arbitrary headers â€” including Set-Cookie or a split response body â€” into what victims receive.`,
           }),
         };
       }

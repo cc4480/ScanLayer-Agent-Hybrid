@@ -176,12 +176,37 @@ export interface SecurityPosture {
   score: number;                  // 0-100
   grade: Grade;                   // letter grade for `score`
   severity: Severity;             // highest active severity ("info" when none)
-  postureRating: RiskLabel;       // human label for `severity`
+  postureRating: RiskLabel;       // human label for `severity`, capped by confirmation
   findingsBySeverity: Record<Severity, number>; // active counts per severity
   activeCount: number;            // total non-suppressed findings
   confirmedCount: number;         // active findings that are probe-confirmed
   needsVerificationCount: number; // active heuristic findings
   intercepted: boolean;           // a bot-protection layer answered; grade is "N/A"
+}
+
+/**
+ * The headline label for a findings set.
+ *
+ * The score already refuses to let unconfirmed heuristics manufacture an F (see
+ * HEURISTIC_DEDUCTION_CAP / CONFIRMED_SEVERITY_CEILING), but the LABEL used to
+ * be taken from raw severity regardless of confirmation — so a single
+ * medium-confidence claim that happened to be typed "high" printed
+ * "88/100 — HIGH RISK", a gauge and a verdict contradicting each other. The label
+ * is a statement about the target; an unproven heuristic is a statement about the
+ * scan. So an unconfirmed critical/high can raise the label to MODERATE (worth
+ * investigating) but never to HIGH RISK or CRITICAL, which stay reserved for
+ * findings the engine actually confirmed.
+ */
+function labelFor(active: Finding[]): RiskLabel {
+  const top = highestSeverity(active);
+  if (!top) return 'SECURE';
+  if (top === 'critical' || top === 'high') {
+    const confirmedAtTop = active.some(
+      (f) => normalizeSeverity(f.severity) === top && isConfirmed(f),
+    );
+    if (!confirmedAtTop) return riskLabelForSeverity('medium');
+  }
+  return riskLabelForSeverity(top);
 }
 
 // The finding title compileStaticFindings emits when a challenge page answered.
@@ -237,7 +262,7 @@ export function deriveSecurityPosture(findings: Finding[]): SecurityPosture {
     score,
     grade: intercepted ? "N/A" : gradeForScore(score),
     severity: top ?? "info",
-    postureRating: riskLabelForSeverity(top),
+    postureRating: labelFor(active),
     findingsBySeverity,
     activeCount: active.length,
     confirmedCount,
@@ -277,6 +302,17 @@ export function bannerForPosture(findings: Finding[]): PostureBanner | null {
     .filter((f) => normalizeSeverity(f.severity) === top)
     .sort((a, b) => (isConfirmed(b) ? 1 : 0) - (isConfirmed(a) ? 1 : 0))[0];
   const worstTitle = worst?.title ? `"${worst.title}"` : "the highest-severity issue";
+
+  // Same rule as labelFor(): an unconfirmed critical/high is a claim to check, not
+  // a verdict to shout. It used to print "High Risk — Prompt Remediation Needed"
+  // beside a MODERATE gauge and an 88/100 score.
+  if ((top === "critical" || top === "high") && !isConfirmed(worst)) {
+    return {
+      level: "warning",
+      title: "Findings Need Verification",
+      message: `${n} ${noun} detected. The most severe is an UNCONFIRMED ${top}-severity claim (${worstTitle}) — the scan observed it but could not prove it, so reproduce it by hand before treating it as a vulnerability.`,
+    };
+  }
 
   switch (top) {
     case "critical":

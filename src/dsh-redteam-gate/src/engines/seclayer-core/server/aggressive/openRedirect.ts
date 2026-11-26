@@ -1,8 +1,9 @@
 // Open Redirect active probe (AGGRESSIVE tier). Injects an off-site URL into
 // common redirect parameters and checks whether the app issues a 3xx Location
 // pointing at our attacker-controlled host. Non-destructive: the probe follows
-// nothing (redirect: manual) — it only reads the Location header.
+// nothing (redirect: manual) â€” it only reads the Location header.
 import { aggFetchRaw, buildHeaderEvidence } from "./aggHttp.js";
+import { probeUrl } from "../redTeam/probeHttp.js";
 import type { ProbeContext, RedTeamFinding } from "../redTeam/types.js";
 
 const REDIRECT_PARAMS = ["next", "redirect", "url", "return", "returnUrl", "dest", "continue", "r"];
@@ -17,7 +18,7 @@ export async function probeOpenRedirect(ctx: ProbeContext): Promise<RedTeamFindi
 
   for (const param of REDIRECT_PARAMS) {
     for (const payload of payloads) {
-      const attackUrl = `${ctx.url}/?${param}=${encodeURIComponent(payload)}`;
+      const attackUrl = probeUrl(ctx.url, `${param}=${encodeURIComponent(payload)}`);
       let res: Response;
       try {
         res = await aggFetchRaw(attackUrl, { headers: ctx.fuzzHeaders });
@@ -51,7 +52,7 @@ export async function probeOpenRedirect(ctx: ProbeContext): Promise<RedTeamFindi
             res,
             proofHeaders: [`Location: ${location}`],
             quote: MARKER_HOST,
-            why: `The server answered with an HTTP ${res.status} redirect whose Location points at "${MARKER_HOST}" — a host we supplied in the "${param}" parameter. The app forwarded a visitor to an external destination of our choosing.`,
+            why: `The server answered with an HTTP ${res.status} redirect whose Location points at "${MARKER_HOST}" â€” a host we supplied in the "${param}" parameter. The app forwarded a visitor to an external destination of our choosing.`,
             demonstration: `We set "${param}" to "${payload}" and the server replied with a redirect to ${location}. Because it sends users to a host we control, an attacker can craft a link on your domain that lands victims on a phishing page.`,
           }),
         };

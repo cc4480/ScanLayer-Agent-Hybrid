@@ -1,15 +1,16 @@
 // CORS misconfiguration active probe (AGGRESSIVE tier). Sends a request with an
 // attacker Origin and checks whether the app REFLECTS that exact origin in
-// Access-Control-Allow-Origin while also allowing credentials — the combination
+// Access-Control-Allow-Origin while also allowing credentials â€” the combination
 // that lets any malicious site read authenticated responses on behalf of a
 // logged-in victim. Non-destructive: one GET with a forged Origin header.
 import { aggFetch, buildHeaderEvidence } from "./aggHttp.js";
+import { probeRoot } from "../redTeam/probeHttp.js";
 import type { ProbeContext, RedTeamFinding } from "../redTeam/types.js";
 
 const EVIL_ORIGIN = "https://seclayer-cors-probe.example";
 
 export async function probeCors(ctx: ProbeContext): Promise<RedTeamFinding | null> {
-  const attackUrl = `${ctx.url}/`;
+  const attackUrl = probeRoot(ctx.url);
   let res: Response;
   try {
     res = await aggFetch(attackUrl, { headers: { ...ctx.fuzzHeaders, Origin: EVIL_ORIGIN } });

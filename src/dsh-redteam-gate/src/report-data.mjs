@@ -86,12 +86,17 @@ function computeChangeSinceLastScan(host, score, findings) {
 export async function buildSeclayerReportData(url, seclayer) {
   const { compileStaticFindings, compileScanEvidence } = await import(SECLAYER_SCANNER)
   const { generateAiReport } = await import(SECLAYER_DEEPSEEK)
-  const { gradeForScore, deriveSecurityPosture, riskLabelForSeverity, highestSeverity } = await import(SECLAYER_SCORING)
+  const { gradeForScore, deriveSecurityPosture, riskLabelForSeverity, highestSeverity, resultTier } = await import(SECLAYER_SCORING)
 
   const staticCompiled = compileStaticFindings(seclayer)
   // apiKey undefined -> resolveApiKey falls back to the environment/host-configured key; absent entirely,
   // generateAiReport itself degrades to its own deterministic local-mode summary (never throws for this).
   const aiReport = await generateAiReport(url, seclayer, staticCompiled, undefined)
+  // Stamp the engine's own truth-tier on every finding (PASS | PROVEN | CONFIRMED |
+  // NEEDS VERIFICATION) so the report cannot label a heuristic "proven" just because
+  // a finding carries an observation receipt. scoring.ts is the one definition of
+  // these tiers; the template only prints them.
+  aiReport.findings = (aiReport.findings ?? []).map((f) => ({ ...f, tier: resultTier(f) }))
   const evidence = compileScanEvidence(seclayer)
   const grade = gradeForScore(aiReport.score)
   const posture = deriveSecurityPosture(aiReport.findings)

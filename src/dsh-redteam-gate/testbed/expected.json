@@ -1,0 +1,27 @@
+{
+  "_comment": "Ground truth for testbed/vulnapp.mjs. `detect` = a bug the testbed plants that the engine must report; `clean` = a control that must never be reported. Run `node run.mjs --check`. Matched case-insensitively against every finding name the engine produced (scored + redteam + api + sast + cookie + header + path).",
+  "detect": [
+    { "match": "Active SQL Injection Probe", "bug": "SQL injection reachable at the root ?id= parameter" },
+    { "match": "Active Reflected XSS Probe", "bug": "reflected XSS at the root ?q= parameter" },
+    { "match": "Active OS Command Injection", "bug": "command injection at the root ?ping= parameter" },
+    { "match": "Active Server-Side Request Forgery", "bug": "SSRF via the root ?url= parameter" },
+    { "match": "Active Server-Side Template Injection", "bug": "SSTI via the root ?name= parameter" },
+    { "match": "Active NoSQL Injection", "bug": "NoSQL operator auth bypass at /login" },
+    { "match": "Active CORS Misconfiguration", "bug": "Origin reflection with credentials on /" },
+    { "match": "Host Header Injection", "bug": "X-Forwarded-Host trusted for canonical links on /" },
+    { "match": "GraphQL Schema Introspection Exposed", "bug": "introspection enabled on /graphql" },
+    { "match": "Cookie .sid. is set without the HttpOnly", "bug": "session cookie without HttpOnly on /" },
+    { "match": "Missing Content-Security-Policy", "bug": "no CSP header" },
+    { "match": "Missing X-Frame-Options", "bug": "no anti-clickjacking header" },
+    { "match": "Missing X-Content-Type-Options", "bug": "no nosniff header" },
+    { "match": "exposed /\\.env", "bug": ".env served with secrets" },
+    { "match": "exposed /\\.git/config", "bug": ".git/config served" },
+    { "match": "discovered parameter .q. on /vuln/search", "bug": "SQLi/XSS on the crawled /vuln/search parameter" },
+    { "match": "discovered parameter .page. on /vuln/include", "bug": "LFI on the crawled /vuln/include parameter" },
+    { "match": "discovered parameter .name. on /vuln/file", "bug": "path traversal on the crawled /vuln/file parameter" }
+  ],
+  "clean": [
+    { "match": "on /safe/", "bug": "no finding may reference a hardened /safe/* control route" },
+    { "match": "on /vuln/go", "bug": "the non-followed redirect endpoint must not be reported as SQLi/XSS" }
+  ]
+}

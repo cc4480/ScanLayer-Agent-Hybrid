@@ -168,6 +168,36 @@ test('riskLabelForSeverity never labels an info/low posture as MODERATE or worse
   assert.equal(riskLabelForSeverity('critical'), 'CRITICAL');
 });
 
+// The seclayer.app report showed "88/100 · GRADE B · POSTURE RATING: HIGH RISK"
+// for one medium-confidence missing-rate-limit heuristic. The score had correctly
+// refused to fail the site; the label had not, because it read raw severity.
+test('an UNCONFIRMED high/critical cannot label the site HIGH RISK or CRITICAL', () => {
+  const heuristicHigh = deriveSecurityPosture([
+    { title: 'No Rate Limiting on Authentication-Code Verification', severity: 'high', confidence: 'medium' } as any,
+  ]);
+  assert.equal(heuristicHigh.postureRating, 'MODERATE');
+
+  const heuristicCritical = deriveSecurityPosture([
+    { title: 'Weak/Predictable Security Token', severity: 'critical', confidence: 'medium' } as any,
+  ]);
+  assert.equal(heuristicCritical.postureRating, 'MODERATE');
+
+  // A CONFIRMED high still escalates — the cap is about proof, not severity.
+  const confirmedHigh = deriveSecurityPosture([{ severity: 'high', confidence: 'high' } as any]);
+  assert.equal(confirmedHigh.postureRating, 'HIGH RISK');
+});
+
+test('banner: an unconfirmed high asks for verification instead of shouting High Risk', () => {
+  const b = bannerForPosture([{ severity: 'high', confidence: 'medium', title: 'No Rate Limiting' } as any]);
+  assert.equal(b?.level, 'warning');
+  assert.match(b!.title, /Need Verification/i);
+  assert.match(b!.message, /UNCONFIRMED high/i);
+
+  const confirmed = bannerForPosture([{ severity: 'high', confidence: 'high', title: 'SQL injection' } as any]);
+  assert.equal(confirmed?.level, 'critical');
+  assert.match(confirmed!.title, /High Risk/i);
+});
+
 test('banner: no red alarm for an info/low worst case, derived from real severity', () => {
   assert.equal(bannerForPosture([]), null);
 

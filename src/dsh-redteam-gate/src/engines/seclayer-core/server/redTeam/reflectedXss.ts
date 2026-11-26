@@ -1,17 +1,17 @@
-// Reflected XSS active probe. Submits a unique <script> marker in the "q"
+﻿// Reflected XSS active probe. Submits a unique <script> marker in the "q"
 // parameter and confirms it is echoed back into an HTML response in a context
 // where the browser would actually execute it (not a JSON echo, HTML comment,
-// <textarea>/<title>, etc.). Reflection alone is not XSS — the execution gate
+// <textarea>/<title>, etc.). Reflection alone is not XSS â€” the execution gate
 // removes the dominant false positive.
 import crypto from "crypto";
 import { buildProbeEvidence } from "../evidence.js";
 import { xssReflectionExecutes } from "../fpFilters.js";
-import { probeFetch } from "./probeHttp.js";
+import { probeFetch, probeUrl } from "./probeHttp.js";
 import type { ProbeContext, RedTeamFinding } from "./types.js";
 
 export async function probeReflectedXss(ctx: ProbeContext): Promise<RedTeamFinding | null> {
   const uniqueTrigger = `xss_probe_${crypto.randomBytes(4).toString("hex")}`;
-  const attackUrl = `${ctx.url}/?q=%3Cscript%3E${uniqueTrigger}%3C%2Fscript%3E`;
+  const attackUrl = probeUrl(ctx.url, `q=%3Cscript%3E${uniqueTrigger}%3C%2Fscript%3E`);
   const res = await probeFetch(attackUrl, ctx.fuzzHeaders);
   const body = await res.text();
   const marker = `<script>${uniqueTrigger}</script>`;
@@ -38,7 +38,7 @@ export async function probeReflectedXss(ctx: ProbeContext): Promise<RedTeamFindi
       matchIndex: markerIdx,
       quote: marker,
       why: "The unique probe marker was echoed back verbatim and unescaped inside the HTML body, so a browser parses it as a live <script> element rather than text.",
-      demonstration: `We submitted the unique marker ${marker} in the "q" query parameter, and the server reflected it back into the page unescaped. Because it is returned as live HTML — not text — an attacker-supplied script placed here would execute in a visitor's browser.`,
+      demonstration: `We submitted the unique marker ${marker} in the "q" query parameter, and the server reflected it back into the page unescaped. Because it is returned as live HTML â€” not text â€” an attacker-supplied script placed here would execute in a visitor's browser.`,
     }),
   };
 }

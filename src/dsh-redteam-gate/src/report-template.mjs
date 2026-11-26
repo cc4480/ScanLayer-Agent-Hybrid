@@ -69,20 +69,20 @@ function severityTag(sev) {
   return `<span class="sev-tag sev-${s}">${label}</span>`;
 }
 
-function renderFindingCard(f) {
+function renderFindingCard(f, index = 1) {
   const sev = String(f.severity ?? 'info').toLowerCase();
   const agentPromptId = `prompt-${esc(f.id ?? Math.random().toString(36).slice(2))}`;
-  return `<div class="finding sev-${sev}">
+  return `<div class="finding sev-${sev}" id="finding-${index}">
     <div class="finding-head">
       ${severityTag(f.severity)}
       <span class="finding-title">${esc(f.title)}</span>
-      <span class="finding-pillar">${esc(f.category)}</span>
+      <span class="finding-pillar">${esc(f.category)}${f.confidence ? ` &middot; ${esc(f.confidence)} confidence` : ''}</span>
     </div>
     ${f.description ? `<div class="finding-desc">${esc(f.description)}</div>` : ''}
     ${f.impact ? `<div class="finding-impact"><strong>Impact:</strong> ${esc(f.impact)}</div>` : ''}
     ${f.fix ? `<div class="finding-fix"><strong>Fix:</strong> ${esc(f.fix)}</div>` : ''}
     ${f.verification ? `<div class="finding-verify">${esc(f.verification)}</div>` : ''}
-    ${f.agentPrompt ? `
+    ${f.agentPrompt && sev !== 'info' ? `
       <textarea id="${agentPromptId}" class="prompt-src">${esc(f.agentPrompt)}</textarea>
       <button type="button" class="copy-btn" onclick="copyFix('${agentPromptId}', this)">Copy Fix Prompt</button>
     ` : ''}
@@ -90,18 +90,20 @@ function renderFindingCard(f) {
 }
 
 /** The product's "Complete Fix Prompt" panel: one plan for every issue, ready to paste into an agent. */
-function fixPromptPanel(fixPrompt, issueCount) {
+function fixPromptPanel(fixPrompt, issueCount, n = '') {
   if (!fixPrompt) return '';
-  return `<section class="panel fixpanel">
-    <div class="fixpanel-head">
-      <span class="fixpanel-title">Complete Fix Prompt</span>
-      <span class="fixpanel-sub">${issueCount} issue${issueCount === 1 ? '' : 's'} &middot; paste into any AI coding agent</span>
-      <button type="button" class="copy-btn" onclick="copyFix('complete-fix-prompt', this)">Copy</button>
+  return `<details class="panel" id="fixplan">
+    <summary class="fixpanel-head">
+      <span class="fixpanel-title">${n ? `<span class="n">${esc(n)}</span> ` : ''}Remediation &mdash; complete fix prompt</span>
+      <span class="fixpanel-sub">${issueCount} issue${issueCount === 1 ? '' : 's'} &middot; one plan, most severe first &middot; paste into any AI coding agent</span>
+    </summary>
+    <div class="fixpanel-inner">
+      <p class="fixpanel-note">Self-contained remediation plan covering every finding above. It names no files — the scanner is black-box — so the agent locates each root cause from the described behaviour.</p>
+      <button type="button" class="copy-btn" onclick="copyFix('complete-fix-prompt', this)">Copy prompt</button>
+      <textarea id="complete-fix-prompt" class="prompt-src">${esc(fixPrompt)}</textarea>
+      <pre class="fixpanel-body">${esc(fixPrompt)}</pre>
     </div>
-    <p class="fixpanel-note">One self-contained remediation plan covering every finding below, most severe first. It names no files — the scanner is black-box — so the agent locates each root cause from the described behavior.</p>
-    <textarea id="complete-fix-prompt" class="prompt-src">${esc(fixPrompt)}</textarea>
-    <pre class="fixpanel-body">${esc(fixPrompt)}</pre>
-  </section>`;
+  </details>`;
 }
 
 function changeBox(change) {
@@ -126,18 +128,28 @@ function changeBox(change) {
 
 function hardeningGapsBox(posture, findings) {
   const active = findings.filter((f) => !f.isFalsePositive);
-  if (active.length === 0 || posture.postureRating === 'SECURE') {
-    return `<div class="panel"><div class="gaps-box ok"><span class="tag">NO HARDENING GAPS DETECTED</span><div style="margin-top:4px;">This scan found no active findings against the target.</div></div></div>`;
+  // "INFO" and "SECURE" both mean nothing actionable was found: an info note is
+  // scan context (surface mapped, probe skipped), not a weakness. Painting those
+  // amber would contradict the gauge right above it.
+  if (active.length === 0 || posture.postureRating === 'SECURE' || posture.postureRating === 'INFO') {
+    return `<div class="gaps-box ok"><span class="tag">NO ACTIONABLE FINDINGS</span><div style="margin-top:4px;">Nothing in this scan needs remediation.${active.length ? ` ${active.length} informational note${active.length === 1 ? '' : 's'} recorded as context only.` : ''}</div></div>`;
   }
+  // Keyed off the posture LABEL, not raw severity: the label already accounts for
+  // whether the worst finding was confirmed, so this line cannot call a site
+  // "high risk" that the gauge beside it rates MODERATE.
   const order = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
   const top = [...active].sort((a, b) => (order[a.severity] ?? 4) - (order[b.severity] ?? 4))[0];
-  const urgency = { critical: 'a serious exposure that should be remediated immediately', high: 'a serious exposure that should be remediated soon', medium: 'a defense-in-depth gap worth scheduling for remediation, not an emergency', low: 'a minor hygiene item, not urgent', info: 'informational context, not an action item' }[top.severity] ?? 'worth reviewing';
-  return `<div class="panel">
-    <div class="gaps-box warn">
+  const urgency = {
+    CRITICAL: 'a serious exposure that should be remediated immediately',
+    'HIGH RISK': 'a serious exposure that should be remediated soon',
+    MODERATE: 'a defense-in-depth gap worth scheduling for remediation, not an emergency',
+    'LOW RISK': 'a minor hygiene item, not urgent',
+    INFO: 'informational context, not an action item',
+  }[posture.postureRating] ?? 'worth reviewing';
+  return `<div class="gaps-box warn">
       <span class="tag">${esc(posture.postureRating)} HARDENING GAPS</span>
-      <div style="margin-top:4px;">${active.length} finding(s) detected. The most significant is a ${esc(top.severity)}-severity issue ("${esc(top.title)}") — ${esc(urgency)}.</div>
-    </div>
-  </div>`;
+      <div style="margin-top:4px;">${active.length} finding(s) detected. The most significant is a ${esc(String(top.severity ?? 'info').toUpperCase())}-severity issue ("${esc(top.title)}") — ${esc(urgency)}.</div>
+    </div>`;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -334,9 +346,9 @@ function renderCookies(seclayer) {
     <p class="diag-note">Cookie values are redacted; only the attributes the scanner judged are shown.</p>`
 }
 
-function renderDiagnostics({ seclayer, evidence, vibescan }) {
+function renderDiagnostics({ seclayer, evidence, vibescan, n = '' }) {
   if (!seclayer && !vibescan) {
-    return `<section class="panel"><h2>Diagnostic Raw Headers &amp; Outputs</h2><div class="empty">No diagnostic data was captured for this target.</div></section>`
+    return `<section class="panel" id="evidence"><h2><span class="n">${esc(n)}</span> Evidence</h2><div class="empty">No diagnostic data was captured for this target.</div></section>`
   }
   const blocks = []
   blocks.push(diagBlock('Captured scan trace', undefined,
@@ -361,8 +373,8 @@ function renderDiagnostics({ seclayer, evidence, vibescan }) {
     undefined,
     renderCookies(seclayer)))
 
-  return `<details class="diag" open>
-    <summary>Diagnostic Raw Headers &amp; Outputs</summary>
+  return `<details class="diag" open id="evidence">
+    <summary>${n ? `<span class="n">${esc(n)}</span> ` : ''}Evidence &mdash; raw headers and outputs</summary>
     <div class="diag-body">
       <p class="diag-intro">The exact evidence captured during this scan — resolved network data, per-path probe results, and observed header state. Everything below is real output from this run.</p>
       ${blocks.join('\n')}
@@ -388,11 +400,44 @@ export function renderScanReportHtml({ target, seclayer, vibescan, data, tickerL
   const grade = data?.grade ?? (score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F');
   const posture = data?.posture ?? { postureRating: findings.length ? 'MODERATE' : 'SECURE' };
   const scoreCls = score >= 90 ? '' : score >= 70 ? 'warn' : 'bad';
-  // "Proven" means the engine attached a replayable exploit receipt; everything else is reported but
-  // still needs a human to reproduce it. Confidence alone does not make a finding proven.
-  const provenCount = findings.filter((f) => f.evidence).length;
-  const toVerifyCount = findings.length - provenCount;
+  // "Proven" means the engine attached a replayable exploit receipt — NOT merely
+  // that a finding carries an evidence block (an observation receipt is evidence
+  // but proves nothing). report-data.mjs stamps each finding with scoring.ts's own
+  // resultTier(), so the counts here can never overstate what was proven.
+  const provenCount = findings.filter((f) => f.tier === 'PROVEN').length;
+  const confirmedCount = findings.filter((f) => f.tier === 'CONFIRMED').length;
+  const toVerifyCount = findings.filter((f) => f.tier === 'NEEDS VERIFICATION').length;
+  const statusOf = (f) => ({
+    PROVEN: 'proven', CONFIRMED: 'confirmed', 'NEEDS VERIFICATION': 'needs verification', PASS: 'pass',
+  }[f.tier] ?? 'needs verification');
   const fixPrompt = data?.fixPrompt ?? '';
+
+  // One ordering and one set of counts for the whole document: the summary table,
+  // the detail cards and the tally must never disagree about severity.
+  const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  const ordered = [...findings].sort(
+    (a, b) => (SEV_ORDER[String(a.severity ?? 'info').toLowerCase()] ?? 9) - (SEV_ORDER[String(b.severity ?? 'info').toLowerCase()] ?? 9),
+  );
+  const countSev = (s) => findings.filter((f) => String(f.severity ?? 'info').toLowerCase() === s).length;
+  const worstSev = ordered.length ? String(ordered[0].severity ?? 'info').toLowerCase() : null;
+  const verdictLine = findings.length === 0
+    ? 'No findings were reported against this target by either engine.'
+    : `${findings.length} finding${findings.length === 1 ? '' : 's'} reported, worst ${worstSev.toUpperCase()}; ${provenCount} proven, ${confirmedCount} confirmed, ${toVerifyCount} still need${toVerifyCount === 1 ? 's' : ''} human verification.`;
+
+  // One list drives both the contents rail and the section numbers, so a section
+  // that is absent (no remediation prompt to show) cannot leave a numbering gap
+  // or a link to an anchor that was never rendered.
+  const sections = [
+    { id: 'summary', title: 'Summary' },
+    { id: 'findings', title: 'Findings', count: findings.length },
+    ...(fixPrompt ? [{ id: 'fixplan', title: 'Remediation' }] : []),
+    { id: 'coverage', title: 'Coverage' },
+    { id: 'surface', title: 'Attack surface' },
+    { id: 'evidence', title: 'Evidence' },
+    { id: 'log', title: 'Scan log' },
+  ].map((s, i) => ({ ...s, n: String(i + 1).padStart(2, '0') }));
+  const num = (id) => sections.find((s) => s.id === id)?.n ?? '';
+  const toc = sections.map((s) => `<a href="#${s.id}"><span class="n">${s.n}</span>${esc(s.title)}${s.count ? ` <span class="count-pill">${s.count}</span>` : ''}</a>`).join('');
 
   const pillarCounts = Object.fromEntries(PILLARS.map((p) => [p.key, findings.filter((f) => f.category === p.key).length]));
   const pillarBadges = Object.fromEntries(PILLARS.map((p) => [p.key, data?.pillarBadge ? data.pillarBadge(p.key) : (pillarCounts[p.key] > 0 ? 'MODERATE' : 'SECURE')]));
@@ -439,7 +484,11 @@ export function renderScanReportHtml({ target, seclayer, vibescan, data, tickerL
   .score-circle .num { font-size: 26px; font-weight: 700; } .score-circle .grade { font-size: 11px; color: var(--dim); }
   .score-info { flex: 1; min-width: 260px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
   .score-info .target { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
-  .score-info .posture { color: var(--warn); font-weight: 700; }
+  .score-info .posture { font-weight: 700; }
+  .score-info .posture.ok { color: var(--accent); }
+  .score-info .posture.info { color: var(--info); }
+  .score-info .posture.warn { color: var(--warn); }
+  .score-info .posture.bad { color: var(--bad); }
   .score-info .findings-bar-lbl { color: var(--dim); font-size: 11px; margin-top: 8px; }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
   .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 5px 10px; font-size: 11px; color: var(--dim); text-decoration: none; }
@@ -523,90 +572,159 @@ export function renderScanReportHtml({ target, seclayer, vibescan, data, tickerL
   .ticker-line { color: var(--accent); white-space: pre-wrap; }
   .empty { color: var(--dim); font-style: italic; }
   footer { color: var(--dim); font-size: 11px; text-align: center; margin-top: 30px; }
+  /* ---- document structure: title block, contents, numbered sections ---- */
+  html { scroll-behavior: smooth; }
+  section[id], details[id], div[id^="finding-"] { scroll-margin-top: 14px; }
+  .brand-sub { color: var(--dim); font-weight: 400; }
+  .titleblock { margin: 2px 0 16px; }
+  .kicker { font-size: 9px; letter-spacing: 0.2em; color: var(--accent); text-transform: uppercase; }
+  .titleblock h1 { font-size: 21px; margin: 6px 0 3px; letter-spacing: -0.01em; font-weight: 700; word-break: break-all; }
+  .subtitle { color: var(--dim); font-size: 12px; }
+  .toc { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 18px; padding: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; }
+  .toc a { color: var(--dim); text-decoration: none; font-size: 11px; padding: 5px 9px; border-radius: 4px; border: 1px solid transparent; }
+  .toc a:hover { color: var(--text); border-color: var(--border); background: var(--panel); }
+  .toc a .n { color: var(--accent); margin-right: 5px; }
+  summary .n { color: var(--accent); margin-right: 8px; font-variant-numeric: tabular-nums; }
+  section.panel { padding: 18px; }
+  section.panel > h2 { margin-bottom: 14px; font-size: 11px; }
+  .panel h2 .n { color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+  .tally { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .tally-item { flex: 1; min-width: 88px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 9px 12px; }
+  .tally-item .n { font-size: 19px; font-weight: 700; line-height: 1.15; }
+  .tally-item .l { font-size: 9px; letter-spacing: 0.1em; color: var(--dim); text-transform: uppercase; }
+  .tally-item.bad .n { color: var(--bad); } .tally-item.warn .n { color: var(--warn); }
+  .tally-item.info .n { color: var(--info); } .tally-item.ok .n { color: var(--accent); }
+  .verdict-line { margin: 14px 0 0; padding: 11px 13px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 0 4px 4px 0; font-size: 12px; }
+  .verdict-line .gaps-box { border: 0; padding: 0; background: none; }
+  table.summary { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 12px; }
+  table.summary th { text-align: left; color: var(--dim); font-weight: 400; font-size: 9px; text-transform: uppercase; letter-spacing: 0.09em; padding: 0 10px 6px 0; border-bottom: 1px solid var(--border); }
+  table.summary td { padding: 7px 10px 7px 0; border-bottom: 1px solid #141a20; vertical-align: middle; }
+  table.summary tr:hover td { background: var(--panel-2); }
+  table.summary td a { color: var(--text); text-decoration: none; }
+  table.summary td a:hover { color: var(--accent); text-decoration: underline; }
+  table.summary td.area { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  table.summary td.conf { color: var(--dim); font-size: 11px; }
+  .count-pill { display: inline-block; min-width: 18px; text-align: center; border-radius: 3px; padding: 0 5px; font-size: 10px; font-weight: 700; background: var(--panel); border: 1px solid var(--border); }
+  details.panel > summary { cursor: pointer; list-style: none; }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  .fixpanel-inner { padding-top: 4px; }
+  details.panel[open] > summary.fixpanel-head { margin-bottom: 12px; }
+  .empty-ok { color: var(--accent); font-size: 12px; }
+
   @media (max-width: 720px) { .kv-grid { grid-template-columns: 1fr; } .change-row { flex-wrap: wrap; gap: 14px; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="breadcrumb">&larr; AUDIT WORKSPACE</div>
   <header class="top">
-    <div class="brand">[sec]layer // ScanLayer Hybrid</div>
-    <div class="meta">Target: ${esc(target)}<br>Generated: ${esc(generatedAt.toISOString())}</div>
+    <div class="brand">[sec]layer <span class="brand-sub">// ScanLayer Hybrid</span></div>
+    <div class="meta">Generated ${esc(generatedAt.toISOString().slice(0, 16).replace('T', ' '))} UTC<br>VibeScan + SecLayer engines (verbatim)</div>
   </header>
 
-  ${fixPromptPanel(fixPrompt, findings.length)}
+  <div class="titleblock">
+    <div class="kicker">Security assessment</div>
+    <h1>${esc(target)}</h1>
+    <div class="subtitle">Black-box assessment of the public surface — unauthenticated and non-destructive, with every finding tied to the evidence that produced it.</div>
+  </div>
+
+  <nav class="toc">${toc}</nav>
+
+  <section id="summary" class="panel">
+    <h2><span class="n">${num('summary')}</span> Summary</h2>
+
+    <div class="score-row">
+      <div class="score-circle ${scoreCls}">
+        <div class="num">${score}<span style="font-size:12px;color:var(--dim);">/100</span></div>
+        <div class="grade">GRADE ${esc(grade)}</div>
+      </div>
+      <div class="score-info">
+        <div class="target">${esc(target)}</div>
+        <div class="posture ${RISK_LABEL_CLASS[posture.postureRating] ?? 'warn'}">POSTURE RATING: ${esc(posture.postureRating)}</div>
+        <div class="findings-bar-lbl">${provenCount} proven &middot; ${confirmedCount} confirmed &middot; ${toVerifyCount} to verify</div>
+      </div>
+    </div>
+
+    <div class="tally">
+      <div class="tally-item ${countSev('critical') + countSev('high') > 0 ? 'bad' : ''}"><div class="n">${countSev('critical') + countSev('high')}</div><div class="l">Critical + high</div></div>
+      <div class="tally-item ${countSev('medium') > 0 ? 'warn' : ''}"><div class="n">${countSev('medium')}</div><div class="l">Medium</div></div>
+      <div class="tally-item ${countSev('low') > 0 ? 'info' : ''}"><div class="n">${countSev('low')}</div><div class="l">Low</div></div>
+      <div class="tally-item ${countSev('info') > 0 ? 'ok' : ''}"><div class="n">${countSev('info')}</div><div class="l">Info</div></div>
+    </div>
+
+    <p class="verdict-line">${esc(verdictLine)}</p>
+
+    ${hardeningGapsBox(posture, findings)}
+
+    <h2 style="margin-top:18px;">Executive summary ${usedRealAi ? '<span class="ai-badge">AI analyst</span>' : ''}</h2>
+    ${aiReport?.aiSummary ? `<div>${esc(aiReport.aiSummary)}</div>` : '<div class="empty">No engine result for this target.</div>'}
+
+    ${(overview || riskAreas.length || businessImpact || priorityActions.length) ? `
+    <details class="panel" style="margin:16px 0 0;background:var(--panel-2)">
+      <summary style="cursor:pointer;color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Detailed breakdown &amp; priority actions</summary>
+      <div style="padding-top:12px;">
+        ${overview ? `<div style="margin-bottom:12px;">${esc(overview)}</div>` : ''}
+        ${riskAreas.length ? `<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Key Risk Areas</div><div class="risk-grid">${riskAreas.map((r) => `<div class="risk-card"><div class="t">${esc(r.area)}</div><div class="d">${esc(r.detail)}</div></div>`).join('')}</div>` : ''}
+        ${businessImpact ? `<div class="impact-box"><div class="tag">BUSINESS IMPACT</div><div style="margin-top:4px;">${esc(businessImpact)}</div></div>` : ''}
+        ${priorityActions.length ? `<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:12px;">Priority Actions (Ranked)</div><ol class="priority-list">${priorityActions.map((a) => `<li>${esc(a)}</li>`).join('')}</ol>` : ''}
+      </div>
+    </details>` : ''}
+  </section>
 
   ${changeBox(data?.change)}
 
-  <div class="score-row">
-    <div class="score-circle ${scoreCls}">
-      <div class="num">${score}<span style="font-size:12px;color:var(--dim);">/100</span></div><div class="grade">GRADE ${esc(grade)}</div>
-    </div>
-    <div class="score-info">
-      <div class="target">[Target Host] ${esc(target)}</div>
-      <div class="posture">POSTURE RATING: ${esc(posture.postureRating)}</div>
-      <div class="findings-bar-lbl">${provenCount} proven &middot; ${toVerifyCount} to verify</div>
-    </div>
-  </div>
+  <section id="findings" class="panel">
+    <h2><span class="n">${num('findings')}</span> Findings</h2>
+    ${ordered.length ? `
+    <table class="summary">
+      <thead><tr><th>Severity</th><th>Finding</th><th>Area</th><th>Confidence</th><th>Status</th></tr></thead>
+      <tbody>${ordered.map((f, i) => `<tr>
+        <td>${severityTag(f.severity)}</td>
+        <td><a href="#finding-${i + 1}">${esc(f.title)}</a></td>
+        <td class="area">${esc(f.category)}</td>
+        <td class="conf">${esc(f.confidence ?? 'unrated')}</td>
+        <td class="conf">${esc(statusOf(f))}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <div class="findings-list">${ordered.map((f, i) => renderFindingCard(f, i + 1)).join('')}</div>`
+    : '<div class="empty-ok">No findings. Every check that could run came back clean.</div>'}
+  </section>
 
-  <div class="chips">${PILLARS.map((p) => renderPillarChip(p, pillarCounts[p.key])).join('')}</div>
+  ${fixPromptPanel(fixPrompt, findings.length, num('fixplan'))}
 
-  <div class="panel">
-    <h2>Executive Summary ${usedRealAi ? '<span class="ai-badge">DeepSeek AI Analyst Verified</span>' : ''}</h2>
-    ${aiReport?.aiSummary ? `<div>${esc(aiReport.aiSummary)}</div>` : '<div class="empty">No engine result for this target.</div>'}
-  </div>
-
-  <div class="panel">
-    <h2>Detailed Executive Breakdown</h2>
-    ${overview ? `<div style="margin-bottom:12px;">${esc(overview)}</div>` : ''}
-    ${riskAreas.length ? `<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Key Risk Areas</div><div class="risk-grid">${riskAreas.map((r) => `<div class="risk-card"><div class="t">${esc(r.area)}</div><div class="d">${esc(r.detail)}</div></div>`).join('')}</div>` : ''}
-    ${businessImpact ? `<div class="impact-box"><div class="tag">BUSINESS IMPACT</div><div style="margin-top:4px;">${esc(businessImpact)}</div></div>` : ''}
-    ${priorityActions.length ? `<div style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:12px;">Priority Actions (Ranked)</div><ol class="priority-list">${priorityActions.map((a) => `<li>${esc(a)}</li>`).join('')}</ol>` : ''}
-  </div>
-
-  <div class="panel">
-    <h2>Dynamic Application Security &amp; Pen-Testing Pillars</h2>
+  <section id="coverage" class="panel">
+    <h2><span class="n">${num('coverage')}</span> Coverage</h2>
+    <div class="chips" style="margin-bottom:14px;">${PILLARS.map((p) => renderPillarChip(p, pillarCounts[p.key])).join('')}</div>
     <div class="pillar-grid">${PILLARS.map((p) => renderPillarCard(p, pillarCounts[p.key], pillarBadges[p.key], findings.length)).join('')}</div>
-  </div>
-
-  <div class="kv-grid">
-    <div class="panel">
-      <h2>Network &amp; Attack Surface (EASM)</h2>
+    <div class="panel" style="margin:16px 0 0;background:var(--panel-2)">
+      <h2>Dynamic coverage (DAST)</h2>
       <table class="kv-table">
-        <tr><td>Resolved IP</td><td>${esc(evidence?.resolvedIp ?? '-')}</td></tr>
-        <tr><td>Nameserver</td><td>${esc(evidence?.nameserver ?? '-')}</td></tr>
-        <tr><td>Protocol / Status</td><td>${esc(evidence?.protocol ?? '-')} &middot; HTTP ${esc(evidence?.responseStatus ?? '-')}</td></tr>
-        <tr><td>Server Header</td><td>${esc(evidence?.serverHeader ?? '-')}</td></tr>
-        <tr><td>Live Subdomains</td><td class="sub-link">${liveSubdomains.length ? esc(liveSubdomains.join(', ')) : '-'}</td></tr>
+        <tr><td>Sensitive paths</td><td>${totalPaths} probed, ${exposedPaths === 0 ? 'all locked down' : `${exposedPaths} exposed`}</td></tr>
+        <tr><td>Crawl coverage</td><td>${seclayer?.crawl?.pagesVisited ?? vibescan?.pagesScanned?.length ?? 0} page(s), ${seclayer?.crawl?.endpointsDiscovered ?? 0} endpoint(s)</td></tr>
+        <tr><td>Params fuzzed</td><td>${seclayer?.crawl?.paramsTested ?? 0}</td></tr>
+        <tr><td>Detected libraries</td><td>${vulnLibs.length ? esc(vulnLibs.map((l) => l.name).join(', ')) : 'none flagged'}</td></tr>
       </table>
     </div>
-    <div class="panel">
-      <h2>Dynamic Coverage (DAST)</h2>
-      <table class="kv-table">
-        <tr><td>Sensitive Paths</td><td>${totalPaths} probed, ${exposedPaths === 0 ? 'all locked down' : `${exposedPaths} exposed`}</td></tr>
-        <tr><td>Crawl Coverage</td><td>${seclayer?.crawl?.pagesVisited ?? vibescan?.pagesScanned?.length ?? 0} page(s), ${seclayer?.crawl?.endpointsDiscovered ?? 0} endpoint(s)</td></tr>
-        <tr><td>Params Fuzzed</td><td>${seclayer?.crawl?.paramsTested ?? 0}</td></tr>
-        <tr><td>Detected Libraries</td><td>${vulnLibs.length ? esc(vulnLibs.map((l) => l.name).join(', ')) : 'none flagged'}</td></tr>
-      </table>
-    </div>
-  </div>
+    <details class="raw" style="margin-top:16px;margin-bottom:0;">
+      <summary>Check-by-check coverage${coverage ? ` &middot; ${coverage.totalChecks} checks &middot; ${ranGroups.size}/${groups.size} groups` : ''}</summary>
+      <div class="diag-body">${coverage ? `<table class="diag-table"><tbody>${coverage.items.map((i) => `<tr><td class="k">${i.ran ? '<span class="verdict ok">ran</span>' : '<span class="dim-note">skipped</span>'} ${esc(i.label)}</td><td class="v dim-note">${esc(i.category)}</td><td class="v">${esc(i.checks)} check${i.checks === 1 ? '' : 's'}${i.note ? ` <span class="dim-note">— ${esc(i.note)}</span>` : ''}</td></tr>`).join('')}</tbody></table>` : 'No coverage record.'}</div>
+    </details>
+  </section>
 
-  <details class="raw">
-    <summary>Scan Coverage${coverage ? ` &middot; ${coverage.totalChecks} checks run &middot; ${ranGroups.size}/${groups.size} groups` : ''}</summary>
-    <div class="diag-body">${coverage ? `<table class="diag-table"><tbody>${coverage.items.map((i) => `<tr><td class="k">${i.ran ? '<span class="verdict ok">ran</span>' : '<span class="dim-note">skipped</span>'} ${esc(i.label)}</td><td class="v dim-note">${esc(i.category)}</td><td class="v">${esc(i.checks)} check${i.checks === 1 ? '' : 's'}${i.note ? ` <span class="dim-note">— ${esc(i.note)}</span>` : ''}</td></tr>`).join('')}</tbody></table>` : 'No coverage record.'}</div>
-  </details>
+  <section id="surface" class="panel">
+    <h2><span class="n">${num('surface')}</span> Attack surface</h2>
+    <table class="kv-table">
+      <tr><td>Resolved IP</td><td>${esc(evidence?.resolvedIp ?? '-')}</td></tr>
+      <tr><td>Nameserver</td><td>${esc(evidence?.nameserver ?? '-')}</td></tr>
+      <tr><td>Protocol / status</td><td>${esc(evidence?.protocol ?? '-')} &middot; HTTP ${esc(evidence?.responseStatus ?? '-')}</td></tr>
+      <tr><td>Server header</td><td>${esc(evidence?.serverHeader ?? '-')}</td></tr>
+      <tr><td>Live subdomains</td><td>${liveSubdomains.length ? esc(liveSubdomains.join(', ')) : '<span class="dim-note">none of the probed candidates answered</span>'}</td></tr>
+    </table>
+  </section>
 
-  ${hardeningGapsBox(posture, findings)}
+  ${renderDiagnostics({ seclayer, evidence, vibescan, n: num('evidence') })}
 
-  <div class="panel">
-    <h2>Findings</h2>
-    <div class="findings-list">${findings.length ? findings.map(renderFindingCard).join('') : '<div class="empty">No findings.</div>'}</div>
-  </div>
-
-  ${renderDiagnostics({ seclayer, evidence, vibescan })}
-
-  <details class="ticker">
-    <summary>Live Scan Ticker (${tickerLines.length} line(s))</summary>
+  <details class="ticker" id="log">
+    <summary><span class="n">${num('log')}</span> Scan log (${tickerLines.length} line(s))</summary>
     <div class="ticker-body">${tickerLines.length ? tickerLines.map((l) => `<div class="ticker-line">${esc(l)}</div>`).join('') : '<div class="empty">No ticker output captured.</div>'}</div>
   </details>
 

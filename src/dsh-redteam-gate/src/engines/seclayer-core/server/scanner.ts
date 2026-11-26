@@ -555,8 +555,9 @@ export async function runDiagnostics(
         }
 
         // Missing rate-limit on OTP/2FA verification. Observational (absence of a
-        // control) → reported at MEDIUM confidence, never PROVEN. A small bounded
-        // burst of wrong codes; bails the instant any throttle signal appears.
+        // control) → reported at LOW confidence and LOW severity, never PROVEN. A
+        // bounded burst of wrong codes sized to outlast the common 3-30 limiter
+        // thresholds; bails the instant any throttle signal appears.
         try {
           const rlFinding = await probeAuthRateLimit(url, postUrls, { ...postCrawlHeaders, "Cache-Control": "no-cache" });
           if (rlFinding) result.redTeamFindings = [...(result.redTeamFindings || []), rlFinding];
