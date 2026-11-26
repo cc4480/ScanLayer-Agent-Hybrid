@@ -1,30 +1,27 @@
-# SecLayer's official MCP server, unchanged, as its own section.
+# SecLayer's own MCP server, from this machine's source, as its own section.
 #
-# stdio transport: DSH runs `npx -y @seclayer/mcp` and speaks MCP over the pipe.
+# Built from C:/sh/src/seclayer.io2026/mcp-server (`npm run build` -> dist/index.js)
+# and pointed at the LOCAL app instance (127.0.0.1:4700). Nothing here touches the
+# published npm package or the live service, so no live-account key is involved.
 #
-# It points at the LOCAL instance of the SecLayer app (127.0.0.1:4700), not the
-# live service, because the app's own source is on this machine — no live-account
-# key is involved. That local instance runs from C:/sh/src/seclayer.io2026 with
-# SQLite and DEV_SKIP_AUTH, and its API key was minted by its own POST /api/keys.
-#
-# The key is referenced as ${credential:SECLAYER_API_KEY}, never written here; it
-# lives in the gitignored project .env. The client redacts resolved values from
-# diagnostics.
+# The key and URL are referenced as ${credential:...}, never written in this file.
+# They resolve from the gitignored project .env / harness-home .env.
 #
 # Tools appear as mcp__seclayer__* and cannot collide with the SecScan section.
 - insert:
     - id: seclayer-mcp
       name: '@deepseek-ai/dsh-mcp-client'
+      # Without this the credential templates cannot resolve: the client refuses to
+      # start credential references unless a credentials provider is injected.
+      inject: ['credentials']
       config:
         serverName: seclayer
         transport: stdio
-        command: npx
+        command: node
         args:
-          - '-y'
-          - '@seclayer/mcp'
+          - 'C:\sh\src\seclayer.io2026\mcp-server\dist\index.js'
         expandTemplates: true
         env:
           SECLAYER_API_KEY: '${credential:SECLAYER_API_KEY}'
-          # Local app instance; override with SECLAYER_API_URL for the live service.
           SECLAYER_API_URL: '${credential:SECLAYER_API_URL}'
         failOnStartupError: false

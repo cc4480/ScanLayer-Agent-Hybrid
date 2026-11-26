@@ -1,0 +1,9 @@
+# Adds a small SecLayer row to the composer dock. Each button opens the LOCAL
+# SecLayer app in a DSH Browser tab (right sidebar): the dashboard lists scans,
+# an in-progress scan shows its live ticker there, and a finished one opens at
+# /r/<token> with the app's own report page. Nothing is re-rendered here.
+#
+# Requires the Browser sidebar (ui-sidebar-browser) to be enabled in the profile.
+- insert:
+    - id: seclayer-panel
+      name: '@local/seclayer-panel'

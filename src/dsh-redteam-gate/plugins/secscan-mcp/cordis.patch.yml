@@ -9,6 +9,9 @@
 - insert:
     - id: secscan-mcp
       name: '@deepseek-ai/dsh-mcp-client'
+      # Without this the credential templates cannot resolve: the client refuses to
+      # start credential references unless a credentials provider is injected.
+      inject: ['credentials']
       config:
         serverName: secscan
         transport: streamable-http
