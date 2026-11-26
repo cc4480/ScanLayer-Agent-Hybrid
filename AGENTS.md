@@ -95,17 +95,33 @@ http://127.0.0.1:4700                    # dashboard: scans, live ticker
 
 ## Current local state (may drift — verify before asserting)
 
-- SecLayer is a detached `node` process on 4700, SQLite at
-  `C:\sh\src\seclayer.io2026\data.sqlite`.
-- Its `.env` is the **dev** config. The containerised config is preserved as
-  `.env.container`; switching between them is deliberate.
-- **A machine-wide `DATABASE_URL` exists** and points at a stale Postgres. Any local
-  app start must clear it (`$env:DATABASE_URL=''`) or the app tries that database
-  and fails on schema drift.
-- Docker Desktop is installed. The container stack is **stopped and its containers
-  removed**; the Docker path is unfinished (see `deploy/README.md`).
-- The DSH profile has: the two MCP sections, the `seclayer-panel` dock plugin, and
-  the Browser sidebar enabled.
+Both apps now run **in Docker**, from their own images, each against its own database:
+
+| Container | Port | Notes |
+|---|---|---|
+| `seclayer` | `127.0.0.1:4700` | production mode, Postgres `stack-db`, TLS |
+| `stack-db` | internal | Postgres 16 with a self-signed cert (the app forces TLS off-localhost) |
+| `vibescan-enterprise-build-web-1` | `127.0.0.1:4701` | SecScan web + API + `/api/mcp` |
+| `vibescan-enterprise-build-secscan-1` | internal | the scanner worker |
+| `vibescan-enterprise-build-db-1` | internal | its own Postgres 16 |
+
+- **Docker Desktop must be running.** `AutoStart` is on, but it fires at Windows
+  sign-in only. Once the engine starts, containers return by themselves
+  (`restart: unless-stopped`) and the MCP sections reconnect on their own.
+- **Machine-local MCP config lives in `.dsh/profiles/web/cordis.patch.yml`**, not in
+  the repo bundles. It holds the full concrete config with the local key/token
+  inline, because a patch `config:` REPLACES the row config — it does not merge.
+- **The keys are local, never from the live services.** SecLayer's is in `api_keys`
+  (sha256, `sl_live_`); SecScan's is in `api_tokens` (`ssk_`, scope `mcp`).
+  Production hardcodes `cookieOptions.secure = isProd`, so an HTTP session cannot be
+  used over plain http — the key is the way in (`X-API-Key` for SecLayer,
+  `Authorization: Bearer` for SecScan).
+- **Compose merges `ports:` lists.** Adding a mapping publishes *both*; the deploy
+  overrides use `!override` so each app listens on loopback only.
+- **Container scans take ~3 min** where the host Node instance took ~33s: the image
+  ships nmap and port-scans the target.
+- A machine-wide `DATABASE_URL` still exists and points at a stale Postgres. It does
+  not affect the containers, but any local Node start must clear it.
 
 ## Where things live
 
