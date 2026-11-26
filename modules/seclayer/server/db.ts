@@ -1,0 +1,1227 @@
+import path from 'path';
+import crypto from 'crypto';
+import Database from 'better-sqlite3';
+import pg from 'pg';
+import { User, Scan, CreditTransaction, ApiKey, Finding, SuppressionRule, MonitoredTarget, DomainVerification, OobEvent, NmapScan, AutofixSession } from '../src/types.js';
+import { scoreFindings } from './scoring.js';
+import { MonitorSchedule, computeNextRun, describeSchedule } from './schedule.js';
+import { runMigrations } from './dbSchema.js';
+import { rowToUser, rowToScan, rowToApiKey, rowToDomainVerification, rowToMonitoredTarget, rowToNmapScan, rowToAutofixSession } from './dbMappers.js';
+import { hashToken, maskKey, sealSecret, sealForStorage, openSecret } from './dbCrypto.js';
+import {
+  LOGIN_CODE_MAX_ATTEMPTS,
+  LOGIN_CODE_TTL_MS,
+  LoginCodeResult,
+  generateLoginCode,
+  hashesEqual,
+  normalizeLoginEmail,
+} from './loginCode.js';
+import { PostgresDb } from './pg/pgDb.js';
+import { pgSsl } from './pgSsl.js';
+import type { PgPool } from './pg/pgClient.js';
+// Re-exported so existing importers of `STALE_LEASE_MS` from db.js keep working.
+// It is defined in a leaf module (not here) to avoid a db.ts <-> pgDb.ts import
+// cycle — see scanLeaseConstants.ts for why.
+import { STALE_LEASE_MS, interruptedMessage } from './scanLeaseConstants.js';
+export { STALE_LEASE_MS };
+
+const DB_FILE = process.env.DB_PATH || path.join(process.cwd(), 'data.sqlite');
+
+// --- URL + scoring helpers ---------------------------------------------------
+// cleanUrl now lives in ./urlClean.js (shared with the Postgres adapter, which
+// must not import this module); re-exported here so existing `import { cleanUrl }
+// from './db.js'` call sites keep working.
+export { cleanUrl } from './urlClean.js';
+import { cleanUrl } from './urlClean.js';
+
+// Re-exported for callers/tests that recompute a score from a finding set.
+export const recalculateScore = scoreFindings;
+
+// The whole repository API is asynchronous. better-sqlite3 is synchronous, so
+// SqliteDb's method bodies run inline and just resolve a Promise; the Postgres
+// backend (pg) is genuinely async. Making BOTH async lets a single `db` handle
+// serve either engine behind one contract, so app code never cares which is
+// live. `Db` (below) is that contract, derived from SqliteDb's public surface.
+class SqliteDb {
+  private db: Database.Database;
+
+  constructor() {
+    this.db = new Database(DB_FILE);
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('foreign_keys = ON');
+    runMigrations(this.db);
+  }
+
+  // --- Sign-in codes + sessions ---
+  // Secrets are never stored raw; only their SHA-256 hash is persisted (see
+  // dbCrypto.hashToken) so a DB read cannot reveal a usable code or session.
+  // The login_tokens table is left in the schema deliberately: it holds no live
+  // credential now that nothing issues magic links, and dropping a table is not
+  // something a boot migration should ever do.
+
+  // --- Email suppression -----------------------------------------------------
+  // See dbSchema.ts for why a hard bounce suppresses everything while a
+  // complaint suppresses only bulk mail, and why soft bounces are not recorded.
+
+  // Upserts on the address, so a repeat webhook updates rather than failing on
+  // the primary key. An existing 'all' is never downgraded to 'bulk': someone
+  // who complained AND whose mailbox was then deleted is both, and the stricter
+  // rule is the true one — widening back would resume mailing a dead address.
+  async suppressEmail(email: string, scope: 'all' | 'bulk', reason: string, detail?: string): Promise<void> {
+    const address = email.trim().toLowerCase();
+    if (!address) return;
+    const now = new Date().toISOString();
+    const existing: any = this.db.prepare('SELECT scope FROM email_suppressions WHERE email = ?').get(address);
+    const effective = existing?.scope === 'all' ? 'all' : scope;
+    this.db.prepare(
+      `INSERT INTO email_suppressions (email, scope, reason, detail, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET scope = excluded.scope, reason = excluded.reason,
+         detail = excluded.detail, updatedAt = excluded.updatedAt`,
+    ).run(address, effective, reason, detail ?? null, now, now);
+  }
+
+  // Fails OPEN by contract (see the caller in email.ts): a database blip must
+  // not silently stop every sign-in code in the system.
+  async isEmailSuppressed(email: string, kind: 'account' | 'bulk'): Promise<boolean> {
+    const row: any = this.db.prepare('SELECT scope FROM email_suppressions WHERE email = ?')
+      .get(email.trim().toLowerCase());
+    if (!row) return false;
+    if (row.scope === 'all') return true;
+    return kind === 'bulk';
+  }
+
+  async unsuppressEmail(email: string): Promise<void> {
+    this.db.prepare('DELETE FROM email_suppressions WHERE email = ?').run(email.trim().toLowerCase());
+  }
+
+  // Issues a one-time sign-in code and returns the raw six digits to email.
+  // Only the hash is stored, so a dumped table cannot be used to sign in.
+  //
+  // Retiring the address's earlier live codes is part of the security model,
+  // not tidiness: N live codes for one mailbox divide the odds of a blind guess
+  // by N (server/loginCode.ts, property 3). It also means the code in the most
+  // recent email is always the one that works, which is what a user who
+  // requested a second code because the first was slow to arrive expects.
+  async createLoginCode(email: string, ttlMs = LOGIN_CODE_TTL_MS): Promise<string> {
+    const normEmail = normalizeLoginEmail(email);
+    const now = Date.now();
+    this.db.prepare('UPDATE login_codes SET consumedAt = ? WHERE email = ? AND consumedAt IS NULL')
+      .run(new Date(now).toISOString(), normEmail);
+    const code = generateLoginCode();
+    this.db.prepare(
+      'INSERT INTO login_codes (id, email, codeHash, attempts, expiresAt, createdAt) VALUES (?, ?, ?, 0, ?, ?)')
+      .run(crypto.randomUUID(), normEmail, hashToken(code), new Date(now + ttlMs).toISOString(), new Date(now).toISOString());
+    return code;
+  }
+
+  // Checks a code against ONE address and burns it on success.
+  //
+  // The email argument is not a convenience — it is the scope that keeps a
+  // six-digit secret a secret. A lookup by code hash alone would let a guess
+  // match any live code in the table rather than one named account's. See
+  // server/loginCode.ts.
+  //
+  // A wrong guess costs an attempt; five kill the code. Note the attempt is
+  // charged BEFORE the result is returned, so a caller that crashes or a client
+  // that disconnects mid-request cannot be used to test codes for free.
+  async verifyLoginCode(email: string, code: string): Promise<LoginCodeResult> {
+    const normEmail = normalizeLoginEmail(email);
+    const row: any = this.db.prepare(
+      'SELECT * FROM login_codes WHERE email = ? AND consumedAt IS NULL ORDER BY createdAt DESC LIMIT 1')
+      .get(normEmail);
+    if (!row) return { ok: false, reason: 'invalid' };
+    if (new Date(row.expiresAt).getTime() < Date.now()) return { ok: false, reason: 'expired' };
+    if (row.attempts >= LOGIN_CODE_MAX_ATTEMPTS) return { ok: false, reason: 'too_many_attempts' };
+
+    if (!hashesEqual(hashToken(code), String(row.codeHash))) {
+      this.db.prepare('UPDATE login_codes SET attempts = attempts + 1 WHERE id = ?').run(row.id);
+      return { ok: false, reason: 'invalid' };
+    }
+
+    // Conditional on still being unconsumed, so two requests racing the same
+    // code cannot both be told they succeeded.
+    const claimed = this.db.prepare('UPDATE login_codes SET consumedAt = ? WHERE id = ? AND consumedAt IS NULL')
+      .run(new Date().toISOString(), row.id);
+    if (claimed.changes === 0) return { ok: false, reason: 'invalid' };
+    return { ok: true, email: normEmail };
+  }
+
+  // Creates a server-side session (default 30 day TTL). Returns the raw token
+  // to set as an httpOnly cookie; only its hash is stored.
+  async createSession(userId: string, ttlMs = 30 * 24 * 60 * 60 * 1000): Promise<string> {
+    const raw = crypto.randomBytes(32).toString('hex');
+    const now = Date.now();
+    this.db.prepare('INSERT INTO sessions (tokenHash, userId, expiresAt, createdAt) VALUES (?, ?, ?, ?)')
+      .run(hashToken(raw), userId, new Date(now + ttlMs).toISOString(), new Date(now).toISOString());
+    return raw;
+  }
+
+  // Resolves a session cookie to a userId, or null if missing/expired.
+  async getSessionUserId(raw: string): Promise<string | null> {
+    const row: any = this.db.prepare('SELECT * FROM sessions WHERE tokenHash = ?').get(hashToken(raw));
+    if (!row) return null;
+    if (new Date(row.expiresAt).getTime() < Date.now()) {
+      this.db.prepare('DELETE FROM sessions WHERE tokenHash = ?').run(row.tokenHash);
+      return null;
+    }
+    return row.userId;
+  }
+
+  async deleteSession(raw: string): Promise<void> {
+    this.db.prepare('DELETE FROM sessions WHERE tokenHash = ?').run(hashToken(raw));
+  }
+
+  async setUserWebhook(userId: string, url: string | null): Promise<User | undefined> {
+    this.db.prepare("UPDATE users SET notifyWebhook = ? WHERE id = ?").run(url, userId);
+    return this.getUser(userId);
+  }
+
+  // Opt in/out of the weekly monitoring digest email.
+  async setEmailDigest(userId: string, enabled: boolean): Promise<User | undefined> {
+    this.db.prepare("UPDATE users SET emailDigest = ? WHERE id = ?").run(enabled ? 1 : 0, userId);
+    return this.getUser(userId);
+  }
+
+  // Users who opted into the digest (the worker's candidate recipients).
+  async listDigestRecipients(): Promise<User[]> {
+    return (this.db.prepare("SELECT * FROM users WHERE emailDigest = 1").all() as any[])
+      .map(rowToUser)
+      .filter((u): u is User => !!u);
+  }
+
+  // Record that a digest was just delivered, so the weekly cadence is honored.
+  async markDigestSent(userId: string, iso: string): Promise<void> {
+    this.db.prepare("UPDATE users SET lastDigestAt = ? WHERE id = ?").run(iso, userId);
+  }
+
+  // Per-user "bring your own key" DeepSeek credential. Stored so the scan
+  // pipeline can use the user's own AI budget; deliberately NOT surfaced via
+  // rowToUser/the User type, so it never leaks to the client. Pass null to clear.
+  // Sealed here rather than at the route, so both storage backends and every
+  // future caller get encryption without having to remember it.
+  async setUserDeepseekKey(userId: string, key: string | null): Promise<void> {
+    const trimmed = key && key.trim() ? key.trim() : null;
+    const stored = trimmed ? sealSecret(trimmed) : null;
+    this.db.prepare("UPDATE users SET deepseekApiKey = ? WHERE id = ?").run(stored, userId);
+  }
+
+  async getUserDeepseekKey(userId: string): Promise<string | null> {
+    const row = this.db.prepare("SELECT deepseekApiKey FROM users WHERE id = ?").get(userId) as { deepseekApiKey?: string } | undefined;
+    return openSecret(row?.deepseekApiKey ?? null);
+  }
+
+  // --- Users ---
+  async getUser(id: string): Promise<User | undefined> {
+    return rowToUser(this.db.prepare('SELECT * FROM users WHERE id = ?').get(id));
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return rowToUser(
+      this.db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim())
+    );
+  }
+
+  async getOrCreateUser(email: string): Promise<User> {
+    const normEmail = email.toLowerCase().trim();
+    const existing = await this.getUserByEmail(normEmail);
+    if (existing) return existing;
+
+    const id = 'user_' + crypto.randomBytes(6).toString('hex');
+    const now = new Date().toISOString();
+
+    // No API key is provisioned here: a key's raw value is only ever shown
+    // once, at the moment generateApiKey() creates it (see below), so a key
+    // created out-of-band at signup could never be displayed to its owner.
+    // The user generates their first key from the dashboard instead.
+    const tx = this.db.transaction(() => {
+      this.db.prepare('INSERT INTO users (id, email, credits, createdAt) VALUES (?, ?, ?, ?)')
+        .run(id, normEmail, 5, now); // 5 signup credits
+      this.db.prepare('INSERT INTO transactions (id, userId, amount, type, createdAt) VALUES (?, ?, ?, ?, ?)')
+        .run('tx-signup-' + id, id, 5, 'purchase', now);
+    });
+    tx();
+    return (await this.getUser(id))!;
+  }
+
+  // Synchronous credit mutation with NO transaction wrapper of its own, so it can
+  // be composed inside a larger better-sqlite3 transaction (recoverStuckScans,
+  // cancelScan, and their nmap twins refund a credit atomically with the status
+  // write). The public async addCredits wraps this in its own transaction.
+  private _addCreditsSync(userId: string, amount: number, type: 'purchase' | 'scan_debit' | 'refund', stripeSessionId?: string): User {
+    const user = rowToUser(this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+    if (!user) throw new Error('User not found');
+    const newCredits = Math.max(0, user.credits + amount);
+    this.db.prepare('UPDATE users SET credits = ? WHERE id = ?').run(newCredits, userId);
+    this.db.prepare('UPDATE api_keys SET credits = ? WHERE userId = ? AND active = 1').run(newCredits, userId);
+    this.db.prepare('INSERT INTO transactions (id, userId, amount, type, stripeSessionId, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('tx_' + crypto.randomBytes(8).toString('hex'), userId, amount, type, stripeSessionId ?? null, new Date().toISOString());
+    return rowToUser(this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId))!;
+  }
+
+  async addCredits(userId: string, amount: number, type: 'purchase' | 'scan_debit' | 'refund', stripeSessionId?: string): Promise<User> {
+    const tx = this.db.transaction(() => this._addCreditsSync(userId, amount, type, stripeSessionId));
+    return tx();
+  }
+
+  // Atomic check-and-debit. The read and the write run inside ONE synchronous
+  // better-sqlite3 transaction, so no `await` yields the event loop between them
+  // — two concurrent requests sharing a single credit can't both pass the check.
+  // (The public API is async for parity with Postgres, but the transaction body
+  // itself never awaits, preserving the atomicity the old sync method relied on.)
+  async deductCredits(userId: string, amount: number): Promise<boolean> {
+    const tx = this.db.transaction(() => {
+      const user = rowToUser(this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+      if (!user || user.credits < amount) return false;
+      this._addCreditsSync(userId, -amount, 'scan_debit');
+      return true;
+    });
+    return tx();
+  }
+
+  async listTransactions(userId: string): Promise<CreditTransaction[]> {
+    return this.db.prepare('SELECT * FROM transactions WHERE userId = ? ORDER BY createdAt DESC').all(userId) as CreditTransaction[];
+  }
+
+  // Idempotency guard for Stripe webhooks: true if a purchase for this Checkout
+  // session was already recorded, so retries never grant duplicate credits.
+  async hasTransactionForSession(sessionId: string): Promise<boolean> {
+    return !!this.db.prepare('SELECT 1 FROM transactions WHERE stripeSessionId = ? LIMIT 1').get(sessionId);
+  }
+
+  // Credits a paid Checkout session exactly once. The duplicate check and the grant are ONE
+  // transaction: checking with hasTransactionForSession and then calling addCredits left a gap in
+  // which two deliveries of the same event (Stripe retries, and there are several replicas) could
+  // both pass the check and both grant.
+  async grantStripePurchase(userId: string, credits: number, sessionId: string): Promise<'granted' | 'duplicate' | 'no_user'> {
+    return this.db.transaction((): 'granted' | 'duplicate' | 'no_user' => {
+      if (this.db.prepare("SELECT 1 FROM transactions WHERE stripeSessionId = ? AND type = 'purchase' LIMIT 1").get(sessionId)) return 'duplicate';
+      if (!this.db.prepare('SELECT 1 FROM users WHERE id = ?').get(userId)) return 'no_user';
+      this._addCreditsSync(userId, credits, 'purchase', sessionId);
+      return 'granted';
+    })();
+  }
+
+  // Takes back the credits a Checkout session granted, once, after a refund or a dispute. The
+  // balance is clamped at zero, so credits already spent are not clawed back below nothing.
+  async reverseStripePurchase(sessionId: string): Promise<'reversed' | 'none' | 'already'> {
+    return this.db.transaction((): 'reversed' | 'none' | 'already' => {
+      const grant = this.db.prepare("SELECT userId, amount FROM transactions WHERE stripeSessionId = ? AND type = 'purchase' LIMIT 1").get(sessionId) as { userId: string; amount: number } | undefined;
+      if (!grant) return 'none';
+      if (this.db.prepare("SELECT 1 FROM transactions WHERE stripeSessionId = ? AND type = 'refund' LIMIT 1").get(sessionId)) return 'already';
+      this._addCreditsSync(grant.userId, -grant.amount, 'refund', sessionId);
+      return 'reversed';
+    })();
+  }
+
+  // Seals the target credentials that scans stored before sealing existed. Without this they stay in
+  // cleartext in the database and every backup until the row happens to be rewritten, which for a
+  // finished scan is never. Idempotent: rows already sealed are skipped. Returns how many it sealed.
+  async sealLegacyScanCredentials(): Promise<number> {
+    const rows = this.db.prepare("SELECT id, authHeader FROM scans WHERE authHeader IS NOT NULL AND authHeader != '' AND authHeader NOT LIKE 'enc.v1.%'").all() as { id: string; authHeader: string }[];
+    const update = this.db.prepare('UPDATE scans SET authHeader = ? WHERE id = ?');
+    this.db.transaction(() => { for (const r of rows) update.run(sealForStorage(r.authHeader), r.id); })();
+    return rows.length;
+  }
+
+  // Database-level backstop for the above: at most one purchase row per Checkout session. Created at
+  // boot rather than in the schema so a database that already holds a duplicate cannot stop the app
+  // from starting; returns false (and the caller logs) in that case.
+  async ensureStripeSessionIndex(): Promise<boolean> {
+    try {
+      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_stripe_purchase ON transactions(stripeSessionId) WHERE stripeSessionId IS NOT NULL AND type = 'purchase'");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // --- Scans ---
+  async listScans(userId: string): Promise<Scan[]> {
+    const rows = this.db.prepare('SELECT * FROM scans WHERE userId = ? ORDER BY createdAt DESC').all(userId);
+    return rows.map(r => rowToScan(r)!).filter(Boolean);
+  }
+
+  async getScan(id: string): Promise<Scan | undefined> {
+    return rowToScan(this.db.prepare('SELECT * FROM scans WHERE id = ?').get(id));
+  }
+
+  // The most recent *completed* scan of the same target for this user, other
+  // than `excludeScanId` — the baseline a fresh scan is compared against for
+  // monitoring regression detection.
+  async getPreviousCompletedScan(userId: string, url: string, excludeScanId: string): Promise<Scan | undefined> {
+    return rowToScan(this.db.prepare(
+      "SELECT * FROM scans WHERE userId = ? AND url = ? AND status = 'complete' AND id != ? ORDER BY createdAt DESC LIMIT 1"
+    ).get(userId, url, excludeScanId));
+  }
+
+  // The most recent scan of this target for this user, in ANY status — the
+  // "last result" a monitor row surfaces (in-flight, complete, or failed).
+  async getLatestScanForUrl(userId: string, url: string): Promise<Scan | undefined> {
+    return rowToScan(this.db.prepare(
+      "SELECT * FROM scans WHERE userId = ? AND url = ? ORDER BY createdAt DESC LIMIT 1"
+    ).get(userId, url));
+  }
+
+  // --- Public shareable report links ---
+  // Mint (or return the existing) unguessable token for a COMPLETE scan the
+  // caller owns, so anyone with the resulting link can view a read-only report
+  // without an account. Idempotent: a second call returns the same token rather
+  // than churning the link. Returns null when the scan isn't the user's or isn't
+  // complete (an in-flight/failed scan has no report worth sharing).
+  async createShareToken(userId: string, scanId: string): Promise<string | null> {
+    const scan = await this.getScan(scanId);
+    if (!scan || scan.userId !== userId || scan.status !== 'complete') return null;
+    if (scan.shareToken) return scan.shareToken;
+    const token = 'shr_' + crypto.randomBytes(16).toString('hex');
+    this.db.prepare('UPDATE scans SET shareToken = ? WHERE id = ? AND userId = ?').run(token, scanId, userId);
+    return token;
+  }
+
+  // Revoke a scan's public link (owner-scoped). Returns true when a token was
+  // actually cleared, so the caller can distinguish "revoked" from "not owned".
+  async revokeShareToken(userId: string, scanId: string): Promise<boolean> {
+    const res = this.db.prepare(
+      'UPDATE scans SET shareToken = NULL WHERE id = ? AND userId = ? AND shareToken IS NOT NULL'
+    ).run(scanId, userId);
+    return res.changes > 0;
+  }
+
+  // Resolve a public share token to its scan — the ONLY read path that returns a
+  // scan without a userId check, so it is deliberately narrow: matches only a
+  // live (non-revoked) token. Callers must still apply the suppression read-model
+  // and strip owner-internal fields before serving it publicly.
+  async getScanByShareToken(token: string): Promise<Scan | undefined> {
+    if (!token) return undefined;
+    return rowToScan(this.db.prepare('SELECT * FROM scans WHERE shareToken = ?').get(token));
+  }
+
+  // --- Out-of-band collaborator (blind SSRF/RCE proof) ---
+  //
+  // A token is registered when the scanner mints a callback URL, so the public
+  // /api/oob/:token endpoint only records hits for tokens WE issued (and only
+  // recent ones) — the endpoint can't be used as an open write-anything store.
+  async registerOobToken(token: string, scanId?: string): Promise<void> {
+    this.db.prepare('INSERT OR IGNORE INTO oob_tokens (token, scanId, createdAt) VALUES (?, ?, ?)')
+      .run(token, scanId ?? null, new Date().toISOString());
+  }
+
+  // Records a callback IFF the token was issued by us within the last 15 minutes.
+  // Returns true when stored. Opportunistically prunes tokens/events older than a
+  // day so the tables can't grow without bound. Unknown/expired tokens are a
+  // no-op (the route still returns 200 so it leaks nothing about validity).
+  async recordOobEvent(
+    token: string,
+    ev: { method: string; sourceIp: string; path: string; userAgent?: string },
+  ): Promise<boolean> {
+    const tok = this.db.prepare('SELECT createdAt FROM oob_tokens WHERE token = ?').get(token) as
+      | { createdAt: string }
+      | undefined;
+    if (!tok) return false;
+    if (Date.now() - new Date(tok.createdAt).getTime() > 15 * 60 * 1000) return false;
+    const id = 'oob_' + crypto.randomBytes(8).toString('hex');
+    this.db.prepare(
+      'INSERT INTO oob_events (id, token, method, sourceIp, path, userAgent, receivedAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(id, token, ev.method, ev.sourceIp, ev.path, ev.userAgent ?? null, new Date().toISOString());
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    this.db.prepare('DELETE FROM oob_events WHERE receivedAt < ?').run(cutoff);
+    this.db.prepare('DELETE FROM oob_tokens WHERE createdAt < ?').run(cutoff);
+    return true;
+  }
+
+  async getOobEvents(token: string): Promise<OobEvent[]> {
+    return this.db.prepare('SELECT * FROM oob_events WHERE token = ? ORDER BY receivedAt ASC')
+      .all(token) as OobEvent[];
+  }
+
+  async createScan(userId: string, url: string, authHeader?: string): Promise<Scan> {
+    const id = 'scan_' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    this.db.prepare('INSERT INTO scans (id, userId, url, authHeader, status, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, userId, url, sealForStorage(authHeader), 'queued', now);
+    return (await this.getScan(id))!;
+  }
+
+  // Deletes every scan belonging to a user — a deliberate "clear my history /
+  // start fresh". Findings live inline on the scan row (findings TEXT), so this
+  // removes them too. Also clears each of the user's monitors' lastScannedAt, so
+  // a monitor with no remaining scans reads "No scans run yet" instead of showing
+  // a dangling last-run date that links to a report that no longer exists. Scoped
+  // strictly to the given user. Returns the number of scans removed.
+  async deleteAllScans(userId: string): Promise<number> {
+    const tx = this.db.transaction(() => {
+      const info = this.db.prepare('DELETE FROM scans WHERE userId = ?').run(userId);
+      this.db.prepare('UPDATE monitored_targets SET lastScannedAt = NULL WHERE userId = ?').run(userId);
+      return info.changes as number;
+    });
+    return tx();
+  }
+
+  // Resilience: the job model is in-process and fire-and-forget (see
+  // scanWorker.ts), not backed by a persisted queue, so a scan left in
+  // queued/scanning/analyzing when the process dies (crash, redeploy, OOM
+  // kill) is orphaned — no worker will ever resume it, and it would otherwise
+  // stay stuck in that status forever with no terminal state. Called once at
+  // boot to fail every such scan cleanly and refund the credit it spent,
+  // since the interruption was a platform fault, not the user's.
+  // Take a short lease on one due monitored target so only one instance
+  // processes it. Returns true to exactly one caller.
+  //
+  // Separate from nextRun on purpose. Claiming by advancing nextRun looks
+  // simpler and is wrong: that column encodes scheduling decisions the tick has
+  // not made yet — a target with no credits must keep its due time so it retries
+  // next tick, while an unsafe URL is deferred a whole cadence. Moving it up
+  // front collapses both into "rescheduled" and silently drops the retry.
+  //
+  // A stale lease is re-claimable so a target is not stranded if the instance
+  // holding it dies mid-tick.
+  async claimMonitoredTick(targetId: string, staleBeforeIso: string, nowIso: string): Promise<boolean> {
+    const res = this.db.prepare(
+      "UPDATE monitored_targets SET claimedAt = ? WHERE id = ? AND (claimedAt IS NULL OR claimedAt < ?)",
+    ).run(nowIso, targetId, staleBeforeIso);
+    return res.changes === 1;
+  }
+
+  // Released as soon as the tick finishes, so the next tick can process it
+  // normally — the lease exists to stop CONCURRENT instances, not to change how
+  // often a target is looked at.
+  async releaseMonitoredTick(targetId: string): Promise<void> {
+    this.db.prepare("UPDATE monitored_targets SET claimedAt = NULL WHERE id = ?").run(targetId);
+  }
+
+  // Atomically win the right to send this user's digest. Returns true to
+  // exactly ONE caller per period, however many instances tick at once.
+  //
+  // runDueDigests used to read lastDigestAt, send, then write it. That is a
+  // read-then-write race: three replicas ticking together all read the same old
+  // value, all decide the digest is due, and the user gets three identical
+  // emails. Claiming by conditional UPDATE closes the window because the check
+  // and the write are one statement — the losers update zero rows and skip.
+  //
+  // Marks BEFORE sending on purpose: a duplicate email is worse than a missed
+  // one, so the failure mode is "not sent this period" rather than "sent twice".
+  async claimDigestSend(userId: string, notSinceIso: string, nowIso: string): Promise<boolean> {
+    const res = this.db.prepare(
+      "UPDATE users SET lastDigestAt = ? WHERE id = ? AND (lastDigestAt IS NULL OR lastDigestAt < ?)",
+    ).run(nowIso, userId, notSinceIso);
+    return res.changes === 1;
+  }
+
+  // Same pattern for a monitored target's due run: whichever instance moves
+  // nextRun forward owns this run, and the others see it is no longer due.
+  async claimMonitoredRun(targetId: string, dueBeforeIso: string, nextRunIso: string): Promise<boolean> {
+    const res = this.db.prepare(
+      "UPDATE monitored_targets SET nextRun = ? WHERE id = ? AND nextRun <= ?",
+    ).run(nextRunIso, targetId, dueBeforeIso);
+    return res.changes === 1;
+  }
+
+  // Mark a scan runnable by ANY worker. Leaves status 'queued' and the lease
+  // NULL — an unleased queued scan is precisely what "waiting to be claimed"
+  // means, so claiming and leasing are the same act and cannot disagree.
+  async enqueueScanJob(scanId: string, params: { allowActiveProbes: boolean; allowAggressiveProbes?: boolean }): Promise<void> {
+    this.db.prepare("UPDATE scans SET jobParams = ?, heartbeatAt = NULL WHERE id = ?")
+      .run(JSON.stringify(params), scanId);
+  }
+
+  // Atomically take ONE queued scan nobody else holds. The claim IS the lease:
+  // setting heartbeatAt in the same statement that selects the row is what stops
+  // two workers running the same scan, and it means a claimed scan is
+  // immediately protected from recovery.
+  //
+  // A stale lease is re-claimable: that is how a scan whose worker died gets
+  // picked up by another instead of waiting for the recovery sweep to fail it.
+  async claimNextQueuedScan(): Promise<{ scanId: string; params: { allowActiveProbes: boolean; allowAggressiveProbes?: boolean } } | null> {
+    const cutoff = new Date(Date.now() - STALE_LEASE_MS).toISOString();
+    const now = new Date().toISOString();
+    // better-sqlite3 is synchronous and this runs in one transaction, so no
+    // other statement in this process can interleave; SQLite's single-writer
+    // lock covers the (single) other process case.
+    return this.db.transaction(() => {
+      const row = this.db.prepare(
+        "SELECT id, jobParams FROM scans WHERE status = 'queued' AND jobParams IS NOT NULL AND (heartbeatAt IS NULL OR heartbeatAt < ?) ORDER BY createdAt LIMIT 1",
+      ).get(cutoff) as { id: string; jobParams: string } | undefined;
+      if (!row) return null;
+      this.db.prepare("UPDATE scans SET heartbeatAt = ? WHERE id = ?").run(now, row.id);
+      try {
+        return { scanId: row.id, params: JSON.parse(row.jobParams) };
+      } catch {
+        return null; // unparseable params: leave it for recovery rather than guess
+      }
+    })();
+  }
+
+  // Refresh the lease on a scan this process owns. Cheap and frequent; a miss
+  // is harmless because recovery only acts once a lease is well past stale.
+  async touchScan(scanId: string): Promise<void> {
+    this.db.prepare("UPDATE scans SET heartbeatAt = ? WHERE id = ?").run(new Date().toISOString(), scanId);
+  }
+
+  // Also used to ensure the schema is present on Postgres, where nothing
+  // applies schema.sql at runtime. No-op here: dbSchema.ts adds the column.
+  async ensureScanLeaseSchema(): Promise<void> {}
+
+  // No-op on SQLite: runMigrations() in dbSchema.ts already builds the whole
+  // schema on open. The Postgres adapter applies server/pg/schema.sql here so a
+  // fresh database can be stood up from code rather than from a hand-run script.
+  async applySchema(): Promise<void> {}
+
+  // refund=false in free mode, where launching a scan charged nothing — a
+  // refund there would mint credits out of thin air (see routes' freeMode gate).
+  //
+  // inFlightOnly: the periodic sweep (startStuckScanSweeper) leaves 'queued'
+  // rows alone — an unclaimed queued scan legitimately has no lease, and a
+  // claimed one whose worker died is simply re-claimed by the queue.
+  async recoverStuckScans(refund = true, inFlightOnly = false): Promise<number> {
+    const statuses = inFlightOnly ? "('scanning', 'analyzing')" : "('queued', 'scanning', 'analyzing')";
+    // The periodic sweep only acts on a lease that actually lapsed. A NULL
+    // heartbeat (a scan from a pre-lease build) is left to the boot sweep.
+    const lapsed = inFlightOnly ? "heartbeatAt < ?" : "(heartbeatAt IS NULL OR heartbeatAt < ?)";
+    // Only scans NOBODY is still working on. The owning process refreshes
+    // heartbeatAt while it holds the scan (see touchScan), so a lease older than
+    // STALE_LEASE_MS means that process is gone.
+    //
+    // This used to take every queued/scanning/analyzing scan unconditionally,
+    // which is correct on exactly one instance and destructive on more than one:
+    // any replica booting would fail every scan the OTHER replicas were actively
+    // running, refund them, and tell the users their scan was interrupted.
+    //
+    // A NULL heartbeat is treated as stale so scans predating this column, and
+    // any left by an older build, are still recovered.
+    const cutoff = new Date(Date.now() - STALE_LEASE_MS).toISOString();
+    const stuck = this.db.prepare(
+      `SELECT id, userId FROM scans WHERE status IN ${statuses} AND ${lapsed}`
+    ).all(cutoff) as Array<{ id: string; userId: string }>;
+    if (stuck.length === 0) return 0;
+    const now = new Date().toISOString();
+    const tx = this.db.transaction(() => {
+      for (const s of stuck) {
+        // Status-guarded so the sweep is a CLAIM, matching the Postgres path
+        // (see PostgresDb.recoverStuckScans for the concurrent-boot race this
+        // prevents). Single-process SQLite cannot hit that race, but keeping the
+        // two implementations identical means the refund rule has one meaning.
+        const claimed = this.db.prepare(
+          `UPDATE scans SET status = 'failed', error = ?, completedAt = ? WHERE id = ? AND status IN ${statuses}`
+        ).run(
+          interruptedMessage(refund),
+          now,
+          s.id
+        );
+        if (claimed.changes === 0) continue;
+        if (refund) this._addCreditsSync(s.userId, 1, 'purchase');
+      }
+    });
+    tx();
+    return stuck.length;
+  }
+
+  // User-initiated cancellation. Only valid while the scan is still in flight
+  // (queued/scanning/analyzing) — a scan that already reached a terminal
+  // status can't be canceled after the fact. The credit is refunded since the
+  // user never got a report. Note this stops the scan from ever overwriting
+  // "canceled" with a late result (see scanWorker.ts's status guard before
+  // each write) but does not abort in-flight network probes — the pipeline
+  // has no cancellation token threaded through it, so any request already in
+  // flight still runs to completion; its result is simply never persisted.
+  //
+  // The UPDATE is status-guarded so only the call that actually moves the scan
+  // out of flight refunds; refund=false in free mode, where nothing was charged.
+  async cancelScan(userId: string, scanId: string, refund = true): Promise<Scan | null> {
+    const scan = await this.getScan(scanId);
+    if (!scan || scan.userId !== userId) return null;
+    if (!['queued', 'scanning', 'analyzing'].includes(scan.status)) return null;
+    const now = new Date().toISOString();
+    const tx = this.db.transaction(() => {
+      const claimed = this.db.prepare("UPDATE scans SET status = 'canceled', error = ?, completedAt = ? WHERE id = ? AND status IN ('queued', 'scanning', 'analyzing')")
+        .run('Canceled by user.', now, scanId);
+      if (claimed.changes > 0 && refund) this._addCreditsSync(userId, 1, 'purchase');
+    });
+    tx();
+    return (await this.getScan(scanId))!;
+  }
+
+  async updateScan(id: string, updates: Partial<Scan>): Promise<Scan> {
+    const existing = await this.getScan(id);
+    if (!existing) throw new Error('Scan not found');
+    const merged = { ...existing, ...updates };
+    // `AND status != 'canceled'` makes a late worker write atomically refuse to
+    // clobber a user's cancellation — 'canceled' is terminal. This closes the
+    // check-then-write gap that the async isCanceled() guards alone can't (an
+    // await yields between the check and this write). A no-op when canceled.
+    this.db.prepare(`
+      UPDATE scans SET status = ?, score = ?, severity = ?, findings = ?, aiSummary = ?, aiReasoning = ?, narrationLog = ?, executiveBreakdown = ?, evidence = ?, error = ?, completedAt = ?
+      WHERE id = ? AND status != 'canceled'
+    `).run(
+      merged.status,
+      merged.score ?? null,
+      merged.severity ?? null,
+      merged.findings ? JSON.stringify(merged.findings) : null,
+      merged.aiSummary ?? null,
+      merged.aiReasoning ?? null,
+      merged.narrationLog ? JSON.stringify(merged.narrationLog) : null,
+      merged.executiveBreakdown ? JSON.stringify(merged.executiveBreakdown) : null,
+      merged.evidence ? JSON.stringify(merged.evidence) : null,
+      merged.error ?? null,
+      merged.completedAt ?? null,
+      id
+    );
+    return (await this.getScan(id))!;
+  }
+
+  // --- Network Reconnaissance (nmap) ---
+  // A fully independent scan type: its own table, its own lifecycle, never
+  // wired into scans/findings/scoring. Mirrors the Scans methods above almost
+  // verbatim, minus the 'analyzing' phase (there is no separate AI-analysis
+  // step — the whole run is one 'scanning' phase driven by a single process).
+  async createNmapScan(userId: string, url: string, deep = false): Promise<NmapScan> {
+    const id = 'nmap_' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    this.db.prepare('INSERT INTO nmap_scans (id, userId, url, status, deep, createdAt, heartbeatAt) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, userId, url, 'queued', deep ? 1 : 0, now, now);
+    return (await this.getNmapScan(id))!;
+  }
+
+  // Atomic launch: the one-in-flight check, the credit debit and the insert
+  // happen together. Done as separate steps in the route, two concurrent
+  // requests could both pass the in-flight check and both start a scan.
+  async startNmapScan(userId: string, url: string, deep: boolean, charge: boolean): Promise<NmapScan | 'busy' | 'no_credits'> {
+    const id = 'nmap_' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    const outcome = this.db.transaction((): 'ok' | 'busy' | 'no_credits' => {
+      const busy = this.db.prepare("SELECT 1 FROM nmap_scans WHERE userId = ? AND status IN ('queued', 'scanning') LIMIT 1").get(userId);
+      if (busy) return 'busy';
+      if (charge) {
+        const user = rowToUser(this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+        if (!user || user.credits < 1) return 'no_credits';
+        this._addCreditsSync(userId, -1, 'scan_debit');
+      }
+      this.db.prepare('INSERT INTO nmap_scans (id, userId, url, status, deep, createdAt, heartbeatAt) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, userId, url, 'queued', deep ? 1 : 0, now, now);
+      return 'ok';
+    })();
+    return outcome === 'ok' ? (await this.getNmapScan(id))! : outcome;
+  }
+
+  async touchNmapScan(scanId: string): Promise<void> {
+    this.db.prepare('UPDATE nmap_scans SET heartbeatAt = ? WHERE id = ?').run(new Date().toISOString(), scanId);
+  }
+
+  async getNmapScan(id: string): Promise<NmapScan | undefined> {
+    return rowToNmapScan(this.db.prepare('SELECT * FROM nmap_scans WHERE id = ?').get(id));
+  }
+
+  async listNmapScans(userId: string): Promise<NmapScan[]> {
+    const rows = this.db.prepare('SELECT * FROM nmap_scans WHERE userId = ? ORDER BY createdAt DESC').all(userId);
+    return rows.map(r => rowToNmapScan(r)!).filter(Boolean);
+  }
+
+  async updateNmapScan(id: string, updates: Partial<NmapScan>): Promise<NmapScan> {
+    const existing = await this.getNmapScan(id);
+    if (!existing) throw new Error('Nmap scan not found');
+    const merged = { ...existing, ...updates };
+    // See updateScan: never let a late worker write overwrite a cancellation.
+    this.db.prepare(`
+      UPDATE nmap_scans SET status = ?, resolvedIp = ?, nmapVersion = ?, result = ?, rawXml = ?, error = ?, startedAt = ?, completedAt = ?
+      WHERE id = ? AND status != 'canceled'
+    `).run(
+      merged.status,
+      merged.resolvedIp ?? null,
+      merged.nmapVersion ?? null,
+      merged.result ? JSON.stringify(merged.result) : null,
+      merged.rawXml ?? null,
+      merged.error ?? null,
+      merged.startedAt ?? null,
+      merged.completedAt ?? null,
+      id
+    );
+    return (await this.getNmapScan(id))!;
+  }
+
+  // User-initiated cancellation. Unlike cancelScan, this stops a genuinely
+  // killable process (see server/nmap/run.ts's killNmapProcess, invoked by the
+  // route right after this returns) rather than only guarding against a stale
+  // late write — nmap is exactly one OS process, so cancellation here is real.
+  async cancelNmapScan(userId: string, scanId: string, refund = true): Promise<NmapScan | null> {
+    const scan = await this.getNmapScan(scanId);
+    if (!scan || scan.userId !== userId) return null;
+    if (!['queued', 'scanning'].includes(scan.status)) return null;
+    const now = new Date().toISOString();
+    const tx = this.db.transaction(() => {
+      const claimed = this.db.prepare("UPDATE nmap_scans SET status = 'canceled', error = ?, completedAt = ? WHERE id = ? AND status IN ('queued', 'scanning')")
+        .run('Canceled by user.', now, scanId);
+      if (claimed.changes > 0 && refund) this._addCreditsSync(userId, 1, 'purchase');
+    });
+    tx();
+    return (await this.getNmapScan(scanId))!;
+  }
+
+  // Mirrors recoverStuckScans — called once at boot to fail any nmap scan
+  // orphaned by a crash/redeploy and refund the credit it spent.
+  // Lease-aware like recoverStuckScans: nmap runs on whichever replica took the
+  // request, so a booting replica must not fail scans a live peer is running.
+  // lapsedOnly (the periodic sweep) skips NULL leases, left to the boot sweep.
+  async recoverStuckNmapScans(refund = true, lapsedOnly = false): Promise<number> {
+    const cutoff = new Date(Date.now() - STALE_LEASE_MS).toISOString();
+    const lapsed = lapsedOnly ? "heartbeatAt < ?" : "(heartbeatAt IS NULL OR heartbeatAt < ?)";
+    const stuck = this.db.prepare(
+      `SELECT id, userId FROM nmap_scans WHERE status IN ('queued', 'scanning') AND ${lapsed}`
+    ).all(cutoff) as Array<{ id: string; userId: string }>;
+    if (stuck.length === 0) return 0;
+    const now = new Date().toISOString();
+    let recovered = 0;
+    const tx = this.db.transaction(() => {
+      for (const s of stuck) {
+        const claimed = this.db.prepare("UPDATE nmap_scans SET status = 'failed', error = ?, completedAt = ? WHERE id = ? AND status IN ('queued', 'scanning')").run(
+          interruptedMessage(refund),
+          now,
+          s.id
+        );
+        if (claimed.changes === 0) continue;
+        if (refund) this._addCreditsSync(s.userId, 1, 'purchase');
+        recovered++;
+      }
+    });
+    tx();
+    return recovered;
+  }
+
+  // --- Autofix sessions ---
+  // One row per "fix this one finding" CI attempt (see server/routes/autofix.ts).
+  // Holds no source code or file contents — those never leave the caller's own
+  // CI runner — this is purely auth/credit/turn-cap accounting and audit history.
+  async createAutofixSession(userId: string, targetUrl: string, findingTitle: string, findingCategory: string): Promise<AutofixSession> {
+    const id = 'afx_' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    this.db.prepare(
+      'INSERT INTO autofix_sessions (id, userId, targetUrl, findingTitle, findingCategory, status, turns, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)'
+    ).run(id, userId, targetUrl, findingTitle, findingCategory, 'active', now, now);
+    return (await this.getAutofixSession(id))!;
+  }
+
+  async getAutofixSession(id: string): Promise<AutofixSession | undefined> {
+    return rowToAutofixSession(this.db.prepare('SELECT * FROM autofix_sessions WHERE id = ?').get(id));
+  }
+
+  // Records one more model turn was spent on this session. Callers enforce the
+  // turn cap themselves (comparing the returned `turns` against their limit)
+  // before calling this, so the counter always reflects turns actually taken.
+  async incrementAutofixTurn(id: string): Promise<AutofixSession> {
+    const existing = await this.getAutofixSession(id);
+    if (!existing) throw new Error('Autofix session not found');
+    this.db.prepare('UPDATE autofix_sessions SET turns = turns + 1, updatedAt = ? WHERE id = ?')
+      .run(new Date().toISOString(), id);
+    return (await this.getAutofixSession(id))!;
+  }
+
+  async completeAutofixSession(id: string, status: 'done' | 'expired' = 'done'): Promise<AutofixSession> {
+    const existing = await this.getAutofixSession(id);
+    if (!existing) throw new Error('Autofix session not found');
+    this.db.prepare('UPDATE autofix_sessions SET status = ?, updatedAt = ? WHERE id = ?')
+      .run(status, new Date().toISOString(), id);
+    return (await this.getAutofixSession(id))!;
+  }
+
+  // Counts this user's autofix starts since `sinceIso`, for the daily cap in
+  // server/routes/autofix.ts. Sessions are free to start while FREE_MODE is on
+  // (see autofix.ts), so without this a signed-in caller could open unlimited
+  // sessions against the founder's DeepSeek key.
+  async countAutofixSessionsSince(userId: string, sinceIso: string): Promise<number> {
+    const row = this.db.prepare(
+      'SELECT COUNT(*) as n FROM autofix_sessions WHERE userId = ? AND createdAt >= ?'
+    ).get(userId, sinceIso) as { n: number };
+    return row.n;
+  }
+
+  // Resource-ceiling guard, not an authorization restriction: at most one
+  // in-flight nmap scan per user at a time, since a full 65535-port +
+  // vuln-script sweep is heavy. The launch route 409s a second attempt.
+  async countInFlightScans(userId: string): Promise<number> {
+    const row = this.db.prepare(
+      "SELECT COUNT(*) AS n FROM scans WHERE userId = ? AND status IN ('queued', 'scanning', 'analyzing')"
+    ).get(userId) as { n: number };
+    return Number(row?.n ?? 0);
+  }
+  async hasInFlightNmapScan(userId: string): Promise<boolean> {
+    return !!this.db.prepare(
+      "SELECT 1 FROM nmap_scans WHERE userId = ? AND status IN ('queued', 'scanning') LIMIT 1"
+    ).get(userId);
+  }
+
+  // --- API Keys ---
+  async listApiKeys(userId: string): Promise<ApiKey[]> {
+    return (this.db.prepare('SELECT * FROM api_keys WHERE userId = ?').all(userId) as any[]).map(r => rowToApiKey(r));
+  }
+
+  // Returns the new key row (safe to persist/display forever) alongside the
+  // raw secret (safe to show exactly once, in the HTTP response to this call).
+  // Only the SHA-256 hash and a masked preview are ever written to disk.
+  async generateApiKey(userId: string): Promise<{ apiKey: ApiKey; rawKey: string }> {
+    const user = await this.getUser(userId);
+    if (!user) throw new Error('User not found');
+    const id = 'key_' + crypto.randomBytes(8).toString('hex');
+    const rawKey = 'sl_live_' + crypto.randomBytes(16).toString('hex');
+    this.db.prepare('INSERT INTO api_keys (id, userId, key, keyPreview, credits, active, createdAt) VALUES (?, ?, ?, ?, ?, 1, ?)')
+      .run(id, userId, hashToken(rawKey), maskKey(rawKey), user.credits, new Date().toISOString());
+    const apiKey = rowToApiKey(this.db.prepare('SELECT * FROM api_keys WHERE id = ?').get(id));
+    return { apiKey, rawKey };
+  }
+
+  async revokeApiKey(userId: string, keyId: string): Promise<boolean> {
+    const res = this.db.prepare('UPDATE api_keys SET active = 0 WHERE id = ? AND userId = ?').run(keyId, userId);
+    return res.changes > 0;
+  }
+
+  async validateApiKeyAndDeduct(apiKeyString: string, quantity: number = 1): Promise<User | null> {
+    const keyRow: any = this.db.prepare('SELECT * FROM api_keys WHERE key = ?').get(hashToken(apiKeyString));
+    if (!keyRow || !keyRow.active) return null;
+    // Atomic check-and-debit in one synchronous transaction (see deductCredits)
+    // so concurrent API-key scans can't both spend the same last credit.
+    const tx = this.db.transaction(() => {
+      const user = rowToUser(this.db.prepare('SELECT * FROM users WHERE id = ?').get(keyRow.userId));
+      if (!user || user.credits < quantity) return null;
+      return this._addCreditsSync(keyRow.userId, -quantity, 'scan_debit');
+    });
+    return tx();
+  }
+
+  // Resolve an active API key to its owner WITHOUT touching credits — used by
+  // the MCP endpoint in free mode, where scans cost nothing but the key must
+  // still be valid and active.
+  async validateApiKey(apiKeyString: string): Promise<User | null> {
+    const keyRow: any = this.db.prepare('SELECT * FROM api_keys WHERE key = ?').get(hashToken(apiKeyString));
+    if (!keyRow || !keyRow.active) return null;
+    return (await this.getUser(keyRow.userId)) ?? null;
+  }
+
+  // --- Domain Ownership Verification ---
+  // Gates the scanner's active exploit probes: only a verified domain unlocks
+  // them (see server/domainVerify.ts + scanner.ts's allowActiveProbes option).
+  async listDomainVerifications(userId: string): Promise<DomainVerification[]> {
+    return (this.db.prepare('SELECT * FROM domain_verifications WHERE userId = ? ORDER BY createdAt DESC').all(userId) as any[])
+      .map((r) => rowToDomainVerification(r)!);
+  }
+
+  async getDomainVerification(userId: string, domain: string): Promise<DomainVerification | undefined> {
+    return rowToDomainVerification(
+      this.db.prepare('SELECT * FROM domain_verifications WHERE userId = ? AND domain = ?').get(userId, domain)
+    );
+  }
+
+  // Creates a pending verification (or returns the existing pending/verified
+  // one) so repeated "start" calls hand back the same token/instructions.
+  async startDomainVerification(userId: string, domain: string, token: string): Promise<DomainVerification> {
+    const existing = await this.getDomainVerification(userId, domain);
+    if (existing) return existing;
+    const id = 'dv_' + crypto.randomBytes(8).toString('hex');
+    this.db.prepare('INSERT INTO domain_verifications (id, userId, domain, token, verified, createdAt) VALUES (?, ?, ?, ?, 0, ?)')
+      .run(id, userId, domain, token, new Date().toISOString());
+    return (await this.getDomainVerification(userId, domain))!;
+  }
+
+  async markDomainVerified(userId: string, domain: string, method: 'dns' | 'file' = 'dns'): Promise<void> {
+    this.db.prepare('UPDATE domain_verifications SET verified = 1, verifiedAt = ?, method = ? WHERE userId = ? AND domain = ?')
+      .run(new Date().toISOString(), method, userId, domain);
+  }
+
+  async isDomainVerified(userId: string, domain: string): Promise<boolean> {
+    return !!(await this.getDomainVerification(userId, domain))?.verified;
+  }
+
+  // --- Suppression Rules (False Positive Management) ---
+  // Suppression is applied as a read-model (see getScanWithSuppressedFindings),
+  // so adding/removing a rule is a simple row mutation with no scan rewrites.
+  async listSuppressions(userId: string): Promise<SuppressionRule[]> {
+    return this.db.prepare('SELECT * FROM suppressions WHERE userId = ?').all(userId) as SuppressionRule[];
+  }
+
+  async addSuppression(userId: string, targetUrl: string, findingTitle: string, reason: string): Promise<SuppressionRule> {
+    const id = 'supp_' + crypto.randomBytes(8).toString('hex');
+    const rule: SuppressionRule = { id, userId, targetUrl, findingTitle, reason, createdAt: new Date().toISOString() };
+    this.db.prepare('INSERT INTO suppressions (id, userId, targetUrl, findingTitle, reason, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, userId, targetUrl, findingTitle, reason, rule.createdAt);
+    return rule;
+  }
+
+  async removeSuppression(userId: string, ruleId: string): Promise<boolean> {
+    const res = this.db.prepare('DELETE FROM suppressions WHERE id = ? AND userId = ?').run(ruleId, userId);
+    return res.changes > 0;
+  }
+
+  // --- Monitored Targets ---
+  async listMonitoredTargets(userId: string): Promise<MonitoredTarget[]> {
+    return (this.db.prepare('SELECT * FROM monitored_targets WHERE userId = ?').all(userId) as any[])
+      .map(rowToMonitoredTarget);
+  }
+
+  async getMonitoredTarget(userId: string, id: string): Promise<MonitoredTarget | undefined> {
+    const row = this.db.prepare('SELECT * FROM monitored_targets WHERE id = ? AND userId = ?').get(id, userId);
+    return row ? rowToMonitoredTarget(row) : undefined;
+  }
+
+  // Accepts either a full schedule (daily/weekly/monthly + time-of-day) or a
+  // bare frequency in days (legacy callers). The next run instant and the human
+  // scheduleString are both derived from that one schedule so they can't drift.
+  async addMonitoredTarget(userId: string, url: string, schedule: number | MonitorSchedule): Promise<MonitoredTarget> {
+    const s: MonitorSchedule = typeof schedule === 'number' ? { frequencyDays: schedule } : schedule;
+    const id = 'mon_' + crypto.randomBytes(8).toString('hex');
+    const now = new Date().toISOString();
+    const nextScanAt = computeNextRun(new Date(), s).toISOString();
+    this.db.prepare('INSERT INTO monitored_targets (id, userId, url, frequencyDays, scheduleString, scanHour, scanMinute, scanWeekday, nextScanAt, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, userId, url, s.frequencyDays, describeSchedule(s), s.hour ?? null, s.minute ?? null, s.weekday ?? null, nextScanAt, now);
+    return rowToMonitoredTarget(this.db.prepare('SELECT * FROM monitored_targets WHERE id = ?').get(id));
+  }
+
+  async removeMonitoredTarget(userId: string, id: string): Promise<boolean> {
+    const res = this.db.prepare('DELETE FROM monitored_targets WHERE id = ? AND userId = ?').run(id, userId);
+    return res.changes > 0;
+  }
+
+  // Pause/resume a monitor without losing its configuration. A paused target is
+  // excluded from listDueMonitoredTargets, so the worker never scans it until it
+  // is resumed. Returns false when the target doesn't belong to this user.
+  async setMonitoredPaused(userId: string, id: string, paused: boolean): Promise<boolean> {
+    const res = this.db.prepare('UPDATE monitored_targets SET paused = ? WHERE id = ? AND userId = ?')
+      .run(paused ? 1 : 0, id, userId);
+    return res.changes > 0;
+  }
+
+  // Change an existing monitor's cadence (frequency + weekday + time-of-day),
+  // recomputing its human scheduleString and next-run instant from the new
+  // schedule exactly as addMonitoredTarget does — so display and timing stay in
+  // lockstep and the change takes effect on the very next tick, without the
+  // user having to delete and re-create the monitor. Scoped by userId; returns
+  // the updated target, or undefined when it doesn't belong to this user.
+  async updateMonitoredSchedule(userId: string, id: string, schedule: MonitorSchedule): Promise<MonitoredTarget | undefined> {
+    const nextScanAt = computeNextRun(new Date(), schedule).toISOString();
+    const res = this.db.prepare(
+      'UPDATE monitored_targets SET frequencyDays = ?, scheduleString = ?, scanHour = ?, scanMinute = ?, scanWeekday = ?, nextScanAt = ? WHERE id = ? AND userId = ?'
+    ).run(schedule.frequencyDays, describeSchedule(schedule), schedule.hour ?? null, schedule.minute ?? null, schedule.weekday ?? null, nextScanAt, id, userId);
+    return res.changes > 0 ? this.getMonitoredTarget(userId, id) : undefined;
+  }
+
+  // Targets whose next scheduled scan is due (used by the monitoring worker).
+  // Paused targets are never returned, so pausing a monitor cleanly stops it.
+  async listDueMonitoredTargets(nowIso: string): Promise<MonitoredTarget[]> {
+    return (this.db.prepare(
+      'SELECT * FROM monitored_targets WHERE nextScanAt IS NOT NULL AND nextScanAt <= ? AND (paused IS NULL OR paused = 0)'
+    ).all(nowIso) as any[]).map(rowToMonitoredTarget);
+  }
+
+  // A scan attempt was successfully launched for this tick — clears any
+  // lingering error from a previous tick so the UI stops warning about a
+  // target that has since recovered.
+  async markMonitoredScanned(id: string, lastScannedAt: string, nextScanAt: string): Promise<void> {
+    this.db.prepare('UPDATE monitored_targets SET lastScannedAt = ?, nextScanAt = ?, lastError = NULL WHERE id = ?')
+      .run(lastScannedAt, nextScanAt, id);
+  }
+
+  // The target itself is invalid/unsafe (fails the SSRF guard) — deferred to
+  // its next real cadence rather than retried every tick, with the reason
+  // recorded so the dashboard can show why this monitor keeps producing no
+  // scans instead of silently doing nothing forever.
+  async markMonitoredSkipped(id: string, nextScanAt: string, error: string): Promise<void> {
+    this.db.prepare('UPDATE monitored_targets SET nextScanAt = ?, lastError = ? WHERE id = ?')
+      .run(nextScanAt, error, id);
+  }
+
+  // The target itself is fine but this tick couldn't spend a credit (none
+  // available) — scheduling is untouched so it's retried next tick, but the
+  // reason is still recorded for visibility.
+  async markMonitoredError(id: string, error: string): Promise<void> {
+    this.db.prepare('UPDATE monitored_targets SET lastError = ? WHERE id = ?').run(error, id);
+  }
+
+  // Liveness/readiness probe: a trivial query that proves the SQLite handle is
+  // open and the file is reachable. Returns true on success, false on any error
+  // (a corrupt/locked/closed handle) so the health endpoint can answer 503
+  // instead of a misleading 200 when the datastore is actually down.
+  async healthy(): Promise<boolean> {
+    try {
+      this.db.prepare('SELECT 1').get();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Writes a consistent, compacted snapshot of the database to `destPath` using
+  // SQLite's `VACUUM INTO`. This runs inside a transaction, so it is safe against
+  // concurrent writes and produces a single clean file (no separate -wal/-shm) —
+  // ideal for off-box backup. `destPath` is operator-controlled (never user
+  // input); single quotes are still escaped for SQL safety since VACUUM does not
+  // accept a bound parameter for the target.
+  // Returns true when a snapshot file was actually written. The boolean is
+  // the contract that lets the backup worker tell a real snapshot from a
+  // backend that cannot take one — see PostgresDb.backupTo.
+  // Live scan ticker persistence. See server/scanEvents.ts for why: the scan
+  // runs on one instance, the poll can land on another.
+  async appendScanEvents(scanId: string, events: { seq: number; ts: number; channel: string; text: string }[]): Promise<void> {
+    if (!events.length) return;
+    const stmt = this.db.prepare(
+      'INSERT OR IGNORE INTO scan_events (scanId, seq, ts, channel, text) VALUES (?, ?, ?, ?, ?)');
+    this.db.transaction(() => {
+      for (const e of events) stmt.run(scanId, e.seq, e.ts, e.channel, e.text);
+    })();
+  }
+
+  // `found` distinguishes "this scan has a feed but nothing new since cursor"
+  // from "no feed at all" — the client falls back to the stored narration log on
+  // the latter, so conflating them would blank a finished scan's ticker.
+  async getScanEventsSince(scanId: string, cursor: number):
+      Promise<{ events: { seq: number; ts: number; channel: string; text: string }[]; found: boolean }> {
+    const any = this.db.prepare('SELECT 1 FROM scan_events WHERE scanId = ? LIMIT 1').get(scanId);
+    if (!any) return { events: [], found: false };
+    const rows = this.db.prepare(
+      'SELECT seq, ts, channel, text FROM scan_events WHERE scanId = ? AND seq > ? ORDER BY seq').all(scanId, cursor);
+    return { events: rows as any[], found: true };
+  }
+
+  async deleteScanEvents(scanId: string): Promise<void> {
+    this.db.prepare('DELETE FROM scan_events WHERE scanId = ?').run(scanId);
+  }
+
+  // No-op on SQLite: dbSchema.ts already creates rate_limit_hits when the
+  // database is opened. Present so both backends satisfy one contract.
+  async ensureRateLimitSchema(): Promise<void> {}
+  // Also a no-op: dbSchema.ts creates scan_events on open.
+  async ensureScanEventSchema(): Promise<void> {}
+
+  // Sliding-window rate limit against the DATABASE rather than process memory,
+  // so every replica shares one bucket. Returns whether THIS call is over the
+  // limit and, if so, when it would next be allowed.
+  //
+  // Synchronous transaction on SQLite, so the prune/count/insert cannot
+  // interleave with another request in this process.
+  async rateLimitHit(bucketKey: string, windowMs: number, max: number, now = Date.now()):
+      Promise<{ limited: boolean; retryAfterSec: number }> {
+    const windowStart = now - windowMs;
+    return this.db.transaction(() => {
+      this.db.prepare('DELETE FROM rate_limit_hits WHERE bucketKey = ? AND hitAt < ?').run(bucketKey, windowStart);
+      const row = this.db.prepare(
+        'SELECT count(*) AS n, min(hitAt) AS oldest FROM rate_limit_hits WHERE bucketKey = ? AND hitAt >= ?',
+      ).get(bucketKey, windowStart) as { n: number; oldest: number | null };
+      if (row.n >= max) {
+        const oldest = row.oldest ?? now;
+        return { limited: true, retryAfterSec: Math.max(1, Math.ceil((windowMs - (now - oldest)) / 1000)) };
+      }
+      this.db.prepare('INSERT INTO rate_limit_hits (bucketKey, hitAt) VALUES (?, ?)').run(bucketKey, now);
+      return { limited: false, retryAfterSec: 0 };
+    })();
+  }
+
+  async backupTo(destPath: string): Promise<boolean> {
+    const escaped = destPath.replace(/'/g, "''");
+    this.db.exec(`VACUUM INTO '${escaped}'`);
+    return true;
+  }
+
+  // Checkpoints the WAL and releases the file lock. Called from the graceful
+  // shutdown path so a container redeploy leaves a clean, fully-flushed database
+  // file behind instead of a hot -wal/-shm pair. Idempotent and never throws:
+  // shutdown must not be blocked by a close error.
+  async close(): Promise<void> {
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+      this.db.close();
+    } catch (err: any) {
+      console.warn('[db] Error while closing database:', err?.message || err);
+    }
+  }
+
+  // Read-model: returns a scan with suppression rules applied and the score
+  // recalculated. This is a PURE transform over the DB (it only READS the
+  // user's suppression rules), so it never mutates scan or finding rows.
+  async getScanWithSuppressedFindings(scan: Scan): Promise<Scan> {
+    if (!scan || !scan.findings) return scan;
+    const rules = await this.listSuppressions(scan.userId);
+    const scanUrlClean = cleanUrl(scan.url);
+
+    const findings = scan.findings.map((finding) => {
+      const rule = rules.find(r => cleanUrl(r.targetUrl) === scanUrlClean && r.findingTitle === finding.title);
+      if (rule) {
+        return { ...finding, isFalsePositive: true, suppressionReason: rule.reason, suppressedAt: rule.createdAt };
+      }
+      // Strip any stale suppression metadata if no rule currently matches.
+      const { isFalsePositive, suppressionReason, suppressedAt, ...rest } = finding;
+      return rest as Finding;
+    });
+
+    const { score, severity } = scoreFindings(findings);
+    return { ...scan, findings, score, severity };
+  }
+
+}
+
+// The repository contract app code depends on: the PUBLIC surface of SqliteDb
+// (keyof a class type omits private members, so `_addCreditsSync`/`db` are
+// excluded). Both backends satisfy it, so `db` can be either engine and every
+// call site is forced to `await`.
+export type Db = Pick<SqliteDb, keyof SqliteDb>;
+
+// Backend selector: Postgres when DATABASE_URL is set (production/Supabase —
+// multi-instance capable), else the local single-file SQLite (dev, tests, and
+// single-node deploys). Chosen once at import; env.ts loads .env before this
+// module is first imported, and platform env vars (Railway) are already present.
+function createDb(): Db {
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    const pool = new pg.Pool({
+      connectionString: url,
+      max: Math.max(1, Number(process.env.PGPOOL_MAX) || 10),
+      // Managed Postgres (Supabase/Railway) requires TLS; local dev usually
+      // doesn't. Without PG_SSL_CA the provider's chain is accepted unverified
+      // (still encrypted); with it the certificate is verified. See pgSsl.ts.
+      ssl: pgSsl(url),
+      // Without this a checkout waits FOREVER for a connection: if the database
+      // is unreachable, every request hangs open instead of failing, the pool
+      // fills, and the process stops answering — including the health probe that
+      // is supposed to report the problem. Fail the query fast and let the
+      // health check surface a degraded instance.
+      connectionTimeoutMillis: Math.max(1000, Number(process.env.PGPOOL_CONNECT_TIMEOUT_MS) || 10_000),
+      idleTimeoutMillis: 30_000,
+      // Managed providers and the NAT in front of them drop idle TCP sessions
+      // silently; keepalive makes a dead socket surface as an error we can
+      // recycle rather than a query that hangs on a connection that no longer
+      // exists.
+      keepAlive: true,
+    });
+    // pg emits 'error' on the POOL when an IDLE client dies — a provider
+    // restart, a failover, a network blip, an idle-connection reaper. Node
+    // turns an unhandled 'error' event into a thrown exception, so without this
+    // listener a routine Postgres restart takes the whole process down with it.
+    // The pool has already discarded the dead client and will open a fresh one
+    // on the next checkout, so the correct response is to log and keep serving.
+    pool.on("error", (err: Error) => {
+      console.error("[db] idle Postgres client error — pool will recycle it:", err?.message || err);
+    });
+    return new PostgresDb(pool as unknown as PgPool);
+  }
+
+  assertNotSilentlyFallingBack(process.env.NODE_ENV);
+  return new SqliteDb();
+}
+
+/**
+ * Refuse to start a PRODUCTION process on the local SQLite fallback.
+ *
+ * The image points DB_PATH at /data, which is an ephemeral directory inside the
+ * container unless a volume is mounted — so a missing DATABASE_URL would open a
+ * brand-new EMPTY database, pass the health check, and serve as though every
+ * user, scan and credit had vanished, losing anything written on the next
+ * restart. Silent and total. A deploy that cannot reach its database must fail
+ * loudly instead of looking healthy.
+ *
+ * Exported so the rule is unit-testable: it runs at module load, which a normal
+ * test cannot re-trigger once db.ts is cached.
+ */
+export function assertNotSilentlyFallingBack(nodeEnv: string | undefined): void {
+  if (nodeEnv !== "production") return;
+  throw new Error(
+    "DATABASE_URL is not set. Refusing to start in production on the local SQLite fallback — " +
+      "that would serve an empty, ephemeral database and look healthy while doing it. " +
+      "Set DATABASE_URL to the Postgres instance, or set NODE_ENV to something other than " +
+      "'production' if a single-node SQLite deployment is genuinely intended.",
+  );
+}
+
+export const db: Db = createDb();

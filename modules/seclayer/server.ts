@@ -1,0 +1,452 @@
+import './server/env.js'; // must run first: loads .env before any module reads process.env
+import express from 'express';
+import path from 'path';
+import { metaForPath, applyPageMeta } from './server/pageMeta.js';
+import fs from 'fs';
+import cookieParser from 'cookie-parser';
+import { db } from './server/db.js';
+import { buildId, config, validateConfigOnBoot } from './server/config.js';
+import { verifySvixSignature } from './server/svixSignature.js';
+import { suppressionForEvent } from './server/emailSuppression.js';
+import { parseWebhookAction } from './server/stripe.js';
+import { jsonErrorHandler } from './server/errorHandler.js';
+import { isEncryptionConfigured } from './server/dbCrypto.js';
+import { createOobCollaborator } from './server/oob.js';
+import { makeProcessScanJob, startScanQueueWorker, startStuckScanSweeper } from './server/scanWorker.js';
+import { processNmapScanJob } from './server/nmapWorker.js';
+import { detectNmap } from './server/nmap/detect.js';
+import { startMonitorWorker } from './server/monitorWorker.js';
+import { startDigestWorker } from './server/digestWorker.js';
+import { startBackupWorker } from './server/backupWorker.js';
+import { installSharedRateLimitStore } from './server/rateLimit.js';
+import { installSharedScanEvents } from './server/scanEvents.js';
+import { registerAuthRoutes } from './server/routes/auth.js';
+import { registerScanRoutes } from './server/routes/scans.js';
+import { registerNmapRoutes } from './server/routes/nmap.js';
+import { registerAccountRoutes } from './server/routes/account.js';
+import { registerDomainRoutes } from './server/routes/domains.js';
+import { registerMcpRoutes } from './server/routes/mcp.js';
+import { registerAutofixRoutes } from './server/routes/autofix.js';
+import { registerWellKnownRoutes } from './server/routes/wellKnown.js';
+import { accessLog } from './server/accessLog.js';
+import { clientIpMiddleware } from './server/clientIp.js';
+import { originLock } from './server/originLock.js';
+import { securityHeaders } from './server/securityHeaders.js';
+import { asyncHandler } from './server/asyncHandler.js';
+import type { RouteContext } from './server/routes/context.js';
+
+async function startServer() {
+  if (!validateConfigOnBoot() && config.isProd) {
+    console.error('[config] Refusing to start: production-critical configuration is missing (see warnings above).');
+    process.exit(1);
+  }
+
+  const app = express();
+  app.disable('x-powered-by');
+  const PORT = config.port;
+
+  // Resilience: fail (and refund) any scan orphaned by a prior process's
+  // crash/redeploy before it can ever be found stuck by a user. Only the
+  // worker-bearing roles do this — a 'web' instance booting must NOT sweep
+  // scans a worker instance is actively running and mark them failed. On a
+  // single-node deployment (role 'all', the default) this runs exactly as before.
+  // Bring the schema up to date BEFORE anything queries it, on every role —
+  // a 'web' instance needs the tables just as much as a worker does. On
+  // Postgres this applies server/pg/schema.sql (idempotent, one transaction,
+  // advisory-locked so concurrent replicas cannot collide); on SQLite it is a
+  // no-op because runMigrations() already ran when the file was opened.
+  //
+  // Deliberately NOT caught: a process that cannot establish its schema must
+  // fail the deploy rather than boot and throw on every request. Until this
+  // existed, the schema was only present because a migration script had been
+  // run by hand once, so a fresh environment came up with no tables at all.
+  await db.applySchema();
+
+  // Credentials stored by scans before sealing existed are sealed now, once, if a key is configured.
+  if (isEncryptionConfigured()) {
+    try {
+      const sealed = await db.sealLegacyScanCredentials();
+      if (sealed > 0) console.log(`[db] Sealed ${sealed} scan credential(s) that were stored in cleartext.`);
+    } catch (err: any) {
+      console.error('[db] Could not seal legacy scan credentials:', err?.message || err);
+    }
+  }
+
+  // Backstop for the Stripe grant's idempotency: at most one purchase row per Checkout session. Not
+  // fatal if it cannot be created (an existing duplicate), but loud, because that is a double grant.
+  if (!(await db.ensureStripeSessionIndex())) {
+    console.error('[db] Could not create the unique index on purchase Stripe sessions — the transactions table already holds a duplicate. Find the transactions rows of type purchase that share a stripeSessionId, reconcile them, and restart.');
+  }
+
+  const runsWorkers = config.role !== 'web';
+  if (runsWorkers) {
+    // Additive columns that post-date schema.sql. Still awaited before recovery
+    // so the query below cannot run against a table missing heartbeatAt.
+    await db.ensureScanLeaseSchema();
+    const recovered = (await db.recoverStuckScans(!config.freeMode));
+    if (recovered > 0) {
+      console.log(`[server] Recovered ${recovered} scan(s) left mid-flight by a prior process — marked failed and refunded.`);
+    }
+    const recoveredNmap = (await db.recoverStuckNmapScans(!config.freeMode));
+    if (recoveredNmap > 0) {
+      console.log(`[server] Recovered ${recoveredNmap} network reconnaissance scan(s) left mid-flight by a prior process — marked failed and refunded.`);
+    }
+  }
+
+  // Network Reconnaissance (nmap) feature detection — probed once at boot and
+  // memoized; the feature stays cleanly absent (not erroring) whenever the
+  // binary isn't present, e.g. the Vercel-hosted deployment or a bare local
+  // checkout without nmap installed. Only ever present in the self-hosted
+  // Docker image (see Dockerfile).
+  const nmapDetection = await detectNmap();
+  console.log(
+    nmapDetection.available
+      ? `[config] nmap ${nmapDetection.version} detected — Network Reconnaissance is available (${nmapDetection.privileged ? 'privileged: SYN + OS detection' : 'unprivileged: TCP connect scan, no OS detection — this container has no raw-socket capability'}).`
+      : `[config] nmap not available (${nmapDetection.error}) — Network Reconnaissance is disabled on this deployment.`
+  );
+
+  // Out-of-band collaborator for blind-vuln proofs. Needs a base URL the SCANNED
+  // TARGET can reach back on — APP_URL in production (OOB_BASE_URL overrides it,
+  // e.g. to a loopback base in local testing). When neither is set the OOB probe
+  // is skipped and the rest of the scan is unaffected.
+  const oobBase = process.env.OOB_BASE_URL || config.appUrl;
+  const oobCollaborator = oobBase ? createOobCollaborator(db, oobBase) : undefined;
+
+  // Behind a proxy/load balancer in production so req.protocol, req.ip and
+  // Secure cookies are derived from the X-Forwarded-* headers.
+  //
+  // On Railway, `1` (rightmost hop) resolved to Railway's own CDN/edge node for
+  // every visitor, so all per-IP rate limits were one shared bucket. Railway's
+  // edge strips any client-supplied X-Forwarded-For and rebuilds it with the
+  // real client first (verified live, including spoof attempts via both the
+  // Cloudflare path and the direct *.up.railway.app domain), so trusting the
+  // whole chain yields the real client. Elsewhere keep the single-hop default.
+  if (config.isProd) app.set('trust proxy', process.env.RAILWAY_ENVIRONMENT ? true : 1);
+
+  // Refuse traffic that skipped Cloudflare once ORIGIN_AUTH_SECRET is set
+  // (see server/originLock.ts). First, before any logging or routing.
+  app.use(originLock(process.env.ORIGIN_AUTH_SECRET));
+
+  // Swap Cloudflare's edge node for the real visitor (see server/clientIp.ts).
+  // First, so the access log and every per-IP rate limit see the resolved IP.
+  app.use(clientIpMiddleware);
+
+  // Per-request access log (skips the health probe so orchestrator polling
+  // doesn't flood the log). One structured line per finished response.
+  app.use(accessLog());
+
+  // Baseline security headers on every response (including API + errors). HSTS
+  // and the strict Content-Security-Policy are production-only — see
+  // server/securityHeaders.ts for the per-directive rationale.
+  app.use(securityHeaders({ isProd: config.isProd }));
+
+  // Stripe webhook MUST receive the raw body for signature verification, so it
+  // is registered before the JSON body parser. Credits are granted only here,
+  // on a verified, paid checkout.session.completed event.
+  app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyncHandler(async (req, res) => {
+    let action;
+    try {
+      action = await parseWebhookAction(req.body as Buffer, req.headers['stripe-signature'] as string | undefined);
+    } catch (err: any) {
+      // A bad signature is the sender's fault (400). Anything else here is a failure to look the
+      // payment up at Stripe, which Stripe should retry (500), not give up on.
+      const bad = /signature|webhook secret/i.test(err?.message || '');
+      console.warn('[stripe] Webhook could not be processed:', err?.message || err);
+      return res.status(bad ? 400 : 500).json({ error: `Webhook Error: ${bad ? (err?.message || 'invalid signature') : 'could not process the event'}` });
+    }
+    if (action?.kind === 'grant') {
+      // One atomic step: a duplicate delivery finds the first one's row and stops.
+      const result = await db.grantStripePurchase(action.userId, action.credits, action.sessionId);
+      if (result === 'granted') console.log(`[stripe] Granted ${action.credits} credits to ${action.userId} (session ${action.sessionId}).`);
+      else if (result === 'no_user') console.error(`[stripe] PAID session ${action.sessionId} names user ${action.userId}, who does not exist — credits NOT granted; refund or credit by hand.`);
+    } else if (action?.kind === 'reverse') {
+      const result = await db.reverseStripePurchase(action.sessionId);
+      console.log(`[stripe] ${action.reason} on session ${action.sessionId}: credits ${result}.`);
+    }
+    res.json({ received: true });
+  }));
+
+  // Resend delivery events (bounces and spam complaints). Registered here, with
+  // the Stripe webhook and before the JSON parser, for the same reason: Svix
+  // signs the bytes as sent, so a re-serialised parse changes key order and
+  // whitespace and never matches.
+  //
+  // This is the feedback loop that was missing entirely — without it every send
+  // to a dead address repeated forever and every "mark as spam" went unseen,
+  // both of which erode the sender reputation that decides whether sign-in
+  // codes reach the inbox.
+  app.post('/api/webhooks/resend', express.raw({ type: 'application/json' }), asyncHandler(async (req, res) => {
+    const secret = process.env.RESEND_WEBHOOK_SECRET;
+    if (!secret) {
+      // 503, not 200. Answering OK would make Resend believe events are being
+      // consumed while they are dropped, and show a healthy endpoint.
+      console.error('[resend] RESEND_WEBHOOK_SECRET is not set — delivery events are being discarded.');
+      return res.status(503).json({ error: 'Webhook not configured' });
+    }
+
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+    const verified = verifySvixSignature(secret, raw, {
+      id: req.headers['svix-id'] as string | undefined,
+      timestamp: req.headers['svix-timestamp'] as string | undefined,
+      signature: req.headers['svix-signature'] as string | undefined,
+    });
+    if (!verified.ok) {
+      // Unverified, anyone who found this URL could forge a bounce for any
+      // address and permanently stop that person receiving sign-in codes.
+      console.warn(`[resend] Rejected an unverified webhook (${verified.reason}).`);
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    let event: { type?: string; data?: Record<string, unknown> };
+    try {
+      event = JSON.parse(raw);
+    } catch {
+      return res.status(400).json({ error: 'Malformed payload' });
+    }
+
+    const decision = suppressionForEvent(String(event.type ?? ''), event.data ?? {});
+    if (!decision) return res.json({ ok: true, suppressed: false });
+
+    try {
+      (await db.suppressEmail(decision.email, decision.scope, decision.reason, decision.detail));
+      console.log(`[resend] Suppressed an address after a delivery event (${decision.scope}/${decision.reason}).`);
+      res.json({ ok: true, suppressed: true });
+    } catch (err) {
+      // 500 so Resend retries: losing a suppression means continuing to mail an
+      // address that bounced, which is what this exists to stop.
+      console.error('[resend] Could not record an email suppression:', err);
+      res.status(500).json({ error: 'Could not record suppression' });
+    }
+  }));
+
+  // Body parsers + cookies (explicit body size cap)
+  app.use(express.json({ limit: '256kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '256kb' }));
+  app.use(cookieParser());
+
+  const SESSION_COOKIE = 'sl_session';
+  const isProd = process.env.NODE_ENV === 'production';
+  const cookieOptions: express.CookieOptions = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+  };
+
+  // Resolve the session cookie to a userId for every request. Identity is
+  // derived server-side from the signed session — never from client input.
+  //
+  // Wrapped in try/catch on purpose: this runs on every request, before any
+  // route, as an async app.use() middleware — in Express 4 an async
+  // middleware that rejects without calling next(err) doesn't reach the JSON
+  // error handler below or get caught by anything except the process-level
+  // unhandledRejection listener, which only logs. Unguarded, that means a
+  // thrown lookup here would leave the request hanging with no response ever
+  // sent, instead of the request failing closed as anonymous and letting
+  // requireAuth answer it with a clean 401 like any other unauthenticated
+  // request. (getSessionUserId reads a local SQLite file rather than a
+  // networked database, so this is a low-probability path today — but the
+  // fix costs nothing and the failure mode without it, a silently hung
+  // request, is worse than the bug this middleware has no reason to allow.)
+  app.use(async (req, res, next) => {
+    try {
+      const token = req.cookies?.[SESSION_COOKIE];
+      if (token) {
+        const userId = (await db.getSessionUserId(token));
+        if (userId) (req as any).userId = userId;
+      }
+      // Dev convenience (config.devSkipAuth, never true in production): skip
+      // the sign-in flow entirely by treating every unauthenticated
+      // request as a fixed local dev account, so the app is usable
+      // immediately while building.
+      if (!(req as any).userId && config.devSkipAuth) {
+        (req as any).userId = (await db.getOrCreateUser('dev@localhost')).id;
+      }
+    } catch (err) {
+      console.error('[server] Session lookup failed — continuing as unauthenticated:', err);
+    }
+    next();
+  });
+
+  function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+    if (!(req as any).userId) {
+      return res.status(401).json({ status: 'error', message: 'Authentication required' });
+    }
+    next();
+  }
+  const getUserId = (req: express.Request): string => (req as any).userId;
+
+  // Background scan worker, shared by the HTTP routes and the monitoring worker.
+  const processScanJob = makeProcessScanJob(oobCollaborator);
+
+  // --- API ROUTES ---
+  const ctx: RouteContext = {
+    requireAuth, getUserId, processScanJob, processNmapScanJob,
+    nmapAvailable: nmapDetection.available,
+    oobCollaborator, cookieOptions, sessionCookie: SESSION_COOKIE,
+  };
+  registerAuthRoutes(app, ctx);
+  registerScanRoutes(app, ctx);
+  registerNmapRoutes(app, ctx);
+  registerAccountRoutes(app, ctx);
+  registerDomainRoutes(app, ctx);
+  registerMcpRoutes(app, ctx);
+  registerAutofixRoutes(app);
+
+  // Public site-policy files: robots.txt + RFC 9116 security.txt.
+  registerWellKnownRoutes(app);
+
+  // In-process background workers (continuous monitoring 60s tick, daily digest,
+  // periodic DB backup). Gated by role so that when scaling horizontally, only
+  // the 'worker'/'all' instances run them — otherwise EVERY web instance would
+  // run its own timers and duplicate the monitoring scans, digest emails, and
+  // backups N times over. Single-node ('all', the default) is unchanged.
+  // Rate limiting has to share state before a second instance exists, or each
+  // replica enforces its own private copy of every limit and the effective
+  // cap becomes N x max. Safe to install here: the middleware resolves the
+  // active store per REQUEST, not when the route is registered.
+  // The live scan ticker has the same single-instance assumption: the scan
+  // buffers events in the process that runs it, but a poll can land anywhere.
+  if (installSharedScanEvents()) {
+    console.log('[scanEvents] Live feed shared via the database — pollable from any instance.');
+  }
+
+  if (installSharedRateLimitStore()) {
+    console.log('[rateLimit] Shared database-backed store — safe for multiple instances.');
+  } else {
+    console.log('[rateLimit] In-memory store — correct for a SINGLE instance only.');
+  }
+
+  if (runsWorkers) {
+    // Pull queued scans. Every worker instance runs this; the claim is atomic,
+    // so they share one queue rather than duplicating work.
+    startScanQueueWorker(processScanJob);
+    startStuckScanSweeper(!config.freeMode);
+    startMonitorWorker(processScanJob);
+    startDigestWorker();
+    startBackupWorker();
+  } else {
+    console.log('[server] role=web — background workers (monitoring, digest, backups) disabled on this instance.');
+  }
+
+  // Unknown API routes return JSON 404 (not the SPA shell).
+  app.use('/api', (req, res) => {
+    res.status(404).json({ status: 'error', message: `Unknown API endpoint: ${req.method} ${req.path}` });
+  });
+
+  // --- Express serving of static client files ---
+  if (!config.isProd) {
+    // Dynamic, not a top-level import: vite is a devDependency only (see
+    // package.json) so it — and its own esbuild/transitive deps — can be
+    // pruned out of the production image entirely (npm prune --omit=dev). A
+    // static top-level import would force node to resolve 'vite' on every
+    // boot, dev or prod, defeating that.
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+
+    // The SPA shell is served ONLY for paths the client router actually has a
+    // view for; everything else gets a real 404.
+    //
+    // This is a security-reputation fix, not just tidiness. The previous
+    // catch-all answered 200 + the full app shell for EVERY path, so
+    // /wp-login.php, /admin/login, /verify-account and /secure/signin all
+    // returned a page with a sign-in form. That is indistinguishable from a
+    // credential-harvesting kit — unlimited distinct URLs, all 200, all showing
+    // a login UI — and Google Safe Browsing flagged the whole domain as
+    // "Deceptive pages" (no sample URLs: the pattern itself was the finding),
+    // which made Chrome block every visitor.
+    //
+    // Keep this list in sync with the client router (src/hooks/useSeclayer.ts's
+    // initial view + src/App.tsx's /r/:token share route).
+    const SPA_ROUTES = [/^\/$/, /^\/docs\/?$/, /^\/privacy\/?$/, /^\/terms\/?$/, /^\/r\/[A-Za-z0-9_-]+\/?$/];
+    // Read once. The shell only changes on deploy, and re-reading it per
+    // request would put a disk hit in front of every page view.
+    const shellPath = path.join(distPath, 'index.html');
+    let shellHtml: string | null = null;
+    const shell = (): string => {
+      if (shellHtml === null) shellHtml = fs.readFileSync(shellPath, 'utf-8');
+      return shellHtml;
+    };
+
+    app.get('*', (req, res) => {
+      if (SPA_ROUTES.some((re) => re.test(req.path))) {
+        const meta = metaForPath(req.path);
+        // The homepage's metadata is already correct in the built file, so it
+        // is sent untouched rather than rewritten with a copy of itself.
+        if (!meta) return res.sendFile(shellPath);
+        return res.type('html').send(applyPageMeta(shell(), meta));
+      }
+      // Deliberately a minimal page with no sign-in affordance — a 404 that
+      // still rendered the app shell would keep the same phishing fingerprint.
+      res.status(404).type('html').send(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+          '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+          '<meta name="robots" content="noindex">' +
+          '<title>404 — Page not found</title></head>' +
+          '<body style="font-family:system-ui,-apple-system,sans-serif;background:#0c0c0e;color:#e4e4e7;' +
+          'display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">' +
+          '<main style="text-align:center;padding:2rem">' +
+          '<h1 style="font-size:1.25rem;margin:0 0 .5rem">404 — Page not found</h1>' +
+          '<p style="color:#a1a1aa;font-size:.875rem;margin:0 0 1.25rem">That page does not exist on Seclayer.</p>' +
+          '<a href="/" style="color:#22c55e;font-size:.875rem">Go to seclayer.app</a>' +
+          '</main></body></html>',
+      );
+    });
+  }
+
+  // JSON error handler — keeps thrown route errors from leaking stack traces
+  // or crashing the process; always responds with structured JSON.
+  app.use(jsonErrorHandler);
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    // The build is named here and NOWHERE in an HTTP response: this log stream
+    // is readable only with platform access, while /api/system/health is
+    // unauthenticated and its `version` is rendered in the public navbar. On a
+    // public repository a live commit hash is a map of which fixes are not yet
+    // deployed, so it stays on this side of the line.
+    console.log(`[Seclayer Engine] Listening on http://0.0.0.0:${PORT} (${config.isProd ? 'production' : 'development'}, build ${buildId()})`);
+  });
+
+  // Graceful shutdown for containerized deployments.
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return; // ignore a second signal while already draining
+    shuttingDown = true;
+    console.log(`[server] ${signal} received — shutting down gracefully.`);
+    server.close(async () => {
+      // Checkpoint the WAL and release the SQLite file lock so a container
+      // redeploy leaves a clean database behind, then exit.
+      (await db.close());
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+// Process-level safety nets: log instead of crashing silently.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled promise rejection:', reason);
+});
+// After an uncaught exception the process state is undefined (half-applied
+// writes, leaked locks, a dead worker loop), so log and exit and let the
+// platform restart a clean process rather than keep serving from it.
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught exception — exiting:', err);
+  process.exit(1);
+});
+
+// Global safety catch
+startServer().catch((err) => {
+  console.error("Critical server bootstrap error:", err);
+  process.exit(1);
+});

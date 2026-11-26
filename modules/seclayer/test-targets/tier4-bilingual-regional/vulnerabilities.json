@@ -1,0 +1,83 @@
+{
+  "tier": 4,
+  "appName": "Bilingual Regional Commerce Test Fixture",
+  "resultsVerifiedAt": "2026-08-09",
+  "vulnerabilities": [
+    {
+      "id": "T4-i18n-Bypass-001",
+      "type": "Language Route Auth Bypass",
+      "endpoint": "GET /en/admin/dashboard (gated) vs GET /es/admin/dashboard (not gated)",
+      "cwe": "CWE-639",
+      "severity": "Critical",
+      "expectSeclayerFinding": "unclear — no existing probe compares auth outcomes across locale-swapped sibling paths",
+      "actualResult": "DETECTED (new capability) — \"Language Route Auth Bypass (en gated, es is not)\", CRITICAL, confidence:high, real evidence quoting the unlocked Spanish dashboard content.",
+      "notes": "Initially MISSED: nothing in the scanner ever compared the SAME resource's auth outcome across two different paths — BOLA compares two IDENTITIES on one path, this needed comparing two PATHS for one (anonymous) caller. Built new server/i18nProbe.ts's probeI18nAuthBypass(): for every crawler-discovered path carrying an /en/ or /es/ segment, fetch it with no credentials; if that's gated (401/403), fetch the locale-swapped sibling ALSO with no credentials, and flag if the sibling returns 200. Deliberately symmetric (works whichever locale happens to be the buggy one, not hardcoded to 'en correct, es broken'). Read-only, two GETs, no state mutation — gated behind verified ownership like the other active probes since it's new requests, but otherwise as safe as the JWT/BOLA differentials it's modeled on. Re-verified detecting on the live scan."
+    },
+    {
+      "id": "T4-Price-Manip-001",
+      "type": "Regional Price Manipulation (USD vs MXN)",
+      "endpoint": "POST /api/checkout",
+      "cwe": "CWE-841",
+      "severity": "High",
+      "expectSeclayerFinding": "none",
+      "actualResult": "DETECTED (new capability) — \"Business-Logic Price Tampering (client-controlled price honored)\", HIGH, confidence:high, RED_TEAM, real differential evidence. Same probe as T2-BizLogic-001.",
+      "notes": "Closed by the same server/priceManipulationProbe.ts built for T2-BizLogic-001 (the two vulns are the same class). The probe sends two checkout requests differing only in unit price, with quantity>1, and proves the flaw when a response field equals price*quantity in BOTH — the server billed the client-supplied price. Non-destructive: no payment instrument and no confirmation are ever sent (so it can only elicit a quote/total, not a real charge), and keying on the computed price*quantity product excludes plain echo endpoints. The MXN/USD currency angle is the same underlying trust-the-client-price bug; the probe does not need to send a currency to prove it. Verified against the live fixture; does NOT fire on /api/checkout-safe."
+    },
+    {
+      "id": "T4-SMS-2FA-001",
+      "type": "Regional SMS/WhatsApp 2FA Brute Force",
+      "endpoint": "POST /api/auth/verify-sms",
+      "cwe": "CWE-307",
+      "severity": "High",
+      "expectSeclayerFinding": "none",
+      "actualResult": "DETECTED at MEDIUM confidence (new capability) — \"No Rate Limiting on Authentication-Code Verification\", HIGH severity, confidence:MEDIUM, RED_TEAM, NO proven receipt (shown as needs-verification, not PROVEN). This is the ONE benchmark finding intentionally not at high confidence.",
+      "notes": "Built (server/authRateLimitProbe.ts) after the user explicitly accepted a medium-confidence finding for this one. Unlike every other probe, it observes the ABSENCE of a control, which cannot be positively proven from a bounded sample (\"no throttle in N tries\" != \"no throttle exists\") — so it is reported at MEDIUM confidence with NO PROVEN receipt (a new optional confidence field on RedTeamFinding; buildRedTeamFindings honors it, defaulting to high). Kept as accurate + low-invasive as possible: a small bounded burst (6 wrong codes, matching OTP best-practice thresholds of 3-5 so a correctly-limited endpoint trips well within it), bailing the instant ANY throttle signal appears (429, RateLimit-*/Retry-After header — express-rate-limit emits these on the FIRST response — or a throttle message). Precondition: the endpoint must consistently REJECT wrong codes with a 4xx (a 404/2xx is skipped, not flagged). Verified live: fires on /api/auth/verify-sms (no limiter), and does NOT fire on /api/auth/verify-sms-safe (rate-limited, emits RateLimit headers + 429). Residual reasons it stays medium (honest caveats, in the finding description): a header-less limiter with a threshold above the burst would be missed, and a real OTP endpoint may reject attempts for lack of a pending-verification session this black-box probe cannot establish."
+    },
+    {
+      "id": "T4-SQLi-Regional-001",
+      "type": "SQL Injection in Regional Business Logic (Estado Parameter)",
+      "endpoint": "GET /api/merchants?estado=",
+      "cwe": "CWE-89",
+      "severity": "Critical",
+      "expectSeclayerFinding": "SQL Injection (discovered parameter)",
+      "actualResult": "DETECTED — \"SQL Injection (discovered parameter \\\"estado\\\" on /api/merchants)\", CRITICAL, confidence:high, real evidence. Worked on the very first scan, no fix needed.",
+      "notes": "Worth recording precisely WHY this worked without a fix, since a related raw-error format (\"unrecognized token: '''\", from the fuzzer's FIRST breaker, a bare single quote) is genuinely NOT matched by the current SQL_ERROR_SIGNATURE regex — confirmed by manual testing. Detection still succeeded because the fuzzer's THIRD breaker (') produces \"near \\\")\\\": syntax error\", which the Tier 3 Postgres-error fix's pattern already covers (it's the same 'near \"X\": syntax error' shape as the Tier 1 SQLite fix). Left the regex as-is rather than adding 'unrecognized token' speculatively — it didn't change this outcome, and only worth adding if a future real miss actually depends on the first breaker specifically."
+    },
+    {
+      "id": "T4-Stripe-Webhook-001",
+      "type": "Stripe Webhook Signature Bypass (Regional Currency Handling)",
+      "endpoint": "POST /api/webhooks/stripe",
+      "cwe": "CWE-347",
+      "severity": "Critical",
+      "expectSeclayerFinding": "none",
+      "actualResult": "DETECTED (new capability) — \"Webhook Signature Verification Bypass (conditional on payload)\", HIGH, confidence:high, RED_TEAM, real differential evidence (same invalid signature: rejected 400 for currency usd, accepted 200 for mxn).",
+      "notes": "Re-examined after the user asked for a LESS-INVASIVE safe approach, and found one — built as server/webhookSignatureProbe.ts. The earlier objection (\"proving it means the handler processes a forged payment\") assumed a *payment.succeeded* event, whose acceptance credits an account = harm. But the signature skip here is gated on CURRENCY, independent of event type — so the probe instead sends a zero-amount charge.failed (a FAILURE event) for a NONEXISTENT entity: accepting that transfers no money and fulfills nothing (worst case a no-op/404), so proving the bypass causes no real financial side effect. The proof is a pure differential: the SAME invalidly-signed event is rejected under currency usd (signature verified) but accepted under mxn/eur/... (signature skipped) → conditional verification proven. Low-FP: requires the usd control to be REJECTED (so the endpoint really is signature-gating something) AND a non-usd currency ACCEPTED; an endpoint that verifies unconditionally rejects both (no finding), and one that accepts everything is left alone as ambiguous. Gated aggressive+owned; curated webhook-path list + discovered POST targets. Verified live against the fixture AND confirmed the probe only ever emitted charge.failed/amount-0 events (inspected the fixture PROCESSED log). Does NOT fire on /api/webhooks/stripe-safe (verifies unconditionally)."
+    },
+    {
+      "id": "T4-Hardcoded-Creds-001",
+      "type": "Hardcoded Laredo SMB API Credentials",
+      "endpoint": "GET /.env",
+      "cwe": "CWE-798",
+      "severity": "Critical",
+      "expectSeclayerFinding": "Exposed Critical Resource File (/.env)",
+      "actualResult": "DETECTED — \"Exposed Critical Resource File (/.env)\", CRITICAL, confidence:high. Worked on the very first scan (same pre-existing sensitive-path capability that caught Tier 3's T3-JWT-Secret-001 leak half), no fix needed."
+    }
+  ],
+  "negativeControls": [
+    {
+      "id": "T4-NC-001",
+      "description": "Both /en/account and /es/account are consistently gated — a scanner that flags EVERY /es/* route (rather than genuinely comparing per-route) would be reporting a false positive",
+      "endpoint": "GET /en/account, GET /es/account"
+    },
+    {
+      "id": "T4-NC-002",
+      "description": "SMS verification rate-limited to 3 attempts per 15 minutes; brute-force blocked",
+      "endpoint": "POST /api/auth/verify-sms-safe"
+    },
+    {
+      "id": "T4-NC-003",
+      "description": "Webhook signature always verified regardless of currency; unsigned events rejected",
+      "endpoint": "POST /api/webhooks/stripe-safe"
+    }
+  ]
+}

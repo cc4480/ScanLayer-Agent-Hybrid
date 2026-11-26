@@ -1,0 +1,89 @@
+{
+  "tier": 1,
+  "appName": "OWASP Foundation Test Fixture",
+  "resultsVerifiedAt": "2026-08-08",
+  "resultsScanId": "scan_a9c23e6ed997bd27",
+  "vulnerabilities": [
+    {
+      "id": "T1-SQLi-001",
+      "type": "SQL Injection (Error-Based)",
+      "endpoint": "GET /api/users?search=",
+      "cwe": "CWE-89",
+      "severity": "Critical",
+      "actualResult": "DETECTED — \"SQL Injection (discovered parameter \\\"search\\\" on /api/users)\", CRITICAL, confidence:high, real evidence",
+      "notes": "Initially MISSED on the first real scan: server/redTeam/sqlInjection.ts's/server/paramFuzzer.ts's SQL_ERROR_SIGNATURE regex had no pattern matching better-sqlite3's actual raw error text (\"near \\\"X\\\": syntax error\") — it only had \"SQLite3::\"/\"SQLiteException\", which are PHP/Java driver class-name prefixes that never appear in a real Node app. Fixed in this session (both files) and re-verified detecting."
+    },
+    {
+      "id": "T1-XSS-Reflected-001",
+      "type": "Cross-Site Scripting (Reflected)",
+      "endpoint": "GET /profile?name=",
+      "cwe": "CWE-79",
+      "severity": "High",
+      "actualResult": "DETECTED — \"Reflected XSS (discovered parameter \\\"name\\\" on /profile)\", HIGH, confidence:high, real evidence. Worked on the very first scan, no fix needed."
+    },
+    {
+      "id": "T1-XSS-Stored-001",
+      "type": "Cross-Site Scripting (Stored)",
+      "endpoint": "POST /api/comments, GET /post/:id",
+      "cwe": "CWE-79",
+      "severity": "Critical",
+      "actualResult": "DETECTED — \"Stored XSS (discovered form field \\\"text\\\" on /api/comments)\", CRITICAL, confidence:high, real evidence",
+      "notes": "Initially MISSED: server/storedXss.ts only re-checked the form's action URL and the site root for the persisted payload — never the page the form was actually found ON, which for a REST-style split (form on /post/1, action /api/comments) is neither. Added InjectableTarget.discoveredOnPage (stamped by server/crawler.ts's extractForms) and had displayCandidates() include it; re-verified detecting. Also had to fix a fixture bug: the form had no postId field, so the crawler's raw POST (bypassing this page's own onsubmit JS) 400'd before ever storing anything."
+    },
+    {
+      "id": "T1-IDOR-001",
+      "type": "Insecure Direct Object Reference",
+      "endpoint": "GET /api/invoice/:id",
+      "cwe": "CWE-639",
+      "severity": "High",
+      "actualResult": "DETECTED — \"Broken Object Level Authorization (BOLA)\", CRITICAL, confidence:high, real evidence. Worked on the very first scan (with bolaIdentities supplied), no fix needed."
+    },
+    {
+      "id": "T1-Auth-001",
+      "type": "Broken Authentication (predictable session token)",
+      "endpoint": "POST /login",
+      "cwe": "CWE-384",
+      "severity": "Critical",
+      "actualResult": "DETECTED — \"Predictable Session Token (Weak Seed Hash)\", CRITICAL, real evidence: an exact byte-for-byte hash match against the live captured token.",
+      "notes": "Closed via a new, deliberately narrow probe (server/redTeam/weakSessionToken.ts), NOT generic statistical entropy analysis — entropy testing was considered and rejected for this exact case: MD5's output is uniformly distributed regardless of input entropy, so a hash of a weak seed is statistically indistinguishable from a real CSPRNG output. What actually works: with real credentials the CALLER explicitly supplies (never guessed — matches the trust model of authHeader/bolaIdentities, does not reopen prd.md's 'no autonomous login-form crawling' non-goal), log in exactly once, then try to reproduce the captured token OFFLINE from a small set of common (seed, algorithm) recipes across a short timestamp window. An exact match is definitive proof, not a probabilistic guess. New scan option `loginCredentials` threaded through routes/scans.ts -> scanWorker.ts -> scanner.ts. Along the way, fixed a real crash in this fixture's own auth.js (better-sqlite3 throws, not just fails to match, when a bound parameter isn't a string — hit once /login became a fuzzed discovered-form target) and reordered the probe to run before discovered-parameter fuzzing so it gets a clean shot at the login rate limiter."
+    },
+    {
+      "id": "T1-AccessControl-001",
+      "type": "Broken Access Control (missing role check)",
+      "endpoint": "GET /admin/users",
+      "cwe": "CWE-276",
+      "severity": "Critical",
+      "actualResult": "DETECTED — \"Exposed User Object Endpoint\", CRITICAL, real evidence quoting the leaked field, endpoint:/admin/users",
+      "notes": "Initially MISSED: server/apiProbes.ts's exposed-user-object check only tried ONE fixed path (/api/v1/users/admin) and only understood a single JSON object, not a list. Broadened to a small candidate-path list (EXPOSED_USER_OBJECT_PATHS) including /admin/users, and made the marker extraction array-aware (checks the first element of a JSON array too — a 'list every user' admin panel is exactly this shape). Reuses the caller-supplied authHeader that was already threaded through, so this also required passing a top-level authHeader on the scan (not just bolaIdentities) to reach an endpoint gated behind 'some session exists'."
+    },
+    {
+      "id": "T1-DataExposure-001",
+      "type": "Sensitive Data Exposure",
+      "endpoint": "GET /api/settings",
+      "cwe": "CWE-200",
+      "severity": "High",
+      "actualResult": "DETECTED — \"Exposed Credential Signature (Stripe Secret Key)\", CRITICAL, endpoint:http://127.0.0.1:4101/api/settings",
+      "notes": "Initially MISSED: SAST secret-signature scanning (server/staticAnalysis.ts's analyzeSecrets) only ever ran over the root page's HTML — a JSON endpoint discovered by the crawler was fetched (for parameter mining) but its body was discarded unread whenever the content-type wasn't text/html. Added InjectableTarget-adjacent CrawlCapture (server/crawler.ts) so the crawler captures EVERY fetched response body/headers regardless of content type, then server/scanner.ts runs analyzeSecrets AND the cookie-flag check against every capture, not just the root. The finding's endpoint now names which page actually leaked it (server/findings.ts maps sf.file → Finding.endpoint when it's a URL)."
+    }
+  ],
+  "negativeControls": [
+    {
+      "id": "T1-NC-001",
+      "description": "Sanitized HTML in a parallel comment thread — should NOT be flagged as XSS",
+      "endpoint": "GET /post-safe/:id",
+      "actualResult": "HELD — no Stored XSS finding referenced /post-safe or /api/comments-safe in the real scan; only the genuinely-vulnerable /api/comments thread was flagged."
+    },
+    {
+      "id": "T1-NC-002",
+      "description": "Rate-limited login (5 attempts / 15 min) — should not be reported as brute-forceable",
+      "endpoint": "POST /login",
+      "actualResult": "HELD — manually verified the limiter returns 429 after 5 attempts/15min; no brute-force finding was reported."
+    },
+    {
+      "id": "T1-NC-003",
+      "description": "Properly hardened login (random token, httpOnly+secure+sameSite=strict cookie) — should not be flagged for weak cookie flags",
+      "endpoint": "POST /login-hardened",
+      "actualResult": "HELD — not independently exercised by the crawler (no discoverable link to it), so this is an absence-of-false-positive by construction rather than a verified pass. Not a strong signal either way."
+    }
+  ]
+}

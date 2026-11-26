@@ -1,0 +1,111 @@
+# Seclayer
+
+> **Repository identity.** This repo (`seclayer.io2026`) is **Seclayer**,
+> deployed at **seclayer.app** on the Railway project `seclayer-app`.
+>
+> It is **not** SecScan. SecScan is a separate product in a separate repo
+> (`VibeScan-Enterprise-Build`, deployed at secscan.us) with no shared git
+> history. Seclayer is the higher tier: everything SecScan does, plus real
+> nmap port/service scanning and the red-team attack modules in
+> `server/redTeam/`. Production runs on **Postgres** (`DATABASE_URL`, three
+> replicas on Railway); SQLite (`DB_PATH`) is the local-dev / single-node
+> fallback only — the process refuses to boot in production without
+> `DATABASE_URL` (see `server/db.ts`).
+>
+> The two launch separately. Never deploy one to the other's Railway service.
+
+Pay-Per-Scan black-box penetration testing SaaS with an MCP scan endpoint.
+
+Seclayer runs real black-box checks against a target URL, then enriches the
+results with a DeepSeek-generated executive report and a posture score. Every
+finding is mapped to its OWASP Top 10 (2021) category, and detections are
+signature-confirmed for high precision (low false positives).
+
+**Scan coverage**
+
+- Security headers, TLS, and cookie flags
+- Exposed-secret signatures + vulnerable JavaScript library detection
+- DNS/subdomain recon and signature-confirmed sensitive-path probing
+- **Crawler + parameter discovery** — maps links, forms, and JS-referenced API
+  endpoints, then fuzzes the parameters the app actually uses
+- Active SQLi / XSS / command-injection / SSRF / GraphQL / object-level-auth probes
+  — gated behind domain-ownership verification (DNS TXT record or well-known
+  file); unverified targets still get the full passive recon pass above
+- **Template engine** — data-driven detections (exposed panels, actuators,
+  config/backup files); grow coverage by adding templates, no code changes
+- **Authenticated scans** — Bearer/Basic/Cookie/custom-header credentials applied
+  across the whole request surface
+- **Optional headless rendering** (Playwright) for SPA/JS-heavy targets
+- **Continuous monitoring** with scheduled re-scans and Slack-compatible alerts
+- **Auto-fix PRs** — `@seclayer/mcp autofix` runs an AI agent inside your own
+  CI job to fix each proven, high-confidence finding and opens a pull request;
+  no separate AI key, and your source never leaves the CI runner (see
+  [mcp-server/README.md](mcp-server/README.md#auto-fix-prs-seclayer-mcp-autofix))
+
+## Stack
+
+- **Frontend:** React 19 + Vite 6 + Tailwind 4
+- **Backend:** Express 4 (TypeScript via tsx), better-sqlite3
+- **Auth:** passwordless sign-in via a one-time emailed code, with httpOnly
+  session cookies; MCP API keys are shown once at creation and stored only as
+  a SHA-256 hash
+- **AI:** DeepSeek (OpenAI-compatible API), with local fallback summaries
+- **Email:** Resend (one-time sign-in codes); console fallback in dev
+- **Payments:** Stripe Checkout + signed webhooks
+
+## Run locally
+
+**Prerequisites:** Node.js 22+
+
+```bash
+npm install
+cp .env.example .env.local   # optional: configure keys
+npm run dev                  # http://localhost:3000
+```
+
+With no keys set, the app still runs: AI uses local summaries, sign-in codes
+are printed to the server console (and returned to the dev UI), and credit
+purchases are disabled. No `DATABASE_URL`, no problem either — outside
+production the app falls back to a local SQLite file.
+
+## Scripts
+
+- `npm run dev` — server + Vite dev middleware
+- `npm run lint` — TypeScript typecheck (`tsc --noEmit`)
+- `npm test` — unit tests (Node test runner)
+- `npm run build` — build client + bundle server to `dist/`
+- `npm start` — run the production build
+
+## Configuration
+
+See [.env.example](.env.example). Key variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `NODE_ENV` | `production` enables Secure cookies, HSTS, trust-proxy, static serving |
+| `PORT` | Listen port (default 3000) |
+| `APP_URL` | Public base URL (sign-in code + checkout redirect URLs) |
+| `DATABASE_URL` | Postgres connection string. **Required in production** — the process refuses to boot on the SQLite fallback in `NODE_ENV=production` (see `server/db.ts`). Schema is applied automatically at boot from `server/pg/schema.sql`. |
+| `DB_PATH` | SQLite file path (default `./data.sqlite`), used only when `DATABASE_URL` is unset — local dev, tests, or a deliberate single-node deploy |
+| `ENABLE_BROWSER_RENDERING` | `true` to crawl SPAs via headless Playwright (opt-in; install Playwright separately) |
+| `ENABLE_TARGET_SCREENSHOT` | `true` to capture the target's landing page and show it on the report's Overview tab. Uses the same headless browser but is a **separate** flag, so a visual can be had without a full JS crawl. Silently produces no screenshot when unset. |
+| `DEEPSEEK_API_KEY` | Enables AI reports (else local summaries) |
+| `ENCRYPTION_KEY` | 32-byte base64 AES-256-GCM key. Required to store a user's personal DeepSeek key (Settings → bring your own key), which is sealed at rest. Without it that feature returns 503; everything else is unaffected. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Sends sign-in code emails (else console) |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Enables credit purchases |
+
+Point your Stripe webhook at `POST /api/webhooks/stripe`
+(`checkout.session.completed`). Credits are granted only on a verified webhook.
+
+## Deployment
+
+```bash
+docker build -t seclayer .
+docker run -p 3000:3000 --env-file .env.local -e DATABASE_URL=postgres://... seclayer
+```
+
+The container exposes a `/api/system/health` healthcheck and runs in
+`NODE_ENV=production`, which requires `DATABASE_URL` (Postgres) — it will not
+silently fall back to SQLite. See [DEPLOY.md](DEPLOY.md) for the full
+checklist, including the single-node SQLite fallback. CI
+(`.github/workflows/ci.yml`) runs typecheck, tests, and build on every push.

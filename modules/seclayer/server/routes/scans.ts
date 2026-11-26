@@ -1,0 +1,392 @@
+// Scan lifecycle routes (launch, list, fetch, report) and false-positive
+// suppression rules.
+import express from "express";
+import { db } from "../db.js";
+import { config } from "../config.js";
+import { rateLimit } from "../rateLimit.js";
+import { assertScanTargetSafe } from "../scanner.js";
+import { activeProbesUnlocked } from "../activeProbeGate.js";
+import { retestFinding } from "../retest.js";
+import * as scanEvents from "../scanEvents.js";
+import type { BolaIdentity, LoginCredentials } from "../../src/types.js";
+import { asyncHandler } from "../asyncHandler.js";
+import type { RouteContext } from "./context.js";
+
+// Validate + normalize a client-supplied two-identity BOLA payload. Returns a
+// clean [A, B] tuple, or undefined when the shape is invalid (in which case the
+// scan simply runs without the cross-tenant probe). Credentials here are used for
+// this run only and never persisted on the scan record.
+function sanitizeBolaIdentities(raw: any): [BolaIdentity, BolaIdentity] | undefined {
+  if (!Array.isArray(raw) || raw.length !== 2) return undefined;
+  const one = (x: any, fallbackLabel: string): BolaIdentity | null => {
+    if (!x || typeof x !== "object") return null;
+    const authHeader = typeof x.authHeader === "string" ? x.authHeader.trim() : "";
+    const ownResource = typeof x.ownResource === "string" ? x.ownResource.trim() : "";
+    if (!authHeader || !ownResource) return null;
+    const label = typeof x.label === "string" && x.label.trim() ? x.label.trim().slice(0, 40) : fallbackLabel;
+    const ownMarker = typeof x.ownMarker === "string" && x.ownMarker.trim() ? x.ownMarker.trim().slice(0, 200) : undefined;
+    return { label, authHeader, ownResource, ownMarker };
+  };
+  const a = one(raw[0], "tenant-A");
+  const b = one(raw[1], "tenant-B");
+  return a && b ? [a, b] : undefined;
+}
+
+// Validate + normalize client-supplied login credentials for the weak-
+// session-token probe. Used for this run only, never persisted.
+function sanitizeLoginCredentials(raw: any): LoginCredentials | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const username = typeof raw.username === "string" ? raw.username.trim() : "";
+  const password = typeof raw.password === "string" ? raw.password : "";
+  if (!username || !password) return undefined;
+  return { username, password };
+}
+
+// The scan as the owner's browser or an API client sees it. The stored authHeader is the user's
+// credential for the TARGET site: the scan worker needs it, but nothing that leaves the server does,
+// so it is replaced by a flag saying one was supplied.
+export function toClientScan<T extends object>(scan: T & { authHeader?: string }): Omit<T, "authHeader"> & { hasAuthHeader: boolean } {
+  const { authHeader, ...rest } = scan;
+  return { ...rest, hasAuthHeader: Boolean(authHeader) };
+}
+
+export function registerScanRoutes(app: express.Express, ctx: RouteContext) {
+  const { requireAuth, getUserId, processScanJob } = ctx;
+
+  // Two gates, composed, for the reason rateLimit.ts documents: IP alone is a
+  // weak identity in BOTH directions. This endpoint used to be IP-keyed only,
+  // which meant an office, a university, a VPN or any CGNAT'd group of
+  // customers shared ONE 10/min allowance and could lock each other out —
+  // the paying user's scan rejected because a stranger on the same egress IP
+  // ran theirs first. A load test surfaced it: 100 signed-in users from one
+  // address got 10 scans through and 90 HTTP 429s.
+  //
+  // Per user is the fairness gate — it is the identity that actually maps to
+  // "a customer", and it survives someone rotating source addresses.
+  const scanUserLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    keyPrefix: "scan-user",
+    // requireAuth runs first, so this is always present. Kept defensive:
+    // undefined would SKIP this gate, and the IP gate below still applies.
+    keyFrom: (req) => getUserId(req) || undefined,
+    message: "Scan rate limit reached. Please wait a moment before launching more scans.",
+  });
+  // Per IP stays as the abuse gate — one machine registering many accounts to
+  // multiply its allowance is exactly what the per-user gate cannot see. Set
+  // well above the per-user cap so that legitimate shared egress is not the
+  // thing it catches.
+  const scanIpLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    keyPrefix: "scan-ip",
+    message: "Too many scans from this network. Please wait a moment before launching more.",
+  });
+  app.post("/api/scans", requireAuth, scanUserLimiter, scanIpLimiter, asyncHandler(async (req, res) => {
+    const { url, authHeader } = req.body;
+    const userId = getUserId(req);
+    if (!url) {
+      return res.status(400).json({ status: "error", message: "Target URL is required" });
+    }
+
+    // Optional two-identity BOLA/IDOR test. Only meaningful on a verified target
+    // (active probes gated below); when the shape is invalid it is simply dropped.
+    const bolaIdentities = sanitizeBolaIdentities(req.body.bolaIdentities);
+    const loginCredentials = sanitizeLoginCredentials(req.body.loginCredentials);
+
+    const user = (await db.getUser(userId));
+    if (!user) {
+      return res.status(404).json({ status: "error", message: "User profile not found" });
+    }
+
+    // In free mode scans cost nothing; the credit gate is skipped entirely.
+    if (!config.freeMode && user.credits < 1) {
+      return res.status(402).json({
+        status: "error",
+        message: "No credits remaining. Please purchase scan credits to continue.",
+      });
+    }
+
+    if ((await db.countInFlightScans(userId)) >= config.maxInFlightScansPerUser) {
+      return res.status(429).json({ status: "error", message: `You already have ${config.maxInFlightScansPerUser} scans queued or running. Wait for one to finish before starting another.` });
+    }
+
+    // Reject SSRF / malformed targets before spending a credit.
+    try {
+      await assertScanTargetSafe(url);
+    } catch (e: any) {
+      return res.status(400).json({ status: "error", message: e?.message || "Target URL cannot be scanned." });
+    }
+
+    // Deduct 1 credit. This re-checks the balance at the moment of deduction
+    // (deductCredits is a single synchronous read-then-write, so it can't be
+    // interleaved by a concurrent request) rather than trusting the earlier
+    // check, which ran before the `await` above and so could be stale —
+    // without this, two concurrent launches sharing 1 credit could both pass
+    // the early check and both get a free scan. Skipped in free mode.
+    if (!config.freeMode && !(await db.deductCredits(userId, 1))) {
+      return res.status(402).json({
+        status: "error",
+        message: "No credits remaining. Please purchase scan credits to continue.",
+      });
+    }
+
+    // Create the scan entry in queued state
+    const scan = (await db.createScan(userId, url, authHeader));
+
+    // Active exploit probing runs only when BOTH hold: the caller asked for it
+    // (per-scan choice — omitted defaults to true for back-compat), AND this user
+    // has verified ownership of the target's domain (see /api/domains/verify/*).
+    // Either false → passive recon only. This lets an owner run a passive-only
+    // sweep of a domain they've already verified.
+    const requestedActive = req.body.activeProbes !== false;
+    // The dev-only DEV_SKIP_DOMAIN_VERIFICATION flag unlocks the active probes
+    // without DNS/file proof (local testing only; hard-disabled in production).
+    const allowActiveProbes = requestedActive && (await activeProbesUnlocked(userId, url));
+
+    // Aggressive tier is a separate opt-in (more invasive) that only takes effect
+    // when active probing is already unlocked for this target.
+    const allowAggressiveProbes = allowActiveProbes && req.body.aggressiveProbes === true;
+
+    // Hand the scan to the fleet, not to this process.
+    //
+    // A queued scan is claimed by whichever worker has a free slot, so a burst
+    // of submissions queues instead of trying to run all at once, and
+    // throughput is set by how many workers are running rather than by which
+    // instance the request happened to land on.
+    //
+    // EXCEPT when the request carries credentials. bolaIdentities and
+    // loginCredentials are real secrets for a target the caller owns, and
+    // queueing them would mean writing them to the database. dbCrypto can seal
+    // a secret at rest now, but the stronger guarantee is simply never storing
+    // these at all. So a credentialed scan runs here, in the
+    // process that already holds those secrets in memory, and they are never
+    // persisted. processScanJob takes the lease immediately, so no other worker
+    // will touch it.
+    const carriesCredentials = Boolean(bolaIdentities || loginCredentials);
+    if (carriesCredentials) {
+      processScanJob(scan.id, allowActiveProbes, bolaIdentities, allowAggressiveProbes, loginCredentials);
+    } else {
+      (await db.enqueueScanJob(scan.id, { allowActiveProbes, allowAggressiveProbes }));
+    }
+
+    res.json({ status: "ok", scan: toClientScan(scan) });
+  }));
+
+  app.get("/api/scans", requireAuth, asyncHandler(async (req, res) => {
+    const scansList = await Promise.all((await db.listScans(getUserId(req))).map(async (s) => (await db.getScanWithSuppressedFindings(s))));
+    res.json({ scans: scansList.map(toClientScan) });
+  }));
+
+  // User-initiated cancellation. Only valid while the scan is still in
+  // flight; the credit is refunded (see db.cancelScan). Does not abort
+  // in-flight network probes — see the doc comment on db.cancelScan.
+  app.post("/api/scans/:id/cancel", requireAuth, asyncHandler(async (req, res) => {
+    const scan = (await db.cancelScan(getUserId(req), req.params.id, !config.freeMode));
+    if (!scan) {
+      return res.status(409).json({ status: "error", message: "This scan can no longer be canceled — it may already be complete, failed, or not exist." });
+    }
+    res.json({ status: "ok", scan: toClientScan(scan) });
+  }));
+
+  // Clear the caller's entire scan history — a deliberate "start fresh". Only
+  // ever affects the authenticated user's own scans (see db.deleteAllScans).
+  app.delete("/api/scans", requireAuth, asyncHandler(async (req, res) => {
+    const deleted = (await db.deleteAllScans(getUserId(req)));
+    res.json({ status: "ok", deleted });
+  }));
+
+  app.get("/api/scans/:id", requireAuth, asyncHandler(async (req, res) => {
+    let scan = (await db.getScan(req.params.id));
+    // Enforce ownership: a scan ID alone must not grant access to another
+    // user's results. Return 404 (not 403) to avoid leaking scan existence.
+    if (!scan || scan.userId !== getUserId(req)) {
+      return res.status(404).json({ status: "error", message: "Scan not found" });
+    }
+    scan = (await db.getScanWithSuppressedFindings(scan));
+    res.json({ scan: toClientScan(scan) });
+  }));
+
+  // Live event feed for the real-time scan ticker. The client polls this with a
+  // ?since=<cursor> seq and appends the returned events (see
+  // src/hooks/useScanEvents.ts). `found` is false once the in-memory stream has
+  // been evicted (e.g. a scan finished a while ago) — the client then falls back
+  // to the persisted narrationLog. Ownership is enforced exactly like GET
+  // /api/scans/:id: a 404 (not 403) so a scan id can't be probed for existence.
+  app.get("/api/scans/:id/events", requireAuth, asyncHandler(async (req, res) => {
+    const scan = (await db.getScan(req.params.id));
+    if (!scan || scan.userId !== getUserId(req)) {
+      return res.status(404).json({ status: "error", message: "Scan not found" });
+    }
+    const since = Number.parseInt(String(req.query.since ?? "0"), 10);
+    const cursor = Number.isFinite(since) && since >= 0 ? since : 0;
+    const { events, cursor: nextCursor, found } = await scanEvents.getSince(scan.id, cursor);
+    res.json({ status: "ok", events, cursor: nextCursor, found, scanStatus: scan.status });
+  }));
+
+  app.get("/api/scans/:id/report", requireAuth, asyncHandler(async (req, res) => {
+    let scan = (await db.getScan(req.params.id));
+    if (!scan || scan.userId !== getUserId(req)) {
+      return res.status(404).json({ status: "error", message: "Scan not found" });
+    }
+    if (scan.status !== "complete") {
+      return res.status(400).json({ status: "error", message: "Scan report is not complete yet" });
+    }
+    scan = (await db.getScanWithSuppressedFindings(scan));
+    res.json({
+      scanId: scan.id,
+      url: scan.url,
+      score: scan.score,
+      severity: scan.severity,
+      aiSummary: scan.aiSummary,
+      aiReasoning: scan.aiReasoning,
+      executiveBreakdown: scan.executiveBreakdown,
+      evidence: scan.evidence,
+      findings: scan.findings,
+      createdAt: scan.createdAt,
+      completedAt: scan.completedAt,
+    });
+  }));
+
+  // --- Public shareable report links ---
+  // The base for the public URL: the trusted APP_URL in production, the request
+  // host in dev.
+  const publicBase = (req: express.Request) => config.appUrl || `${req.protocol}://${req.get("host")}`;
+
+  // Owner creates (or re-fetches) the public link for one of their completed
+  // scans. Returns the token + the full /r/<token> URL to copy.
+  app.post("/api/scans/:id/share", requireAuth, asyncHandler(async (req, res) => {
+    const token = (await db.createShareToken(getUserId(req), req.params.id));
+    if (!token) {
+      return res.status(404).json({ status: "error", message: "Scan not found, not yours, or not complete yet." });
+    }
+    res.json({ status: "ok", shareToken: token, shareUrl: `${publicBase(req)}/r/${token}` });
+  }));
+
+  // Owner revokes the public link — any existing /r/<token> immediately 404s.
+  app.delete("/api/scans/:id/share", requireAuth, asyncHandler(async (req, res) => {
+    if (!(await db.revokeShareToken(getUserId(req), req.params.id))) {
+      return res.status(404).json({ status: "error", message: "This scan has no active share link, or it isn't yours." });
+    }
+    res.json({ status: "ok" });
+  }));
+
+  // PUBLIC, unauthenticated read-only report by share token. Rate-limited so the
+  // (unguessable, 128-bit) token space can't be brute-forced. Serves only a
+  // sanitized view: suppression is applied and owner-internal fields (userId,
+  // authHeader, the token itself) are never echoed.
+  const shareLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    keyPrefix: "public-report",
+    message: "Too many requests. Please slow down.",
+  });
+  app.get("/api/public/report/:token", shareLimiter, asyncHandler(async (req, res) => {
+    const raw = (await db.getScanByShareToken(req.params.token));
+    // A revoked/never-shared token, or a scan that somehow isn't complete, is a
+    // flat 404 — no hint about whether the token ever existed.
+    if (!raw || raw.status !== "complete") {
+      return res.status(404).json({ status: "error", message: "This report link is not available. It may have been revoked." });
+    }
+    const scan = (await db.getScanWithSuppressedFindings(raw));
+    res.json({
+      status: "ok",
+      report: {
+        id: scan.id,
+        url: scan.url,
+        status: scan.status,
+        score: scan.score,
+        severity: scan.severity,
+        findings: scan.findings,
+        aiSummary: scan.aiSummary,
+        aiReasoning: scan.aiReasoning,
+        executiveBreakdown: scan.executiveBreakdown,
+        evidence: scan.evidence,
+        createdAt: scan.createdAt,
+        completedAt: scan.completedAt,
+      },
+    });
+  }));
+
+  // --- Single-finding fix verification (retest) ---
+  // Replays ONE finding's recorded exploit and reports whether it still fires.
+  // Free (no credit — it's a single request, not a scan). Gated exactly like the
+  // original active probe: the caller must own a verified domain (or dev-skip),
+  // since a retest re-issues real exploit traffic at the target. Rate-limited.
+  const retestLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    keyPrefix: "retest",
+    message: "Retest rate limit reached. Please wait a moment before verifying more findings.",
+  });
+  app.post("/api/scans/:scanId/findings/:findingId/retest", requireAuth, retestLimiter, asyncHandler(async (req, res) => {
+    const userId = getUserId(req);
+    const scan = (await db.getScan(req.params.scanId));
+    if (!scan || scan.userId !== userId) {
+      return res.status(404).json({ status: "error", message: "Scan not found" });
+    }
+    const finding = scan.findings?.find((f) => f.id === req.params.findingId);
+    if (!finding) {
+      return res.status(404).json({ status: "error", message: "Finding not found" });
+    }
+    // Re-issuing the exploit is active traffic → require the same ownership proof
+    // the original probe did (revocation since the scan must block a re-attack).
+    const allowed = await activeProbesUnlocked(userId, scan.url);
+    if (!allowed) {
+      return res.status(403).json({ status: "error", message: "Verify ownership of this domain to retest active exploit findings." });
+    }
+    // Re-validate the target is still safe to reach (it may now resolve internally).
+    try {
+      await assertScanTargetSafe(scan.url);
+    } catch (e: any) {
+      return res.status(400).json({ status: "error", message: e?.message || "This target can no longer be reached safely." });
+    }
+    const result = await retestFinding(finding, scan);
+    // No { status: "ok" } envelope here: RetestResult carries its own status
+    // ("still_present", "not_reproduced", "unsupported") and the spread overwrote
+    // the envelope anyway. The client switches on those values — see
+    // FindingCard.tsx — so the envelope was dead code that only looked like a
+    // contract.
+    res.json(result);
+  }));
+
+  // --- False Positive & Suppression Rules ---
+  app.get("/api/suppressions", requireAuth, asyncHandler(async (req, res) => {
+    res.json({ suppressions: (await db.listSuppressions(getUserId(req))) });
+  }));
+
+  app.post("/api/suppressions", requireAuth, asyncHandler(async (req, res) => {
+    const { targetUrl, findingTitle, reason } = req.body;
+    if (!targetUrl || !findingTitle) {
+      return res.status(400).json({ error: "targetUrl and findingTitle are required" });
+    }
+    const rule = (await db.addSuppression(getUserId(req), targetUrl, findingTitle, reason || "False positive confirmation"));
+    res.json({ status: "ok", rule });
+  }));
+
+  app.delete("/api/suppressions/:id", requireAuth, asyncHandler(async (req, res) => {
+    if (!(await db.removeSuppression(getUserId(req), req.params.id))) {
+      return res.status(404).json({ error: "Suppression exclusion rule not found" });
+    }
+    res.json({ status: "ok" });
+  }));
+
+  app.post("/api/scans/:scanId/findings/:findingId/suppress", requireAuth, asyncHandler(async (req, res) => {
+    const { scanId, findingId } = req.params;
+    const { reason = "Manual enterprise validation" } = req.body;
+    const userId = getUserId(req);
+
+    const scan = (await db.getScan(scanId));
+    if (!scan || scan.userId !== userId) {
+      return res.status(404).json({ error: "Scan job not resolved" });
+    }
+
+    const finding = scan.findings?.find((f) => f.id === findingId);
+    if (!finding) {
+      return res.status(404).json({ error: "Finding payload not found" });
+    }
+
+    const rule = (await db.addSuppression(userId, scan.url, finding.title, reason));
+    res.json({ status: "ok", rule, message: "Finding successfully suppressed and marked as False Positive." });
+  }));
+}

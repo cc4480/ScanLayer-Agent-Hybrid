@@ -1,0 +1,328 @@
+// Passive black-box recon of the root document: fetch it once, analyze security
+// headers, leaked tech signatures, and per-cookie flags, then run static
+// secret/library analysis over the served markup and map the DNS/subdomain
+// perimeter plus sensitive paths. Always runs (no ownership gate). Mutates the
+// passed DiagnosticResult in place and returns the root HTML so the caller can
+// seed the crawler with it. A failure reaching the target throws, so the scan is
+// surfaced as failed rather than a misleading "clean" report.
+import { detectChallengePage } from "./challengePage.js";
+import { renderPage, isRenderingEnabled } from "./render.js";
+import type { DiagnosticResult } from "./scanner.js";
+import type { EmitFn } from "./scanEvents.js";
+import { safeFetch } from "./ssrf.js";
+import { analyzeSecrets, analyzeLibraries } from "./staticAnalysis.js";
+import { scanPerimeter } from "./perimeter.js";
+
+export const SECURITY_HEADERS = [
+  "content-security-policy",
+  "strict-transport-security",
+  "x-frame-options",
+  "x-content-type-options",
+  "referrer-policy",
+];
+
+// Global cap across the WHOLE scan (root + every crawled page), not per-page —
+// callers pass their running count via `alreadyFound` so the cap holds even
+// when this is invoked multiple times.
+export const MAX_COOKIE_ISSUES = 6;
+
+// Evaluates EACH Set-Cookie individually. A prior version concatenated every
+// cookie into one string and substring-tested it, so a flag present on *any*
+// cookie masked its absence on *another* (both a false negative — missing a
+// genuinely insecure cookie — and a misleading blanket finding).
+//
+// Only the two security-critical flags — Secure (over HTTPS) and HttpOnly —
+// are flagged, naming the specific cookie. Missing SameSite is deliberately
+// NOT flagged: modern browsers default absent cookies to SameSite=Lax, so
+// reporting it produces low-signal, false-positive-flavored noise.
+// One cookie problem plus the line it came from. `observed` has the cookie
+// VALUE stripped — a Set-Cookie value can be a live session token, and these
+// strings are persisted in scan reports and shown in the UI.
+export interface CookieIssue {
+  message: string;
+  observed: string;
+}
+
+// NAME=<redacted>; attr; attr — keeps every security attribute (which is the
+// whole point of quoting the line) and discards only the secret part.
+export function redactCookieValue(raw: string): string {
+  return raw.replace(/^(\s*[^=;\s]+)=[^;]*/, '$1=<redacted>').trim();
+}
+
+// A Set-Cookie line that DELETES the cookie: Max-Age of zero or less, or an
+// Expires in the past. Logout and consent-reset responses send these, often
+// without repeating the cookie's original flags. The browser drops the cookie
+// on arrival and it carries no value, so a flag missing from the deletion line
+// describes nothing. When both attributes are present Max-Age wins (RFC 6265
+// §5.3), so "Max-Age=3600; Expires=<1970>" is a live cookie.
+export function isCookieDeletion(setCookie: string, now = Date.now()): boolean {
+  let maxAge: number | undefined;
+  let expires: number | undefined;
+  for (const segment of setCookie.split(";").slice(1)) {
+    const eq = segment.indexOf("=");
+    const key = (eq === -1 ? segment : segment.slice(0, eq)).trim().toLowerCase();
+    const value = eq === -1 ? "" : segment.slice(eq + 1).trim();
+    if (key === "max-age" && /^-?\d+$/.test(value)) maxAge = Number(value);
+    else if (key === "expires") {
+      const t = Date.parse(value);
+      if (!Number.isNaN(t)) expires = t;
+    }
+  }
+  if (maxAge !== undefined) return maxAge <= 0;
+  return expires !== undefined && expires <= now;
+}
+
+export function cookieFlagIssues(setCookieList: string[], isHttps: boolean, alreadyFound: number): CookieIssue[] {
+  const issues: CookieIssue[] = [];
+  const budget = () => alreadyFound + issues.length < MAX_COOKIE_ISSUES;
+  for (const cookie of setCookieList) {
+    if (!budget()) break;
+    if (isCookieDeletion(cookie)) continue;
+    const nameMatch = cookie.match(/^\s*([^=;\s]+)=/);
+    const name = nameMatch ? nameMatch[1] : "cookie";
+    // A cookie explicitly scoped to be read by client JS can't carry
+    // HttpOnly by design, so only the Secure gap is a clear issue there.
+    if (isHttps && !/;\s*secure(\s*;|\s*$)/i.test(cookie)) {
+      issues.push({ message: `Cookie "${name}" is set without the Secure attribute over HTTPS`, observed: redactCookieValue(cookie) });
+    }
+    if (!budget()) break;
+    if (!/;\s*httponly(\s*;|\s*$)/i.test(cookie)) {
+      issues.push({ message: `Cookie "${name}" is set without the HttpOnly attribute`, observed: redactCookieValue(cookie) });
+    }
+  }
+  return issues;
+}
+
+// Directives that restrict nothing a page loads or runs: the reporting ones,
+// and the three CSP3 says a <meta> policy cannot carry at all.
+const NON_RESTRICTING_CSP = /^(frame-ancestors|report-uri|report-to|sandbox|upgrade-insecure-requests|block-all-mixed-content)$/i;
+
+// A Content-Security-Policy delivered in the document as
+// <meta http-equiv="Content-Security-Policy" content="…"> is enforced like the
+// header (CSP3 §3.3), and a page shipping its policy that way was reported as
+// having none. The HTML spec only honours the tag inside <head>, so one in the body
+// does not count, and a policy holding only non-restricting directives (the
+// common content="upgrade-insecure-requests") protects nothing and does not
+// count either. Returns the policy text, or null.
+export function metaCspPolicy(html: string): string | null {
+  if (!html) return null;
+  const doc = html.replace(/<!--[\s\S]*?-->/g, "");
+  const headEnd = doc.search(/<\/head\s*>|<body[\s>]/i);
+  const head = headEnd === -1 ? doc : doc.slice(0, headEnd);
+  for (const [tag] of head.matchAll(/<meta\b[^>]*>/gi)) {
+    const attrs: Record<string, string> = {};
+    for (const a of tag.matchAll(/([^\s=/<>]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
+      attrs[a[1].toLowerCase()] = a[2] ?? a[3] ?? a[4] ?? "";
+    }
+    if ((attrs["http-equiv"] || "").trim().toLowerCase() !== "content-security-policy") continue;
+    const policy = (attrs["content"] || "")
+      .replace(/&#0*39;|&apos;/gi, "'")
+      .replace(/&quot;/gi, '"')
+      .replace(/&amp;/gi, "&")
+      .trim();
+    const restricting = policy
+      .split(";")
+      .map((d) => d.trim().split(/\s+/)[0])
+      .filter((name) => name && !NON_RESTRICTING_CSP.test(name));
+    if (restricting.length) return policy;
+  }
+  return null;
+}
+
+// Judges the transport by where the root request ENDED, not by what was typed.
+// http://example.com that redirects to https://example.com is served over TLS;
+// calling it plaintext was a HIGH false positive that also switched off the
+// TLS, HSTS and Secure-cookie checks. An https:// URL that redirects down to
+// http:// is reported as plaintext, which it is. A Response built in a test
+// has an empty url, so that falls back to the URL requested.
+export function transportOf(response: Pick<Response, "url">, requestedUrl: string): { finalUrl: string; sslSecure: boolean } {
+  const finalUrl = response.url || requestedUrl;
+  return { finalUrl, sslSecure: /^https:\/\//i.test(finalUrl) };
+}
+
+// The initial root fetch gates the WHOLE scan: if it fails we abort with "did
+// not respond" rather than emit a misleading clean report. But many real targets
+// sleep when idle (Replit, Render, Fly and other free-tier PaaS) and cold-start
+// on the first request, taking far longer than a few seconds to answer. So we
+// try a normal window first and, ONLY on a timeout, retry once with a much
+// longer warmup window — the first hit wakes the container, the retry reaches it
+// once it's up. A warm target still answers on the first attempt with no penalty
+// (the timeout is a ceiling, not a fixed wait).
+const ROOT_FETCH_TIMEOUT_MS = 12000; // first attempt
+const ROOT_FETCH_WARMUP_TIMEOUT_MS = 30000; // cold-start retry
+
+async function fetchRoot(url: string, headers: Record<string, string>): Promise<Response> {
+  const attempt = async (timeoutMs: number): Promise<Response> => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await safeFetch(url, { method: "GET", headers, signal: controller.signal });
+    } finally {
+      clearTimeout(id);
+    }
+  };
+  try {
+    return await attempt(ROOT_FETCH_TIMEOUT_MS);
+  } catch (err: any) {
+    // Cold start: the first request likely woke a sleeping host — retry once
+    // with a longer window before giving up on the target entirely.
+    if (err?.name === "AbortError") return await attempt(ROOT_FETCH_WARMUP_TIMEOUT_MS);
+    throw err;
+  }
+}
+
+export async function runPassiveScan(
+  url: string,
+  host: string,
+  hostname: string,
+  headers: Record<string, string>,
+  result: DiagnosticResult,
+  emit?: EmitFn,
+): Promise<{ rootHtml: string; rootCookies: string[] }> {
+  let rootHtml = "";
+  // The root response's RAW Set-Cookie lines (with values) — returned in memory
+  // only, never stored on `result`, so the session-aware crawl can seed its
+  // cookie jar with the session cookie most apps set on the first response.
+  let rootCookies: string[] = [];
+  try {
+    // 1. Core Header Analysis — cold-start-aware so a sleeping target that wakes
+    // slowly (Replit/Render/Fly free tiers) still gets scanned instead of failing
+    // the whole run on the first slow request.
+    const response = await fetchRoot(url, headers);
+
+    Object.assign(result, transportOf(response, url));
+    result.easmPerimeter.protocol = result.sslSecure ? "HTTPS" : "HTTP";
+
+    result.responseStatus = response.status;
+    emit?.("recon", `Reachable — HTTP ${result.responseStatus} over ${result.sslSecure ? "HTTPS/TLS" : "plaintext HTTP (no TLS)"}.`);
+
+    // Copy headers (lowercased)
+    response.headers.forEach((value, key) => {
+      result.headers[key.toLowerCase()] = value;
+    });
+
+    const htmlText = await response.text().catch(() => "");
+    rootHtml = htmlText;
+
+    // Decided once, here, on the root document: did the edge answer instead of
+    // the site? Everything below reads this response, so if it is an
+    // interstitial the findings describe Cloudflare rather than the customer.
+    result.challenge = detectChallengePage(response.status, htmlText, result.headers);
+
+    // Challenged? Try once more with the real browser before giving up.
+    //
+    // Edges fingerprint the HTTP CLIENT, not just the IP or User-Agent:
+    // lovable.dev answers curl with 200 and Node's undici fetch with 403 from
+    // the very same address. Where that is the whole block, Chromium gets the
+    // real page on its own merits — it IS a browser. This sends no payload,
+    // alters no state, and is the same GET any visitor makes, so it is ordinary
+    // passive reconnaissance and is NOT behind domain-ownership verification;
+    // that gate is for red-team probes and real exploit payloads.
+    //
+    // It deliberately stops short of defeating a real challenge. A Cloudflare
+    // MANAGED challenge serves headless Chromium the same interactive
+    // "Just a moment..." page (verified against lovable.dev: browser also 403,
+    // landing on ?__cf_chl_rt_tk=...). The browser response is therefore
+    // re-judged, and if it is a challenge too the original verdict stands and
+    // findings stay withheld. Getting past that would mean solving the
+    // challenge, which we do not do.
+    //
+    // Best effort in every direction: rendering off, playwright missing, render
+    // failure or a challenged browser all leave the verdict untouched.
+    if (result.challenge.isChallenge && isRenderingEnabled()) {
+      emit?.("recon", "Intercepted on the plain HTTP client — retrying the page with a real browser…");
+      const rendered = await renderPage(url, headers).catch(() => null);
+      if (rendered && rendered.status !== null) {
+        const reJudged = detectChallengePage(rendered.status, rendered.html, rendered.headers);
+        if (!reJudged.isChallenge) {
+          // The browser got the real page. Adopt its response wholesale so the
+          // header checks below describe the site rather than the block page.
+          result.responseStatus = rendered.status;
+          result.headers = { ...rendered.headers };
+          rootHtml = rendered.html;
+          result.challenge = reJudged;
+          result.renderedWithBrowser = true;
+          emit?.(
+            "recon",
+            `Browser reached the origin — HTTP ${rendered.status}. Full analysis proceeds on the real page.`,
+          );
+        }
+      }
+    }
+
+    if (result.challenge.isChallenge) {
+      emit?.(
+        "recon",
+        `Intercepted by ${result.challenge.vendor ?? "an edge"} bot protection — ${result.challenge.signal}. Content-derived checks will be withheld rather than attributed to this site.`,
+      );
+    }
+
+    // Missing security headers. A CSP delivered by <meta> tag is enforced like
+    // the header, so the page is not missing one. It is kept apart from
+    // `headers` on purpose: frame-ancestors is ignored in meta form, so the
+    // clickjacking check must go on reading the header alone.
+    const metaCsp = result.headers["content-security-policy"] ? null : metaCspPolicy(rootHtml);
+    if (metaCsp) result.metaCsp = metaCsp;
+    for (const header of SECURITY_HEADERS) {
+      if (header === "content-security-policy" && metaCsp) continue;
+      if (!result.headers[header]) result.missingHeaders.push(header);
+    }
+    emit?.("recon", result.missingHeaders.length
+      ? `${result.missingHeaders.length} security header(s) missing: ${result.missingHeaders.join(", ")}.`
+      : "All tracked security headers present.");
+
+    // Technology leaks checking (X-Powered-By, Server, etc.)
+    const serverHeader = result.headers["server"];
+    if (serverHeader && !/cloudflare/i.test(serverHeader)) {
+      result.techLeaked.push(`Server: ${serverHeader}`);
+    }
+    const poweredBy = result.headers["x-powered-by"];
+    if (poweredBy) {
+      result.techLeaked.push(`X-Powered-By: ${poweredBy}`);
+    }
+    if (result.techLeaked.length) emit?.("recon", `Tech/server signatures disclosed: ${result.techLeaked.join(", ")}.`);
+
+    // Cookie flag analysis — evaluate EACH Set-Cookie individually (see
+    // cookieFlagIssues below), across the root response. Same function also
+    // runs against every page the crawler visits (scanner.ts), so a cookie
+    // set anywhere in the app — not only on the root response — gets caught.
+    const setCookieList: string[] =
+      typeof (response.headers as any).getSetCookie === "function"
+        ? (response.headers as any).getSetCookie()
+        : (result.headers["set-cookie"] ? [result.headers["set-cookie"]] : []);
+    for (const ci of cookieFlagIssues(setCookieList, result.sslSecure, result.cookieIssues.length)) {
+      result.cookieIssues.push(ci.message);
+      result.cookieEvidence[ci.message] = ci.observed;
+    }
+    // Root Set-Cookie lines, VALUE-REDACTED, for the CSRF posture check (which
+    // needs the SameSite attribute of any session cookie). Never the value.
+    result.setCookies = setCookieList.map(redactCookieValue);
+    // Raw (with values) for the crawl's in-memory cookie jar only.
+    rootCookies = setCookieList;
+
+    // 2. SAST secrets + 3. SCA libraries (over the served markup).
+    // NOTE: naive CSRF inference from static markup ("a form lacks a token")
+    // stays omitted — too false-positive-prone. The precise SameSite=None-gated
+    // CSRF posture check runs in server/csrfProbe.ts, wired in scanner.ts once
+    // the crawl has mapped the forms.
+    result.sastFindings = analyzeSecrets(htmlText);
+    result.scaLibraries = analyzeLibraries(htmlText);
+
+    // 4. EASM perimeter (DNS, subdomains) + sensitive-path probing.
+    await scanPerimeter(host, hostname, result);
+    const liveSubs = result.easmPerimeter.subdomains.filter((s) => s.status === "live").map((s) => s.domain);
+    emit?.("recon", `Perimeter: resolved ${result.easmPerimeter.ip || "n/a"}; ${liveSubs.length} live subdomain(s)${liveSubs.length ? ` — ${liveSubs.slice(0, 5).join(", ")}` : ""}.`);
+    const exposedPaths = result.probedPaths.filter((p) => p.exposed).map((p) => p.path);
+    emit?.("recon", exposedPaths.length
+      ? `Exposed sensitive path(s): ${exposedPaths.join(", ")}.`
+      : `Sensitive-path probe: ${result.probedPaths.length} checked, none exposed.`);
+  } catch (err: any) {
+    // A failure reaching the target means we cannot assess it. Surface this as
+    // a failed scan rather than a misleading "clean" (no-findings) report.
+    if (err?.name === "AbortError") {
+      throw new Error(`Target ${url} did not respond within the timeout window.`);
+    }
+    throw new Error(`Unable to connect to ${url}: ${err?.message || "connection failed"}`);
+  }
+  return { rootHtml, rootCookies };
+}

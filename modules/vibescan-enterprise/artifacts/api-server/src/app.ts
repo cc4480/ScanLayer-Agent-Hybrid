@@ -1,0 +1,325 @@
+import express, { type Express } from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import pinoHttp from "pino-http";
+import { existsSync, readFileSync } from "node:fs";
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
+import { createProxyMiddleware } from "http-proxy-middleware";
+import router from "./routes";
+import oauthMetadataRouter from "./routes/oauthMetadata";
+import { logger } from "./lib/logger";
+import { isSpaRoute, setLearnCheckIds } from "./lib/spaRoutes";
+import { metaForPath, applyPageMeta, withRenderedRoot, registerChecks, PRERENDERED, type CheckMeta } from "./lib/pageMeta";
+import { staticCacheControl } from "./lib/cachePolicy";
+import { authMiddleware } from "./middlewares/authMiddleware";
+import { configureTrustProxy } from "./lib/clientIp";
+import { FRONTEND_CSP, corsOptions } from "./appConfig";
+
+const __dirname = nodePath.dirname(fileURLToPath(import.meta.url));
+
+const app: Express = express();
+
+// Must come before anything that reads req.ip: behind the compose stack's Caddy
+// the socket address is the proxy's, so without this every caller shares one
+// rate-limit bucket.
+configureTrustProxy(app);
+
+// Hide "X-Powered-By: Express" — no reason to advertise the server tech.
+app.disable("x-powered-by");
+
+// ── Security response headers — set before all routes ────────────────────────
+// In production Express owns everything (API + static frontend) so we set
+// headers on every response.
+//
+// In development Express proxies non-API traffic to the Vite dev server.
+// Vite injects an inline <script type="module"> preamble that React Fast
+// Refresh needs.  If Express also sets `script-src 'self'` (no unsafe-inline)
+// on those proxied responses the browser sees TWO CSP headers and enforces
+// the union — the restrictive Express header wins and blocks the preamble,
+// causing the "@vitejs/plugin-react can't detect preamble" runtime error.
+// Fix: in dev mode skip CSP and cross-origin isolation headers on frontend
+// routes; Vite's own headers (which include 'unsafe-inline') take effect.
+const isProd = process.env.NODE_ENV === "production";
+
+app.use((req, res, next) => {
+  const isApi = req.path.startsWith("/api");
+
+  // Safe headers that don't interfere with Vite HMR in any environment.
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
+  // COOP and CORP are safe on every response — they don't break Vite HMR — so
+  // set them universally. This means API responses and the dev server carry
+  // them too, not only the production frontend. COEP is the one isolation
+  // header that can block cross-origin resource loads, so it stays scoped to
+  // the production frontend below (as credentialless).
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+
+  if (isApi) {
+    // API responses: strict no-content CSP in all environments.
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader("X-Frame-Options", "DENY");
+    // All API responses must not be cached — scan results and report data are
+    // user-specific and time-sensitive; a stale cache would show outdated findings.
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    if (isProd) {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+    }
+  } else if (isProd) {
+    // Production frontend: full SPA CSP + cross-origin isolation.
+    // COOP/CORP are set unconditionally above; here we add the CSP, COEP,
+    // frame protection and HSTS that are only safe once Vite HMR is out of the
+    // picture. In dev these are omitted so Vite's own headers apply unmolested.
+    res.setHeader("Content-Security-Policy", FRONTEND_CSP);
+    res.setHeader("X-Frame-Options", "DENY");
+    // credentialless (not require-corp): the app loads legitimate cross-origin
+    // resources (Stripe.js, remote images) that don't send CORP headers;
+    // require-corp would block them. credentialless still opts into isolation.
+    res.setHeader("Cross-Origin-Embedder-Policy", "credentialless");
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  }
+
+  next();
+});
+
+// A share link's token is a bearer credential for one report, so it must not sit in the request log.
+function maskSecretPath(path: string | undefined): string | undefined {
+  return path?.replace(/^(\/api\/(?:share|oob)\/)[^/]+/, "$1:token");
+}
+
+app.use(
+  pinoHttp({
+    logger,
+    serializers: {
+      req(req) {
+        return {
+          id: req.id,
+          method: req.method,
+          url: maskSecretPath(req.url?.split("?")[0]),
+        };
+      },
+      res(res) {
+        return {
+          statusCode: res.statusCode,
+        };
+      },
+    },
+  }),
+);
+
+// CORS is scoped to /api only — static frontend files are same-origin and
+// don't need CORS headers.  Applying cors() globally was what caused the
+// "Origin reflection + credentials" critical finding.
+app.use("/api", cors(corsOptions));
+
+app.use(cookieParser());
+
+// Stripe webhook needs raw body BEFORE json() middleware
+app.use(
+  "/api/scan/webhook",
+  express.raw({ type: "application/json" }),
+);
+
+// Same for Resend's delivery events. Svix signs the bytes as sent, so
+// re-serialising parsed JSON changes key order and whitespace and never
+// matches — the raw buffer is what gets verified.
+app.use(
+  "/api/email/webhook",
+  express.raw({ type: "application/json" }),
+);
+
+// JSON bodies are capped explicitly at 100kb. This is the same value as express's
+// own default, written down so a future Express upgrade cannot widen it silently.
+// Bodies over the cap are refused with 413 before any route runs.
+app.use(express.json({ limit: "100kb" }));
+app.use(express.urlencoded({ extended: true }));
+// OAuth discovery documents live at the site root, as the standards require. Public, and
+// before authMiddleware: they need no identity and must not create one.
+app.use(oauthMetadataRouter);
+app.use(authMiddleware);
+
+app.use("/api", router);
+
+// Anything under /api that no route matched is a 404, and it has to be JSON.
+// Without this the SPA fallback below answers with the app shell and a 200, so
+// a client fetching a mistyped or removed endpoint receives HTML that parses as
+// success. A wrong URL should fail loudly at the call site, not surface later
+// as a confusing JSON parse error.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+// ── Google Search Console: file verification ─────────────────────────────────
+// Google offers three proofs. DNS TXT is the one to prefer — it survives a
+// redeploy, a host move and a change of static bundle, and it is a one-line
+// change when DNS lives at Cloudflare.
+//
+// This covers the file method for when DNS is not convenient. Google asks for
+// googleXXXX.html at the site root containing one line naming itself; set
+// GOOGLE_SITE_VERIFICATION to the token (the part after "google", without the
+// .html) and this answers it. Serving it from configuration rather than
+// committing a file means the token is not in the repository and does not need
+// a frontend rebuild to change.
+//
+// Registered before the SPA fallback, which would otherwise return index.html
+// for this path and fail verification with a confusing "content not found".
+const GSC_TOKEN = process.env["GOOGLE_SITE_VERIFICATION"]?.trim();
+if (GSC_TOKEN) {
+  // Google only ever requests the exact filename it issued.
+  const filename = GSC_TOKEN.startsWith("google") ? GSC_TOKEN : `google${GSC_TOKEN}`;
+  const path = `/${filename.replace(/\.html$/, "")}.html`;
+  app.get(path, (_req, res) => {
+    res.type("text/html").send(`google-site-verification: ${path.slice(1)}`);
+  });
+  logger.info({ path }, "Google Search Console verification file enabled");
+}
+
+// ── Frontend serving ──────────────────────────────────────────────────────────
+// Development:  forward all non-API traffic to the Vite dev server (port 18425)
+//               so HMR and fast-refresh work.
+// Production:   serve the pre-built Vite bundle; SPA fallback rewrites unknown
+//               paths to index.html so client-side routing (/report/123) works.
+//
+// dotfiles: "allow" is required so /.well-known/security.txt is served —
+// express.static silently ignores dot-directories by default.
+if (process.env.NODE_ENV !== "production") {
+  const viteTarget = `http://localhost:${process.env.VITE_PORT ?? "18425"}`;
+  logger.info({ viteTarget }, "Dev mode: proxying frontend to Vite");
+
+  app.use(
+    createProxyMiddleware({
+      target: viteTarget,
+      changeOrigin: false,
+      ws: true,
+    }),
+  );
+} else {
+  // Resolved relative to this bundled file's own location (dist/index.mjs),
+  // not process.cwd() — CWD varies with how the process is launched (e.g.
+  // `pnpm --filter @workspace/api-server run start` runs with CWD set to
+  // the package dir, not the repo root), which silently broke frontend
+  // serving in production (every request 404'd).
+  const staticDir = process.env.FRONTEND_STATIC_DIR
+    ? nodePath.resolve(process.cwd(), process.env.FRONTEND_STATIC_DIR)
+    : nodePath.resolve(__dirname, "../../vibescan/dist/public");
+
+  if (existsSync(staticDir)) {
+    logger.info({ staticDir }, "Production: serving static frontend");
+    app.use("/prerender", (_req, res) => res.sendStatus(404));
+    app.use(
+      express.static(staticDir, {
+        dotfiles: "allow",
+        // Not index.html for "/": the static middleware would answer the home page with the
+        // bare shell before the handler below, which adds the prerendered page to it.
+        index: false,
+        // express.static defaulted to max-age=0, so Cloudflare revalidated
+        // every asset with Railway on every request (cf-cache-status:
+        // REVALIDATED) — a round trip to origin for files that never change.
+        setHeaders: (res, filePath) => res.setHeader("Cache-Control", staticCacheControl(filePath)),
+      }),
+    );
+
+    // The shell is served ONLY for paths the client router actually renders.
+    //
+    // This is a reputation fix, not tidiness. A catch-all that answers 200 plus
+    // the full app shell for every path means /wp-login.php, /admin/login and
+    // /secure/signin all return a page carrying a sign-in form. Unlimited
+    // distinct URLs, all 200, all showing a login UI is indistinguishable from
+    // a credential-harvesting kit — Google Safe Browsing flagged seclayer.app
+    // domain-wide as "Deceptive pages" for exactly this shape, with no sample
+    // URLs, because the pattern itself was the finding, and Chrome then blocked
+    // every visitor. It is also a soft-404 problem on its own: crawlers see
+    // infinite duplicate pages.
+    //
+    // Keep in sync with the <Route> list in artifacts/vibescan/src/App.tsx.
+    // A route added there and missed here 404s in production while working
+    // perfectly in dev, where Vite serves the shell for everything.
+    // Read once. The shell changes only on deploy, and re-reading it per
+    // request would put a disk hit in front of every page view.
+    const shellPath = nodePath.join(staticDir, "index.html");
+    let shellHtml: string | null = null;
+    const shell = (): string => {
+      if (shellHtml === null) shellHtml = readFileSync(shellPath, "utf-8");
+      return shellHtml;
+    };
+
+    // Page bodies written at build time for crawlers that run no scripts. They are
+    // fragments, not pages: served on their own they would be thin duplicates.
+    const prerendered = (name: string): string | undefined => {
+      try {
+        return readFileSync(nodePath.join(staticDir, "prerender", `${name}.html`), "utf-8");
+      } catch {
+        return undefined;
+      }
+    };
+    const learnBody = prerendered("learn");
+    // The rendered pages from scripts/prerender-public.mjs. Any that is missing is
+    // simply served as before, so a failed prerender never breaks a page.
+    const renderedRoot = new Map(
+      Object.entries(PRERENDERED).map(([route, name]) => [route, prerendered(`${name}.root`)] as const),
+    );
+    // The documented checks (one page each at /learn/<id>), written by the frontend build.
+    // Without the list those paths are let through and the client decides what to show.
+    try {
+      const checks = JSON.parse(readFileSync(nodePath.join(staticDir, "prerender", "checks.json"), "utf-8")) as CheckMeta[];
+      registerChecks(checks);
+      setLearnCheckIds(checks.map((c) => c.id));
+      for (const c of checks) renderedRoot.set(`/learn/${c.id}`, prerendered(`learn-${c.id}.root`));
+    } catch {
+      logger.warn("prerender/checks.json missing — /learn/<id> pages are not validated or prerendered");
+    }
+    const normalise = (p: string): string => p.replace(/\/+$/, "") || "/";
+
+    app.get(/.*/, (req, res) => {
+      if (isSpaRoute(req.path)) {
+        // Re-checked on every visit, like every other .html file (see cachePolicy.ts). The page names the
+        // fingerprinted bundle, so a copy kept past a deploy would keep loading the old app.
+        res.setHeader("Cache-Control", staticCacheControl(shellPath));
+        const meta = metaForPath(req.path);
+        const root = renderedRoot.get(normalise(req.path));
+        // The homepage's built metadata is already right, so with nothing to add
+        // it is sent as a file rather than rewritten with a copy of itself.
+        if (!meta) {
+          if (!root) {
+            res.sendFile(shellPath);
+            return;
+          }
+          res.type("html").send(withRenderedRoot(shell(), root));
+          return;
+        }
+        res
+          .type("html")
+          .send(withRenderedRoot(applyPageMeta(shell(), meta, meta.path === "/learn" ? learnBody : undefined), root));
+        return;
+      }
+      // Deliberately a minimal page with no sign-in affordance: a 404 that
+      // still rendered the app shell would keep the same fingerprint that
+      // caused the problem.
+      res
+        .status(404)
+        .type("html")
+        .send(
+          '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+            '<meta name="robots" content="noindex">' +
+            "<title>404 - Page not found</title></head>" +
+            '<body style="font-family:system-ui,-apple-system,sans-serif;background:#0f1117;color:#e4e4e7;' +
+            'display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">' +
+            '<main style="text-align:center;padding:2rem">' +
+            '<h1 style="font-size:1.25rem;margin:0 0 .5rem">404 - Page not found</h1>' +
+            '<p style="color:#a1a1aa;font-size:.875rem;margin:0 0 1.25rem">That page does not exist on SecScan.</p>' +
+            '<a href="/" style="color:#34d399;font-size:.875rem">Go to secscan.us</a>' +
+            "</main></body></html>",
+        );
+    });
+  } else {
+    logger.warn({ staticDir }, "Frontend static dir not found — frontend will not be served");
+  }
+}
+
+export default app;

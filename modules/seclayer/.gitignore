@@ -1,0 +1,23 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+db.json
+data.sqlite
+data.sqlite-shm
+data.sqlite-wal
+# Isolated local test-session DB (created for manual/smoke testing)
+data.testsession.sqlite
+data.testsession.sqlite-shm
+data.testsession.sqlite-wal
+# Runtime DB snapshots from the backup worker
+backups/
+# Local Claude Code settings/state (e.g. settings.local.json); machine-specific, not shared
+.claude/
+# MCP Registry domain signing key + login command (secret; never commit)
+mcp-server/key.pem
+mcp-server/.registry-login.local
