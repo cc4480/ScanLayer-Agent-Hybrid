@@ -11,6 +11,8 @@
 //     `curl https://evil.example` in the same command is also denied.
 //   - Everything else (passive tools, file reads, ordinary shell) is allowed.
 
+import { ownershipGateDisabled } from './scan-gate-helpers.mjs';
+
 export const LAB_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
 export const ACTIVE_TOOLS = new Set([
@@ -121,6 +123,10 @@ export async function decideScope(exec, gate) {
   } else {
     return { kind: 'allow' };
   }
+
+  // Operator bypass: with the ownership gate switched off, every target is allowed without verification.
+  // Off unless SCAN_SKIP_OWNERSHIP_GATE=true is explicitly set (see scan-gate-helpers.mjs).
+  if (ownershipGateDisabled()) return { kind: 'allow' };
 
   for (const host of hosts) {
     if (isLoopback(host)) continue;

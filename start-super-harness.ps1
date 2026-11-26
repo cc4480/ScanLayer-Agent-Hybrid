@@ -33,6 +33,9 @@ if (Test-Path $envFile) {
         if (-not $env:DATABASE_URL -and $line -match '^\s*DATABASE_URL\s*=\s*(.+?)\s*$') {
             $env:DATABASE_URL = $Matches[1]
         }
+        if (-not $env:SCAN_SKIP_OWNERSHIP_GATE -and $line -match '^\s*SCAN_SKIP_OWNERSHIP_GATE\s*=\s*(.+?)\s*$') {
+            $env:SCAN_SKIP_OWNERSHIP_GATE = $Matches[1]
+        }
     }
 }
 # No NODE_OPTIONS here: the harness already starts under tsx (pnpm dsh = node --import tsx/esm), which
@@ -40,6 +43,10 @@ if (Test-Path $envFile) {
 # shell starts, and those fail with "Cannot find package 'tsx'" outside this folder.
 if (-not $env:DATABASE_URL) {
     Write-Host '[warn] DATABASE_URL is not set in .env - webapp_scan will fail until it points at a migrated Postgres database.'
+}
+if ($env:SCAN_SKIP_OWNERSHIP_GATE -eq 'true') {
+    Write-Host '[warn] SCAN_SKIP_OWNERSHIP_GATE=true - the domain ownership gate is OFF. The scanner will run active'
+    Write-Host '       probes against ANY target with no DNS verification. Use only on targets you are authorized to test.'
 }
 
 # --- first-run setup -----------------------------------------------------------

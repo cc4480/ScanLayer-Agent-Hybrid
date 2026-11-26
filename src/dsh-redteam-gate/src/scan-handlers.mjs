@@ -15,7 +15,7 @@ export async function webappScanHandler(args, verifier) {
   const tier = args.tier === 'deep' ? 'deep' : 'basic'
   // Every request the engine makes is re-checked by the gate (per request and per redirect hop).
   const result = await scanWebapp(verifier, gate.url, tier)
-  return asText({ status: 'complete', target: gate.host, lab: gate.lab, tier, result })
+  return asText({ status: 'complete', target: gate.host, lab: gate.lab, unverified: gate.unverified === true, tier, result })
 }
 
 /** seclayer_scan: SecLayer verbatim runDiagnostics, behind the ownership gate. Returns a JSON string. */
@@ -24,7 +24,7 @@ export async function seclayerScanHandler(args, verifier) {
   if (!gate.ok) return asText({ status: 'refused', reason: gate.reason })
   const aggressive = args.aggressive === true || args.aggressive === 'true'
   const result = await scanSeclayer(verifier, gate.url, { aggressive })
-  return asText({ status: 'complete', target: gate.host, lab: gate.lab, aggressive, result })
+  return asText({ status: 'complete', target: gate.host, lab: gate.lab, unverified: gate.unverified === true, aggressive, result })
 }
 
 /** domain_verify_start: issue the DNS TXT challenge the user publishes for a domain they own. */
