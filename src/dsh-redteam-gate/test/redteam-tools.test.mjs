@@ -18,10 +18,11 @@ test('the plugin loads and registers native scanners plus red-team tools, and ho
   assert.deepEqual(hooks, ['tools/pre-execute'])
   for (const n of ['nmap', 'nuclei', 'ffuf', 'gobuster', 'sqlmap', 'nikto', 'john']) assert.ok(registered.includes(n), n)
   for (const n of ['secscan_fetch', 'seclayer_probe', 'msfconsole', 'recon_passive']) assert.ok(registered.includes(n), n)
-  for (const n of ['webapp_scan', 'seclayer_scan', 'generate_scan_report']) assert.ok(registered.includes(n), n)
-  // The 16 scanner, red-team, verbatim-scan, domain-verification and report tools, plus one ae_ tool per registered AlterEgo catalog entry.
+  for (const n of ['webapp_scan', 'seclayer_scan']) assert.ok(registered.includes(n), n)
+  // The 15 scanner, red-team, verbatim-scan and domain-verification tools, plus one ae_ tool per
+  // registered AlterEgo catalog entry. There is no report tool: a report is the app's job.
   const harness = registered.filter((n) => !n.startsWith('ae_'))
-  assert.equal(harness.length, 16)
+  assert.equal(harness.length, 15)
   assert.ok(registered.some((n) => n.startsWith('ae_')), 'AlterEgo tools are registered')
   assert.equal(registered.filter((n) => n.startsWith('ae_')).length, alterEgoCount())
 })

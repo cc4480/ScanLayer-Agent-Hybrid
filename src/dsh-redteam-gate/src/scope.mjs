@@ -19,7 +19,7 @@ export const LAB_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
 export const ACTIVE_TOOLS = new Set([
   'nmap', 'nuclei', 'ffuf', 'gobuster', 'nikto', 'sqlmap', 'msfconsole', 'msfrpcd', 'msfvenom',
-  'secscan_fetch', 'seclayer_probe', 'webapp_scan', 'seclayer_scan', 'generate_scan_report',
+  'secscan_fetch', 'seclayer_probe', 'webapp_scan', 'seclayer_scan',
 ]);
 
 // Flags that read targets from a file or list; they can hide hosts from the gate, so they are refused.

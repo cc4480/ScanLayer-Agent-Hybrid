@@ -2,7 +2,7 @@
 // harness schema, the same way redteam-tools.mjs does for its tools.
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { renderText } from './render.mjs'
-import { webappScanHandler, seclayerScanHandler, domainVerifyStartHandler, domainVerifyCheckHandler, generateScanReportHandler } from './scan-handlers.mjs'
+import { webappScanHandler, seclayerScanHandler, domainVerifyStartHandler, domainVerifyCheckHandler } from './scan-handlers.mjs'
 
 // defineTool requires output.render; without it every call fails with "userRender is not a function".
 const TEXT = { schema: { type: 'string' }, render: renderText }
@@ -61,20 +61,9 @@ export function scanTools(verifier) {
     },
   })
 
-  const generateReport = defineTool({
-    name: 'generate_scan_report',
-    description: 'Run a full security scan (SecLayer diagnostics plus, by default, the VibeScan check catalog) against one website and produce a single self-contained HTML report file (dark dashboard style: posture score, risk areas, pillar breakdown, network/attack-surface details, every finding with evidence and fix, and the full live scan ticker transcript). While it runs, each check is printed live as it happens ("[PROBE] -> SQL injection: firing...", "[CHECK] ..."), the same way the product\'s own scan console shows progress. No SecLayer or SecScan account or token is needed. The target must first be ownership-verified with domain_verify_start and domain_verify_check (DNS TXT), or be a loopback lab host; otherwise nothing is sent. Returns the path to the written HTML file.',
-    parameters: {
-      url: { type: 'string', required: true, description: 'http(s) URL or bare hostname of the site to check.' },
-      aggressive: { type: 'boolean', description: 'Enable the aggressive probe tier (default false).' },
-      tier: { type: 'string', description: 'VibeScan tier: "basic" (default) or "deep".' },
-      includeWebapp: { type: 'boolean', description: 'Also run the VibeScan check catalog (default true). Set false to run SecLayer diagnostics only.' },
-    },
-    output: TEXT,
-    async execute(args) {
-      return generateScanReportHandler(args, verifier)
-    },
-  })
-
-  return [webappScan, seclayerScan, verifyStart, verifyCheck, generateReport]
+  // No report tool here on purpose. A report is the APP's job — SecLayer renders
+  // it in ReportViewer/PublicReport, SecScan in its dashboard — and both are
+  // reachable through their own MCP servers. These tools return findings as data;
+  // they do not build a document.
+  return [webappScan, seclayerScan, verifyStart, verifyCheck]
 }

@@ -1,5 +1,5 @@
 // The ownership gate is a hard control: no environment variable, config value, or session flag can
-// switch it off. This suite is the regression guard for that promise — it fails if anyone ever
+// switch it off. This suite is the regression guard for that promise â€” it fails if anyone ever
 // reintroduces an escape hatch (the old SCAN_SKIP_OWNERSHIP_GATE was removed 2026-11-25).
 // Run with: node --import tsx --test test/scan/ownership-lock.test.mjs
 import { test } from 'node:test'
@@ -9,7 +9,6 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { gateScanTarget } from '../../src/scan-gate.mjs'
 import { decideScope } from '../../src/scope.mjs'
-import { generateScanReportHandler } from '../../src/scan-handlers.mjs'
 import { LocalDomainVerifier } from '../../src/verifier.mjs'
 
 const storeFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lock-')), 'v.json')
@@ -55,18 +54,10 @@ test('legacy bypass env vars: a raw public IP is still refused', () => withLegac
 }))
 
 test('legacy bypass env vars: the pre-execute scope hook still denies an unverified target', () => withLegacyBypassEnv(async () => {
-  for (const toolName of ['webapp_scan', 'seclayer_scan', 'generate_scan_report', 'secscan_fetch']) {
+  for (const toolName of ['webapp_scan', 'seclayer_scan', 'secscan_fetch']) {
     const d = await decideScope({ toolName, arguments: { url: 'https://not-mine.example/' } }, neverVerified())
     assert.equal(d.kind, 'deny', `${toolName} must stay denied`)
   }
-}))
-
-test('legacy bypass env vars: generate_scan_report refuses and writes no file', () => withLegacyBypassEnv(async () => {
-  const written = []
-  const out = JSON.parse(await generateScanReportHandler({ url: 'https://not-mine.example/', tier: 'deep', aggressive: true }, neverVerified(), { write: (l) => written.push(l) }))
-  assert.equal(out.status, 'refused')
-  assert.equal(out.reportPath, undefined)
-  assert.deepEqual(written, [], 'nothing was streamed, because nothing ran')
 }))
 
 test('the documented lab exception still works without verification', () => withLegacyBypassEnv(async () => {
