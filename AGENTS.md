@@ -59,9 +59,12 @@ fix prompt. DSH shows those pages; it never re-renders them.
 
 ## 3. Hard rules — no exceptions
 
-1. **Never write a scan report.** The app owns it. Your output is the app's URL.
+1. **Never write a web-scan report.** The app owns it. Your output is the app's URL.
    A markdown report you author is a duplicate implementation and is wrong even when
    the findings are accurate.
+   **Exception:** a *local host* report (this machine, Windows / Linux / iOS) is not a
+   web scan and has no app-owned artifact. Those are produced with the
+   `local-host-report` skill — never from scratch, never in another style.
 2. **Never re-implement scan logic.** Use the apps' code through their MCP tools or
    HTTP API. Do not rewrite probes, scoring or check catalogs. (A `web-scan-catalog`
    skill exists for *reading* the catalogs; that is not permission to reimplement.)
@@ -70,9 +73,11 @@ fix prompt. DSH shows those pages; it never re-renders them.
 4. **Read-only on targets.** The only thing produced for the user is the app's report
    plus an offer to fix.
 5. **Do not run `domain_verify_*` unless the user asks** (see preflight 4).
-6. **Do not build a second scanning path.** `generate_scan_report`, the HTML report
-   template, the engine merge layer and the vulnerable testbed were deleted on
+6. **Do not build a second scanning path.** `generate_scan_report`, the web-app HTML
+   report template, the engine merge layer and the vulnerable testbed were deleted on
    purpose. Do not recreate them.
+   **Exception:** the *local-host* report template is a separate, deliberate artifact,
+   owned by the `local-host-report` skill. It is the only HTML report an agent authors.
 7. **Never present a skipped check as a pass.** Say skipped, and why.
 
 ---
@@ -259,3 +264,26 @@ testbed. Their removal is why the apps own the report.
 - If you could not run something, say so and say why.
 - Never present a skipped check as a pass.
 - When there are findings, offer to fix them.
+- For a **host** assessment, hand over the HTML built from the `local-host-report`
+  template (see §13) — that is the only report you author.
+
+---
+
+## 13. Local-host reports — one template, one skill
+
+Host assessments (the machine itself: Windows, Linux, iOS/iPadOS) have no app behind
+them, so the report is ours — but it is **one fixed artifact**, not a per-report design.
+
+- **Load the skill first:** `local-host-report`. It ships the canonical template at
+  `skills/local-host-report/assets/template.html`; that file *is* the specification.
+- **Copy, do not rebuild.** Take the template, replace the content, keep the markup
+  patterns. Same 11 sections, same ids, same palette, same animation, same data
+  appendix and the same embedded-JSON export.
+- **Same shape on every OS.** Windows, Linux and iOS differ only in the §4 check-group
+  names and the §11 tables; the other nine sections are identical.
+- **Evidence rules are the same as everywhere else:** every finding carries Component,
+  Evidence, Why it matters, Impact, Fix, a proof block and a verify block; nothing
+  admin-gated is ever reported as a pass.
+- **Render before handing over** (headless Edge, 1400×15000), check that counters show
+  real numbers and the file has no mojibake, then give the single HTML file.
+- Finished reports live in `reports/` and are committed with the skill version they used.

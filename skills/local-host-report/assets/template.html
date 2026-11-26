@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Windows Host Pentest — WORKSTATION-01 — 2026-11-26</title>
+<style>
+:root{
+  --bg:#05070d; --bg2:#070b14; --panel:rgba(18,26,46,.72); --panel2:rgba(12,18,32,.86);
+  --line:rgba(90,169,255,.14); --line2:rgba(90,169,255,.28);
+  --txt:#e6edf9; --mut:#8fa0bf; --acc:#5aa9ff; --acc2:#8b5cf6;
+  --ok:#39d98a; --med:#ffb84d; --low:#ffd166; --info:#7cc4ff; --crit:#ff5d6c;
+  --shadow:0 24px 60px -20px rgba(0,0,0,.85); --glow:0 0 0 1px rgba(90,169,255,.18),0 18px 50px -18px rgba(90,169,255,.35);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:
+  radial-gradient(1200px 600px at 10% -10%, rgba(90,169,255,.10), transparent 60%),
+  radial-gradient(900px 500px at 90% 0%, rgba(139,92,246,.10), transparent 55%),
+  var(--bg);
+  color:var(--txt);font:15px/1.6 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+#progress{position:fixed;top:0;left:0;height:3px;width:0;z-index:80;background:linear-gradient(90deg,#5aa9ff,#8b5cf6,#39d98a);box-shadow:0 0 18px rgba(90,169,255,.8);transition:width .1s linear}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px 80px}
+
+/* NAV */
+nav{position:sticky;top:0;z-index:60;backdrop-filter:blur(14px);background:rgba(5,7,13,.72);border-bottom:1px solid var(--line)}
+nav .inner{max-width:1200px;margin:0 auto;padding:10px 24px;display:flex;gap:6px;align-items:center;overflow-x:auto;scrollbar-width:none}
+nav .inner::-webkit-scrollbar{display:none}
+nav .brand{font-weight:800;letter-spacing:-.01em;margin-right:14px;white-space:nowrap}
+nav .brand span{color:var(--acc)}
+nav a{color:var(--mut);text-decoration:none;font-size:13px;padding:6px 10px;border-radius:8px;white-space:nowrap;transition:.2s}
+nav a:hover{color:var(--txt);background:rgba(90,169,255,.10)}
+nav a.active{color:#04121f;background:var(--acc);box-shadow:0 6px 18px -6px rgba(90,169,255,.8)}
+
+/* HERO */
+header.hero{position:relative;margin:26px 0 8px;padding:46px 40px 40px;border-radius:24px;overflow:hidden;
+  background:linear-gradient(135deg,rgba(16,26,48,.95),rgba(8,12,22,.98) 60%);
+  border:1px solid var(--line2);box-shadow:var(--shadow)}
+header.hero::before{content:"";position:absolute;inset:-40%;background:
+  radial-gradient(closest-side,rgba(90,169,255,.25),transparent 70%) 20% 30%/55% 55% no-repeat,
+  radial-gradient(closest-side,rgba(139,92,246,.22),transparent 70%) 80% 20%/45% 45% no-repeat;
+  animation:drift 18s ease-in-out infinite alternate;filter:blur(10px);pointer-events:none}
+@keyframes drift{0%{transform:translate3d(-2%,-1%,0) rotate(0)}100%{transform:translate3d(3%,2%,0) rotate(4deg)}}
+header.hero>*{position:relative;z-index:1}
+.kicker{display:inline-flex;align-items:center;gap:8px;letter-spacing:.16em;text-transform:uppercase;font-size:11px;color:var(--acc);font-weight:800}
+.kicker i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(57,217,138,.7);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(57,217,138,.6)}70%{box-shadow:0 0 0 10px rgba(57,217,138,0)}100%{box-shadow:0 0 0 0 rgba(57,217,138,0)}}
+h1{font-size:clamp(30px,5vw,50px);margin:12px 0 4px;letter-spacing:-.035em;line-height:1.02}
+h1 .grad{background:linear-gradient(92deg,#fff,#9fc8ff 40%,#8b5cf6 75%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--mut);font-size:14.5px}
+.meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.chip{display:inline-flex;gap:8px;align-items:center;font-size:12.5px;color:#c9d5ea;background:rgba(90,169,255,.07);border:1px solid var(--line);padding:7px 12px;border-radius:999px;transition:.25s}
+.chip:hover{border-color:var(--line2);background:rgba(90,169,255,.13);transform:translateY(-1px)}
+.chip b{color:#fff;font-weight:700}
+
+/* CARDS / COUNTERS */
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:22px 0 6px}
+.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 10px 30px -18px #000;transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,border-color .3s;overflow:hidden}
+.card::after{content:"";position:absolute;inset:0;background:radial-gradient(120px 80px at 100% 0,var(--tint,rgba(90,169,255,.16)),transparent 70%);opacity:.9;pointer-events:none}
+.card:hover{transform:translateY(-5px);border-color:var(--line2);box-shadow:0 24px 50px -24px rgba(0,0,0,.95),0 0 0 1px var(--line2)}
+.card .n{font-size:32px;font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.card .l{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.12em;margin-top:8px}
+.card.med{--tint:rgba(255,184,77,.18)}.card.med .n{color:var(--med)}
+.card.low{--tint:rgba(255,209,102,.16)}.card.low .n{color:var(--low)}
+.card.info{--tint:rgba(124,196,255,.16)}.card.info .n{color:var(--info)}
+.card.crit{--tint:rgba(255,93,108,.16)}.card.crit .n{color:var(--crit)}
+
+/* SECTIONS */
+h2{font-size:24px;margin:56px 0 16px;letter-spacing:-.02em;display:flex;align-items:center;gap:12px}
+h2::before{content:"";width:4px;height:26px;border-radius:3px;background:linear-gradient(180deg,var(--acc),var(--acc2));box-shadow:0 0 18px rgba(90,169,255,.7)}
+h3{font-size:16.5px;margin:26px 0 10px;letter-spacing:-.01em}
+p{color:#c9d5ea;margin:10px 0}
+
+/* REVEAL */
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.8,.2,1)}
+.reveal.in{opacity:1;transform:none}
+
+/* PANEL */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px 26px;margin:14px 0;box-shadow:0 18px 50px -30px #000}
+
+/* FINDINGS */
+.finding{position:relative;border:1px solid var(--line);border-radius:18px;margin:16px 0;background:linear-gradient(180deg,var(--panel),var(--panel2));overflow:hidden;box-shadow:0 16px 44px -30px #000;transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,border-color .3s}
+.finding:hover{transform:translateY(-3px);border-color:var(--line2);box-shadow:0 30px 70px -40px #000,0 0 0 1px var(--line2)}
+.finding::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sev,var(--acc));box-shadow:0 0 24px var(--sev)}
+.finding.medium{--sev:#ffb84d}.finding.low{--sev:#ffd166}.finding.info{--sev:#7cc4ff}
+.finding .fh{display:flex;gap:12px;align-items:center;padding:16px 20px 16px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.finding .fh .id{font-family:ui-monospace,Consolas,monospace;color:var(--mut);font-size:12px;letter-spacing:.04em}
+.finding .fh .t{font-weight:700;font-size:15.5px;letter-spacing:-.01em}
+.finding .fb{padding:18px 24px 22px}
+.pill{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:999px;border:1px solid}
+.pill.medium{color:#1a1206;background:var(--med);border-color:var(--med);box-shadow:0 6px 18px -8px rgba(255,184,77,.9)}
+.pill.low{color:#1a1506;background:var(--low);border-color:var(--low);box-shadow:0 6px 18px -8px rgba(255,209,102,.8)}
+.pill.info{color:#04121f;background:var(--info);border-color:var(--info);box-shadow:0 6px 18px -8px rgba(124,196,255,.8)}
+.pill.pass{color:#04170e;background:var(--ok);border-color:var(--ok)}
+.pill.nt{color:#d7deea;background:#2a3550;border-color:#3a4a6d}
+dl.kv{display:grid;grid-template-columns:132px 1fr;gap:10px 16px;margin:0}
+dl.kv dt{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.1em;padding-top:3px}
+dl.kv dd{margin:0;color:#c9d5ea}
+
+/* CODE */
+pre,code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
+pre{position:relative;background:#060a12;border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow:auto;font-size:12.5px;color:#b9c9e4;margin:12px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+pre::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(90,169,255,.5),transparent)}
+code{background:rgba(90,169,255,.08);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12.5px;color:#cfe0ff}
+
+/* DETAILS */
+details{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:rgba(90,169,255,.03);overflow:hidden}
+details summary{cursor:pointer;list-style:none;padding:11px 14px;font-size:13px;color:var(--acc);font-weight:600;display:flex;align-items:center;gap:8px;transition:.2s}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"▸";transition:transform .25s;color:var(--mut)}
+details[open] summary::before{transform:rotate(90deg)}
+details summary:hover{background:rgba(90,169,255,.07)}
+details .dbody{padding:4px 14px 14px}
+
+/* TABLES */
+table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0;font-size:13.5px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid rgba(90,169,255,.07);vertical-align:top}
+th{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;background:rgba(90,169,255,.05);position:sticky;top:52px;backdrop-filter:blur(8px)}
+tbody tr{transition:background .18s}
+tbody tr:hover{background:rgba(90,169,255,.055)}
+tr.sec td{background:rgba(90,169,255,.07);color:var(--acc);font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.1em}
+td.num{color:var(--mut);font-family:ui-monospace,Consolas,monospace;width:44px}
+
+/* ATTACK PATH */
+.path{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:14px 0}
+.step{background:rgba(90,169,255,.06);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13px;transition:.25s}
+.step:hover{transform:translateY(-2px);border-color:var(--line2);box-shadow:var(--glow)}
+.step b{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:3px}
+.arrow{color:var(--acc);font-size:18px;animation:nudge 1.8s ease-in-out infinite}
+@keyframes nudge{0%,100%{transform:translateX(0);opacity:.6}50%{transform:translateX(4px);opacity:1}}
+@keyframes pop{0%{opacity:0;transform:scale(.6) translateY(6px);filter:blur(3px)}60%{opacity:1;transform:scale(1.06);filter:blur(0)}100%{transform:scale(1)}}
+.pop{animation:pop .8s cubic-bezier(.2,.8,.2,1) both}
+
+/* GAUGE */
+.gauge{--p:0;width:132px;height:132px;border-radius:50%;background:conic-gradient(var(--acc) calc(var(--p)*1%),rgba(90,169,255,.08) 0);display:grid;place-items:center;position:relative;box-shadow:0 0 40px -12px rgba(90,169,255,.5)}
+.gauge::after{content:"";position:absolute;inset:10px;border-radius:50%;background:#080d18}
+.gauge span{position:relative;z-index:1;font-size:26px;font-weight:800}
+
+footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
+@media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr!important}header.hero{padding:30px 22px}dl.kv{grid-template-columns:1fr}}
+@media print{body{background:#fff;color:#111}#progress,nav{display:none}.panel,.finding,header.hero{background:#fff;border-color:#ccc;box-shadow:none}pre{background:#f5f5f5;color:#111}th{background:#eee;color:#333}.reveal{opacity:1;transform:none}}
+</style></head>
+<body>
+<div id="progress"></div>
+<nav><div class="inner">
+  <div class="brand">HOST<span>PENTEST</span></div>
+  <a href="#verdict">Verdict</a><a href="#findings">Findings</a><a href="#paths">Attack paths</a>
+  <a href="#checks">All 65 checks</a><a href="#evidence">Evidence</a><a href="#raw">Raw output</a>
+  <a href="#remediation">Remediation</a><a href="#platforms">Platforms</a><a href="#data">Data</a>
+</div></nav>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker"><i></i> local host security report · windows · live assessment</div>
+  <h1><span class="grad">WORKSTATION-01</span></h1>
+  <div class="sub">Windows 10 Enterprise 22H2 &middot; build 19045.6456 &middot; Dell OptiPlex 7050 &middot; WORKGROUP &middot; 192.0.2.10 / 100.64.0.10</div>
+  <div class="meta">
+    <span class="chip"><b>Window</b> 2026-11-26 07:09–07:40 CST</span>
+    <span class="chip"><b>Method</b> read-only &middot; non-admin &middot; no credential attacks</span>
+    <span class="chip"><b>Checks</b> 65 &middot; 7 not tested</span>
+    <span class="chip"><b>Findings</b> 10 &mdash; 3 Medium / 4 Low / 3 Info</span>
+    <span class="chip"><b>Exposure</b> 4 ports reachable off-host</span>
+  </div>
+</header>
+
+<section id="verdict">
+<div class="cards reveal">
+  <div class="card crit"><div class="n pop" style="animation-delay:.05s">0</div><div class="l">Critical</div></div>
+  <div class="card"><div class="n pop" style="animation-delay:.12s">0</div><div class="l">High</div></div>
+  <div class="card med"><div class="n pop" style="animation-delay:.19s">3</div><div class="l">Medium</div></div>
+  <div class="card low"><div class="n pop" style="animation-delay:.26s">4</div><div class="l">Low</div></div>
+  <div class="card info"><div class="n pop" style="animation-delay:.33s">3</div><div class="l">Info</div></div>
+</div>
+
+<div class="panel reveal">
+  <div class="grid2" style="display:grid;grid-template-columns:170px 1fr;gap:26px;align-items:center">
+    <div class="gauge" style="--p:62"><span>62</span></div>
+    <div>
+      <p><b>The Windows layer is solid; the exposure is what was opened on top of it.</b> Default-block inbound firewall on all three profiles, RDP off, WinRM stopped, SMB1 off, Defender real-time with tamper protection, UAC on, no autologon, one enabled account.</p>
+      <p>Three services break that posture: <b>SSH with password authentication</b> answering on every interface, <b>SMB without required signing</b> on the local subnet, and <b>StarDesk's USB-over-IP daemon</b> listening on 3240 with a Public-profile allow-any rule.</p>
+      <p class="note" style="color:var(--mut);font-size:13px">Headline risk: <b style="color:var(--med)">Medium</b> &mdash; a LAN or tailnet peer reaches port 22 and can brute-force an admin account under a zero-length password policy.</p>
+    </div>
+  </div>
+</div>
+</section>
+<section id="findings"><h2>02 · Findings</h2>
+<p class="note" style="color:var(--mut)">Ten findings from 65 checks: three Medium (attack surface), four Low (hardening with containment), three Info. Every one carries its proof and a command that confirms the fix.</p>
+<div class="finding medium reveal">
+  <div class="fh"><span class="id">HOST-01</span><span class="pill medium">medium</span><span class="t">SSH exposed on every interface with password authentication enabled</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Component</dt><dd>OpenSSH for Windows 9.5 — <code>sshd.exe</code>, runs as LocalSystem</dd><dt>Evidence</dt><dd>Listeners on <code>0.0.0.0:22</code> and <code>[::]:22</code>; firewall rule <i>OpenSSH SSH Server (sshd)</i> allows <b>Any</b> remote on Domain, Private and Public; reachable from a non-local subnet (tested from WSL 172.22.208.1); the handshake advertises <code>publickey, password, keyboard-interactive</code>; <code>sshd_config</code> sets no <code>PasswordAuthentication</code> override, so the default <b>yes</b> applies.</dd><dt>Why it matters</dt><dd>Two administrator keys are already installed — password auth adds nothing except a brute-force surface on an admin-capable account.</dd><dt>Impact</dt><dd>Any host on the LAN, the tailnet, or any untrusted network this laptop joins can attempt interactive logon. Only the 10-attempts/10-minute lockout slows it.</dd><dt>Fix</dt><dd><code>PasswordAuthentication no</code> in <code>C:\ProgramData\ssh\sshd_config</code>, then <code>Restart-Service sshd</code>. Alternative: keep passwords but scope the rule to <code>RemoteIP=192.168.1.0/24,100.64.0.0/10</code>. Raise the minimum password length to 14.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>Listener     : 0.0.0.0:22  [::]:22
+Server       : OpenSSH_for_Windows_9.5
+Auth offered : publickey, password, keyboard-interactive
+Rule         : OpenSSH SSH Server (sshd) | 22 | Any | Domain,Private,Public
+Reachability : 172.22.208.1 -&gt; 192.0.2.10:22  OPEN</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>ssh -o BatchMode=yes -o StrictHostKeyChecking=no -v One@127.0.0.1 exit 2&gt;&amp;1 | Select-String 'Authentications that can continue'
+# after the fix this must not list 'password'</pre></div></details>
+  </div></div>
+<div class="finding medium reveal">
+  <div class="fh"><span class="id">HOST-02</span><span class="pill medium">medium</span><span class="t">SMB signing is not required while 445 is reachable from the local subnet</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Component</dt><dd>LanmanServer — SMB2/3, SMB1 disabled</dd><dt>Evidence</dt><dd><code>RequireSecuritySignature=False</code>, <code>EnableSecuritySignature=False</code>, <code>EncryptData=False</code>; rule <i>File and Printer Sharing (SMB-In)</i> allows <b>LocalSubnet</b> on Private/Public; admin shares <code>ADMIN$</code>, <code>C$</code>, <code>D$</code>, <code>IPC$</code>.</dd><dt>Why it matters</dt><dd>Signing is the single control that makes relayed NTLM useless. Without it, coercion plus relay lands an authenticated session as the victim user.</dd><dt>Impact</dt><dd>An attacker already on the LAN can relay captured authentication to this host and read or write through the admin shares as the relayed user.</dd><dt>Fix</dt><dd><code>Set-SmbServerConfiguration -RequireSecuritySignature $true -EnableSecuritySignature $true</code>. Add <code>-EncryptData $true</code> only if no legacy NAS needs plain SMB.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>EnableSMB1Protocol       : False   (good)
+EnableSMB2Protocol       : True
+RequireSecuritySignature : False   &lt;-- finding
+EnableSecuritySignature  : False   &lt;-- finding
+EncryptData              : False
+Shares                   : ADMIN$ C$ D$ IPC$</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>Get-SmbServerConfiguration | Select RequireSecuritySignature,EnableSecuritySignature
+# expect True / True</pre></div></details>
+  </div></div>
+<div class="finding medium reveal">
+  <div class="fh"><span class="id">HOST-03</span><span class="pill medium">medium</span><span class="t">StarDesk USB-over-IP daemon accepts connections from any network</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Component</dt><dd><code>C:\Program Files\StarDesk\bin\server\usbipd.exe</code> (bundled with the StarDesk remote-support agent)</dd><dt>Evidence</dt><dd>TCP <code>3240</code> listening; inbound allow rule for <code>usbipd.exe</code> on the <b>Public</b> profile with <b>Any</b> remote; reachable from 172.22.208.1. Devices present but <i>Not shared</i>: USB headset, USB input device, USB mass storage.</dd><dt>Why it matters</dt><dd>USB/IP authenticates nothing. The rule follows the laptop onto any Wi-Fi it joins, including hotels and conferences.</dd><dt>Impact</dt><dd>A peer that reaches 3240 can drive the redirection channel for any device later marked shareable — mass storage for exfiltration, HID for input injection.</dd><dt>Fix</dt><dd>Disable USB sharing in StarDesk (or remove the component); otherwise move the rule off the Public profile and scope it to the LAN subnet.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>Rule      : usbipd.exe | Direction In | Profiles Public | RemoteIP Any
+Listener  : 3240 usbipd
+Reachable : 172.22.208.1 -&gt; 192.0.2.10:3240  OPEN
+Devices   : headset (Not shared), input device (Not shared), mass storage (Not shared)</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>netsh advfirewall firewall show rule name=all dir=in | Select-String -Context 4 'usbipd'
+# Profiles must not include Public</pre></div></details>
+  </div></div>
+<div class="finding low reveal">
+  <div class="fh"><span class="id">HOST-04</span><span class="pill low">low</span><span class="t">PostgreSQL 17 listens on 0.0.0.0:5432</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Component</dt><dd><code>postgresql-x64-17</code>, NetworkService, data dir <code>C:\Program Files\PostgreSQL\17\data</code></dd><dt>Evidence</dt><dd>Listeners on <code>0.0.0.0:5432</code> and <code>[::]:5432</code>; <code>pg_hba.conf</code> allows only <code>127.0.0.1/32</code> and <code>::1/128</code> with <code>scram-sha-256</code>; no inbound firewall rule; 5432 filtered from the LAN subnet in testing.</dd><dt>Why it matters</dt><dd>Three independent controls contain it today; each is one edit away from being the only one.</dd><dt>Impact</dt><dd>No current exposure. A future firewall rule, <code>trust</code> line or profile change exposes a database that only needs loopback.</dd><dt>Fix</dt><dd><code>listen_addresses = 'localhost'</code> in <code>postgresql.conf</code>, restart the service. Optionally <code>ssl = on</code>.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>Listen   : 0.0.0.0:5432, [::]:5432
+pg_hba   : local 127.0.0.1/32/::1/128 -&gt; scram-sha-256 (no remote entry)
+Firewall : no rule for 5432 -&gt; default block
+LAN test : 172.22.208.1 -&gt; 192.0.2.10:5432  filtered</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>Get-NetTCPConnection -State Listen -LocalPort 5432 | Select LocalAddress
+# expect 127.0.0.1 and ::1 only</pre></div></details>
+  </div></div>
+<div class="finding low reveal">
+  <div class="fh"><span class="id">HOST-05</span><span class="pill low">low</span><span class="t">“AlterEgo Bridge” on 8765 is open to the whole tailnet</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Component</dt><dd>python.exe bound to <code>100.64.0.10:8765</code> (Tailscale address only)</dd><dt>Evidence</dt><dd>Inbound rule <i>AlterEgo Bridge 8765</i> allows <b>Any</b> remote on all three profiles; tailnet ACL is default allow-all; 6 peers, 2 active. Command line unreadable from this non-admin context, so the app and its auth model are unidentified.</dd><dt>Why it matters</dt><dd>Every tailnet device — including phones and machines that are not this laptop — can reach it.</dd><dt>Impact</dt><dd>If the service has no authentication, a compromised tailnet peer inherits whatever it exposes.</dd><dt>Fix</dt><dd>Identify the service; restrict the rule to <code>100.64.0.10/32</code> or to specific peers; require a token.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>Listener : 100.64.0.10:8765  python.exe
+Rule     : AlterEgo Bridge 8765 | 8765 | Any | Domain,Private,Public
+Peers    : 6 total, 2 active (peer-2, this host)</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>tailscale status
+tailscale serve status</pre></div></details>
+  </div></div>
+<div class="finding low reveal">
+  <div class="fh"><span class="id">HOST-06</span><span class="pill low">low</span><span class="t">Secret files inherit permissive ACLs</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Component</dt><dd><code>C:\sh\seclayer-hybrid\.env</code>, <code>.dsh\profiles\web\cordis.patch.yml</code></dd><dt>Evidence</dt><dd>Both inherit <code>BUILTIN\Users:(RX)</code> and <code>NT AUTHORITY\Authenticated Users:(M)</code>. The second carries the DSH MCP config with an inline API key; the first holds the scanners' local keys.</dd><dt>Why it matters</dt><dd>Only one account is enabled today, so nothing can abuse it yet — but the ACL is inherited, so it reappears on every new file under that root.</dd><dt>Impact</dt><dd>A second local account or service identity could read the keys and <b>modify</b> the config the agent runtime loads at next start.</dd><dt>Fix</dt><dd><code>icacls &lt;file&gt; /inheritance:r /grant:r "operator:(F)" "Administrators:(F)"</code> on both.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>BUILTIN\Administrators:(I)(F)
+NT AUTHORITY\SYSTEM:(I)(F)
+BUILTIN\Users:(I)(RX)                    &lt;-- any local user can read
+NT AUTHORITY\Authenticated Users:(I)(M)  &lt;-- ...and modify</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>icacls "C:\sh\seclayer-hybrid\.env"
+# expect only One + Administrators</pre></div></details>
+  </div></div>
+<div class="finding low reveal">
+  <div class="fh"><span class="id">HOST-07</span><span class="pill low">low</span><span class="t">No password-length policy; the admin account has no password requirement</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Evidence</dt><dd><code>Minimum password length: 0</code>, history: none, maximum age 42 days, lockout 10/10/10. The only enabled account (<code>operator</code>, Administrator) reports <code>PasswordRequired = False</code>; <code>Administrator</code> and <code>Guest</code> are disabled.</dd><dt>Why it matters</dt><dd>Combined with HOST-01 it turns SSH password auth into a practical guessing target.</dd><dt>Impact</dt><dd>Short or blank passwords are accepted by policy.</dd><dt>Fix</dt><dd>14-character minimum with history; set a password and keep <code>PasswordRequired</code> true.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>Minimum password length:                              0
+Length of password history maintained:                None
+Maximum password age (days):                          42
+Lockout threshold:                                    10
+One  Enabled  PasswordRequired: False  PasswordLastSet 2026-11-23</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>net accounts</pre></div></details>
+  </div></div>
+<div class="finding info reveal">
+  <div class="fh"><span class="id">HOST-08</span><span class="pill info">info</span><span class="t">Windows 10 22H2 is in its ESU window</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Evidence</dt><dd>Build <code>19045.6456</code>; cumulative updates install normally (latest KB dated 2026-11-24). 22H2 left mainstream support 2025-10-14.</dd><dt>Why it matters</dt><dd>The day ESU coverage lapses this becomes a High: no further fixes ship for 22H2.</dd><dt>Impact</dt><dd>None while coverage holds.</dd><dt>Fix</dt><dd>Record the ESU end date; plan the Windows 11 upgrade.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>Caption     : Microsoft Windows 10 Enterprise
+Version     : 10.0.19045
+BuildNumber : 19045
+UBR         : 6456
+Latest KB   : KB5126256 (2026-11-24)</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR</pre></div></details>
+  </div></div>
+<div class="finding info reveal">
+  <div class="fh"><span class="id">HOST-09</span><span class="pill info">info</span><span class="t">Stored Docker Hub credential and one unquoted service path</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Evidence</dt><dd><code>cmdkey</code> holds a Docker Hub access token plus a Microsoft-account SSO entry, both DPAPI-bound to the user profile. <code>CoworkVMService</code> runs as LocalSystem from an unquoted path under <code>WindowsApps</code>.</dd><dt>Why it matters</dt><dd>Credential-in-profile hygiene, and a path that only matters if its parent is writable — <code>WindowsApps</code> is TrustedInstaller-owned.</dd><dt>Impact</dt><dd>No live bypass from either.</dd><dt>Fix</dt><dd>Optional: rotate the Docker token if the profile has ever been shared.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>cmdkey /list
+  Target: LegacyGeneric:target=https://index.docker.io/v1/access-token  (DPAPI, this user)
+CoworkVMService  C:\Program Files\WindowsApps\Claude_...\cowork-svc.exe  LocalSystem  (unquoted)</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>cmdkey /list</pre></div></details>
+  </div></div>
+<div class="finding info reveal">
+  <div class="fh"><span class="id">HOST-10</span><span class="pill info">info</span><span class="t">Delivery Optimization and WSD ports reachable on the LAN</span></div>
+  <div class="fb">
+    <dl class="kv"><dt>Evidence</dt><dd>7680 (Delivery Optimization) and 3240 reachable from 172.22.208.1; 5357 (WSDAPI), 5040 (CDPSvc) and 135 bound broadly but blocked inbound at the LAN boundary.</dd><dt>Why it matters</dt><dd>Windows defaults, each a small authenticated-by-design service — listed so the port surface is fully accounted for.</dd><dt>Impact</dt><dd>Low; metered or untrusted networks see unnecessary chatter.</dd><dt>Fix</dt><dd>None required; disable Delivery Optimization peering on untrusted networks.</dd></dl>
+    <details><summary>Proof &amp; raw output</summary><div class="dbody"><pre>7680  OPEN  svchost (Delivery Optimization)
+5357  filtered  System (WSDAPI)
+5040  filtered  svchost (CDPSvc)
+135   filtered  svchost (RPC)</pre></div></details>
+    <details><summary>Verify the fix</summary><div class="dbody"><pre>Get-NetTCPConnection -State Listen | Sort LocalPort</pre></div></details>
+  </div></div>
+</section>
+<section id="paths"><h2>03 · Attack paths</h2>
+<p class="note" style="color:var(--mut)">What the three Medium findings actually chain into. None was executed; each stops at the point a real attacker would need to continue.</p>
+
+<div class="panel reveal">
+  <h3 style="margin-top:0">Path 1 &mdash; interactive logon over SSH <span class="pill medium">medium</span></h3>
+  <div class="path">
+    <div class="step"><b>position</b>LAN / tailnet / any Wi-Fi</div><span class="arrow">→</span>
+    <div class="step"><b>reach</b>port 22, rule allows Any</div><span class="arrow">→</span>
+    <div class="step"><b>auth</b>password offered</div><span class="arrow">→</span>
+    <div class="step"><b>weak policy</b>min length 0, 10 tries / 10 min</div><span class="arrow">→</span>
+    <div class="step" style="border-color:rgba(255,93,108,.5);box-shadow:0 0 0 1px rgba(255,93,108,.35)"><b>result</b>admin shell as operator</div>
+  </div>
+  <p class="note" style="color:var(--mut);margin-bottom:0">Broken at step 3 by keys-only auth, or at step 2 by scoping RemoteIP.</p>
+</div>
+
+<div class="panel reveal">
+  <h3 style="margin-top:0">Path 2 &mdash; NTLM relay to the admin shares <span class="pill medium">medium</span></h3>
+  <div class="path">
+    <div class="step"><b>position</b>same broadcast domain</div><span class="arrow">→</span>
+    <div class="step"><b>coerce</b>auth attempt to this host</div><span class="arrow">→</span>
+    <div class="step"><b>relay</b>signing not required</div><span class="arrow">→</span>
+    <div class="step" style="border-color:rgba(255,93,108,.5)"><b>result</b>C$ / ADMIN$ as the victim</div>
+  </div>
+  <p class="note" style="color:var(--mut);margin-bottom:0">Broken by requiring SMB signing — a two-parameter change.</p>
+</div>
+
+<div class="panel reveal">
+  <h3 style="margin-top:0">Path 3 &mdash; USB redirection from the network <span class="pill medium">medium</span></h3>
+  <div class="path">
+    <div class="step"><b>position</b>any network the laptop joins</div><span class="arrow">→</span>
+    <div class="step"><b>reach</b>3240, Public-profile allow Any</div><span class="arrow">→</span>
+    <div class="step"><b>protocol</b>USB/IP, no auth</div><span class="arrow">→</span>
+    <div class="step" style="border-color:rgba(255,93,108,.5)"><b>result</b>shared device redirection</div>
+  </div>
+  <p class="note" style="color:var(--mut);margin-bottom:0">Broken by disabling USB sharing or moving the rule off Public.</p>
+</div>
+</section>
+
+<section id="checks"><h2>04 · All 65 checks</h2>
+<p class="note" style="color:var(--mut)">Expand a group for the exact commands and the per-check result. Pass = behaved as it should; Finding = see &sect;02; Info = observed, no action; Not tested = needs administrator or was out of scope.</p>
+<div style="display:flex;gap:8px;margin:0 0 12px">
+  <button onclick="document.querySelectorAll('details.grp').forEach(function(d){d.open=true})" style="font:inherit;font-size:12px;cursor:pointer;padding:7px 12px;border-radius:9px;border:1px solid var(--line2);background:rgba(90,169,255,.1);color:var(--txt);transition:.2s">Expand all</button>
+  <button onclick="document.querySelectorAll('details.grp').forEach(function(d){d.open=false})" style="font:inherit;font-size:12px;cursor:pointer;padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--mut);transition:.2s">Collapse all</button>
+  <span style="align-self:center;color:var(--mut);font-size:12px;margin-left:6px">65 checks · 7 groups</span>
+</div>
+<details class="grp" open><summary>A · Host and identity <span style="color:var(--mut);font-weight:500;margin-left:auto">8 checks</span></summary><div class="dbody"><pre>Get-CimInstance Win32_OperatingSystem | Select Caption,Version,BuildNumber,LastBootUpTime
+(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR
+Get-HotFix | Sort InstalledOn -Descending | Select -First 6
+Get-LocalUser | Select Name,Enabled,PasswordRequired,PasswordLastSet
+net accounts</pre><table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody><tr><td class="num">A1</td><td>OS, edition, version, build</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Windows 10 Enterprise 22H2, 10.0.19045.6456</td></tr><tr><td class="num">A2</td><td>Host name, domain, hardware</td><td class="res"><span class="pill info">Info</span></td><td class="note">WORKSTATION-01, WORKGROUP, Dell OptiPlex 7050</td></tr><tr><td class="num">A3</td><td>Interfaces and addresses</td><td class="res"><span class="pill info">Info</span></td><td class="note">192.0.2.10/24, 100.64.0.10/32, 172.22.208.1/20</td></tr><tr><td class="num">A4</td><td>Boot time</td><td class="res"><span class="pill info">Info</span></td><td class="note">2026-11-24 15:06 local</td></tr><tr><td class="num">A5</td><td>Enabled local accounts</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">operator (admin) only; Administrator, Guest, WDAG disabled</td></tr><tr><td class="num">A6</td><td>Administrators group</td><td class="res"><span class="pill info">Info</span></td><td class="note">Administrator, operator</td></tr><tr><td class="num">A7</td><td>Account and lockout policy</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">Min length 0, no history, max age 42d, lockout 10/10/10</td></tr><tr><td class="num">A8</td><td>Installed updates</td><td class="res"><span class="pill info">Info</span></td><td class="note">Latest cumulative 2026-11-24 (ESU-era)</td></tr></tbody></table></div></details>
+<details class="grp"><summary>B · Network exposure <span style="color:var(--mut);font-weight:500;margin-left:auto">14 checks</span></summary><div class="dbody"><pre>Get-NetTCPConnection -State Listen | ForEach-Object { $p=Get-Process -Id $_.OwningProcess; [pscustomobject]@{Addr=$_.LocalAddress;Port=$_.LocalPort;Name=$p.ProcessName} }
+Get-NetFirewallProfile | Select Name,Enabled,DefaultInboundAction
+netsh advfirewall firewall show rule name=all dir=in verbose
+# from WSL: for p in 22 135 139 445 5432 8765 3240 7680; do timeout 2 bash -c "exec 3&lt;&gt;/dev/tcp/192.0.2.10/$p" &amp;&amp; echo "$p OPEN"; done</pre><table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody><tr><td class="num">B1</td><td>Firewall profile state</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">All three On, BlockInbound,AllowOutbound</td></tr><tr><td class="num">B2</td><td>Inbound rules touching services</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">22 Any/all; 3240 Public/Any; 8765 Any; 445 LocalSubnet</td></tr><tr><td class="num">B3</td><td>Listener inventory with processes</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">40 listeners mapped; 22, 3240, 5432 notable</td></tr><tr><td class="num">B4</td><td>Reachability from WSL subnet</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">22, 3240, 7680 OPEN; the rest filtered</td></tr><tr><td class="num">B5</td><td>Reachability to Tailscale address</td><td class="res"><span class="pill info">Info</span></td><td class="note">Binding proof only; peers governed by rules</td></tr><tr><td class="num">B6</td><td>Loopback-only runtime and scanners</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">3080, 4700, 4701, 4710, 4711</td></tr><tr><td class="num">B7</td><td>RPC endpoint mapper</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">135 blocked from LAN</td></tr><tr><td class="num">B8</td><td>SMB listener and shares</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">445 LocalSubnet; ADMIN$, C$, D$, IPC$</td></tr><tr><td class="num">B9</td><td>SMB signing/encryption</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">RequireSecuritySignature False, EncryptData False</td></tr><tr><td class="num">B10</td><td>SMB1</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Disabled</td></tr><tr><td class="num">B11</td><td>USB-over-IP daemon</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">usbipd 3240, Public, Any</td></tr><tr><td class="num">B12</td><td>Tailnet service on 8765</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">Bound to Tailscale IP, rule Any</td></tr><tr><td class="num">B13</td><td>Delivery Optimization / WSD</td><td class="res"><span class="pill info">Info</span></td><td class="note">7680 open; 5357/5040/135 blocked</td></tr><tr><td class="num">B14</td><td>Docker published ports</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">All five on 127.0.0.1</td></tr></tbody></table></div></details>
+<details class="grp"><summary>C · Service hardening <span style="color:var(--mut);font-weight:500;margin-left:auto">15 checks</span></summary><div class="dbody"><pre>Get-CimInstance Win32_Service -Filter "Name='sshd'" | Select State,StartName,PathName
+Get-Content 'C:\ProgramData\ssh\sshd_config' | Where { $_ -match '^\s*(Password|Pubkey|PermitRoot|AllowUsers|Port)' }
+ssh -o BatchMode=yes -v One@127.0.0.1 exit 2&gt;&amp;1 | Select-String 'Authentications that can continue'
+Get-SmbServerConfiguration | Select RequireSecuritySignature,EncryptData
+(Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server').fDenyTSConnections
+Get-Service WinRM
+Get-Content 'C:\Program Files\PostgreSQL\17\data\pg_hba.conf'</pre><table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody><tr><td class="num">C1</td><td>SSH presence, version, account</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">OpenSSH_for_Windows_9.5, LocalSystem, 0.0.0.0:22</td></tr><tr><td class="num">C2</td><td>SSH auth methods</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">publickey, password, keyboard-interactive</td></tr><tr><td class="num">C3</td><td>SSH config overrides</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">No PasswordAuthentication no</td></tr><tr><td class="num">C4</td><td>SSH host keys</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">RSA, ECDSA, Ed25519 generated 2026-11-24</td></tr><tr><td class="num">C5</td><td>Authorized keys</td><td class="res"><span class="pill info">Info</span></td><td class="note">2 Ed25519 admin keys</td></tr><tr><td class="num">C6</td><td>RDP</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">fDenyTSConnections = 1</td></tr><tr><td class="num">C7</td><td>WinRM</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Stopped, Manual</td></tr><tr><td class="num">C8</td><td>PostgreSQL binding</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">0.0.0.0:5432 and [::]:5432</td></tr><tr><td class="num">C9</td><td>PostgreSQL auth scope</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Loopback only, scram-sha-256</td></tr><tr><td class="num">C10</td><td>PostgreSQL firewall</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">No rule; filtered from LAN</td></tr><tr><td class="num">C11</td><td>PostgreSQL service account</td><td class="res"><span class="pill info">Info</span></td><td class="note">NetworkService, Program Files\PostgreSQL\17\data</td></tr><tr><td class="num">C12</td><td>Tailscale serve/funnel</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">None</td></tr><tr><td class="num">C13</td><td>Tailscale SSH</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">RunSSH false</td></tr><tr><td class="num">C14</td><td>Tailscale peers</td><td class="res"><span class="pill info">Info</span></td><td class="note">6 peers, 2 active</td></tr><tr><td class="num">C15</td><td>USB sharing state</td><td class="res"><span class="pill info">Info</span></td><td class="note">3 devices, none shared</td></tr></tbody></table></div></details>
+<details class="grp"><summary>D · Local security posture <span style="color:var(--mut);font-weight:500;margin-left:auto">13 checks</span></summary><div class="dbody"><pre>Get-MpComputerStatus | Select RealTimeProtectionEnabled,IsTamperProtected
+Get-MpPreference | Select ExclusionPath,ExclusionProcess   # admin only
+Get-BitLockerVolume; Confirm-SecureBootUEFI; Get-CimInstance Win32_Tpm
+Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name AlwaysInstallElevated
+cmdkey /list</pre><table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody><tr><td class="num">D1</td><td>Defender real-time/tamper</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Enabled; signatures 2026-11-25</td></tr><tr><td class="num">D2</td><td>Defender exclusions</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">Requires administrator</td></tr><tr><td class="num">D3</td><td>UAC</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">EnableLUA 1, prompt 5, secure desktop</td></tr><tr><td class="num">D4</td><td>AlwaysInstallElevated</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Not configured</td></tr><tr><td class="num">D5</td><td>Autologon</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Unset</td></tr><tr><td class="num">D6</td><td>Stored credentials</td><td class="res"><span class="pill info">Info</span></td><td class="note">Docker Hub token + MSA SSO (DPAPI)</td></tr><tr><td class="num">D7</td><td>Unquoted service paths</td><td class="res"><span class="pill info">Info</span></td><td class="note">CoworkVMService (WindowsApps)</td></tr><tr><td class="num">D8</td><td>BitLocker</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">Requires administrator</td></tr><tr><td class="num">D9</td><td>Secure Boot</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">Firmware query returned nothing</td></tr><tr><td class="num">D10</td><td>TPM</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">Win32_Tpm returned nothing</td></tr><tr><td class="num">D11</td><td>Update / ESU coverage</td><td class="res"><span class="pill info">Info</span></td><td class="note">22H2 mainstream ended 2025-10-14</td></tr><tr><td class="num">D12</td><td>PnP discovery services</td><td class="res"><span class="pill info">Info</span></td><td class="note">fdPHost, FDResPub, SSDPSRV</td></tr><tr><td class="num">D13</td><td>LLMNR policy</td><td class="res"><span class="pill info">Info</span></td><td class="note">Not set</td></tr></tbody></table></div></details>
+<details class="grp"><summary>E · Secrets and repository hygiene <span style="color:var(--mut);font-weight:500;margin-left:auto">7 checks</span></summary><div class="dbody"><pre>Get-ChildItem C:\sh -Filter '.env' -Recurse -Force
+icacls 'C:\sh\seclayer-hybrid\.env'
+git -C C:\sh\seclayer-hybrid log --all --oneline -- .env
+git -C C:\sh\seclayer-hybrid status --porcelain
+Get-ChildItem "$env:USERPROFILE\.ssh" -Force</pre><table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody><tr><td class="num">E1</td><td>.env inventory</td><td class="res"><span class="pill info">Info</span></td><td class="note">9 real, rest examples</td></tr><tr><td class="num">E2</td><td>ACL on scanner .env</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">Users RX, Authenticated Users M</td></tr><tr><td class="num">E3</td><td>ACL on DSH profile</td><td class="res"><span class="pill medium">Finding</span></td><td class="note">Same inherited ACL</td></tr><tr><td class="num">E4</td><td>Git history for .env</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Never committed</td></tr><tr><td class="num">E5</td><td>Working tree</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Clean</td></tr><tr><td class="num">E6</td><td>SSH private keys</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">None in profile</td></tr><tr><td class="num">E7</td><td>Keys minted locally</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">gitignored</td></tr></tbody></table></div></details>
+<details class="grp"><summary>F · Local web surfaces <span style="color:var(--mut);font-weight:500;margin-left:auto">4 checks</span></summary><div class="dbody"><pre>curl -sS -D - -o NUL http://127.0.0.1:4700/
+curl -sS -D - -o NUL http://127.0.0.1:4701/
+Get-NetTCPConnection -State Listen -LocalPort 3080,4700,4701,4710,4711</pre><table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody><tr><td class="num">F1</td><td>SecLayer headers/CSP</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">HSTS, DENY, script-src self</td></tr><tr><td class="num">F2</td><td>SecScan headers/CSP</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">DENY, CSP present</td></tr><tr><td class="num">F3</td><td>DSH GUI binding</td><td class="res"><span class="pill pass">Pass</span></td><td class="note">Loopback only</td></tr><tr><td class="num">F4</td><td>TLS on local services</td><td class="res"><span class="pill info">Info</span></td><td class="note">Plain HTTP by design</td></tr></tbody></table></div></details>
+<details class="grp"><summary>G · Judgement calls <span style="color:var(--mut);font-weight:500;margin-left:auto">4 checks</span></summary><div class="dbody"><table><thead><tr><th>#</th><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody><tr><td class="num">G1</td><td>Password guessing</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">Not performed — lockout 10</td></tr><tr><td class="num">G2</td><td>Exploit execution</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">Read-only; no state changed</td></tr><tr><td class="num">G3</td><td>Malware/persistence</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">Out of scope</td></tr><tr><td class="num">G4</td><td>CVE matching</td><td class="res"><span class="pill nt">Not tested</span></td><td class="note">No inventory baseline</td></tr></tbody></table></div></details>
+</section>
+
+<section id="timeline"><h2>05 · Timeline</h2>
+<div class="panel">
+  <div style="display:grid;grid-template-columns:120px 1fr;gap:10px 18px;font-size:13.5px">
+    <div style="color:var(--mut)">07:09</div><div>Preflight — both scanners healthy, Docker up, no scan in flight</div>
+    <div style="color:var(--mut)">07:12</div><div>Identity, patch level, accounts, services</div>
+    <div style="color:var(--mut)">07:16</div><div>Listener inventory + firewall rule mapping</div>
+    <div style="color:var(--mut)">07:19</div><div>Cross-namespace reachability from WSL (22, 3240, 7680 open)</div>
+    <div style="color:var(--mut)">07:24</div><div>SSH handshake, SMB policy, PostgreSQL binding and pg_hba</div>
+    <div style="color:var(--mut)">07:30</div><div>ACLs, git history, stored credentials, overlay network</div>
+    <div style="color:var(--mut)">07:40</div><div>Findings consolidated; no state changed</div>
+  </div>
+</div>
+</section>
+<section id="evidence"><h2>06 · Evidence</h2>
+<h3>Listening ports &mdash; 19 rows, 40 sockets</h3>
+<table><thead><tr><th>Address</th><th>Port</th><th>Process</th><th>Assessment</th></tr></thead><tbody><tr><td><code>0.0.0.0 / [::]</code></td><td>22</td><td>sshd</td><td class="note">HOST-01</td></tr><tr><td><code>[::]</code></td><td>135</td><td>svchost (RPC)</td><td class="note">blocked inbound</td></tr><tr><td><code>192.0.2.10</code></td><td>139</td><td>System (NetBIOS)</td><td class="note">blocked inbound</td></tr><tr><td><code>[::]</code></td><td>445</td><td>System (SMB)</td><td class="note">HOST-02</td></tr><tr><td><code>127.0.0.1</code></td><td>3080</td><td>node (DSH Web)</td><td class="note">loopback</td></tr><tr><td><code>127.0.0.1</code></td><td>3082</td><td>node</td><td class="note">loopback</td></tr><tr><td><code>[::]</code></td><td>3240</td><td>usbipd (StarDesk)</td><td class="note">HOST-03</td></tr><tr><td><code>127.0.0.1</code></td><td>4700 / 4701</td><td>docker backend</td><td class="note">loopback</td></tr><tr><td><code>127.0.0.1</code></td><td>4710 / 4711</td><td>node (view proxy)</td><td class="note">loopback</td></tr><tr><td><code>0.0.0.0</code></td><td>5040</td><td>svchost (CDPSvc)</td><td class="note">blocked inbound</td></tr><tr><td><code>[::]</code></td><td>5357</td><td>System (WSDAPI)</td><td class="note">blocked inbound</td></tr><tr><td><code>0.0.0.0 / [::]</code></td><td>5432</td><td>postgres</td><td class="note">HOST-04</td></tr><tr><td><code>[::]</code></td><td>7680</td><td>svchost (Delivery Opt.)</td><td class="note">open on LAN</td></tr><tr><td><code>100.64.0.10</code></td><td>8765</td><td>python (AlterEgo)</td><td class="note">HOST-05</td></tr><tr><td><code>127.0.0.1</code></td><td>21329</td><td>StarDeskServer</td><td class="note">loopback</td></tr><tr><td><code>127.0.0.1</code></td><td>28894</td><td>opencode-cli</td><td class="note">loopback</td></tr><tr><td><code>127.0.0.1</code></td><td>50351 / 50364</td><td>stardesk-mux</td><td class="note">loopback</td></tr><tr><td><code>127.0.0.1</code></td><td>51274+</td><td>python (hermes)</td><td class="note">loopback</td></tr><tr><td><code>[::] / 0.0.0.0</code></td><td>49664-49670</td><td>lsass, wininit, spoolsv, services</td><td class="note">blocked inbound</td></tr></tbody></table>
+
+<h3>Reachability matrix (from 172.22.208.1, the WSL subnet)</h3>
+<table><thead><tr><th>Port</th><th>Service</th><th>192.0.2.10</th><th>100.64.0.10</th></tr></thead><tbody><tr><td>22</td><td>SSH</td><td><span style="color:#ff8a8a;font-weight:700">OPEN</span></td><td><span style="color:#ff8a8a;font-weight:700">OPEN</span></td></tr><tr><td>135</td><td>RPC</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:var(--mut)">local</span></td></tr><tr><td>139</td><td>NetBIOS</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:var(--mut)">local</span></td></tr><tr><td>445</td><td>SMB</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:var(--mut)">local</span></td></tr><tr><td>5432</td><td>PostgreSQL</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:var(--mut)">local</span></td></tr><tr><td>8765</td><td>Bridge</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:#ff8a8a;font-weight:700">OPEN</span></td></tr><tr><td>3080</td><td>DSH Web</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:#39d98a">filtered</span></td></tr><tr><td>4700</td><td>SecLayer</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:#39d98a">filtered</span></td></tr><tr><td>4701</td><td>SecScan</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:#39d98a">filtered</span></td></tr><tr><td>3240</td><td>usbipd</td><td><span style="color:#ff8a8a;font-weight:700">OPEN</span></td><td><span style="color:#ff8a8a;font-weight:700">OPEN</span></td></tr><tr><td>5040</td><td>CDPSvc</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:var(--mut)">local</span></td></tr><tr><td>5357</td><td>WSDAPI</td><td><span style="color:#39d98a">filtered</span></td><td><span style="color:var(--mut)">local</span></td></tr><tr><td>7680</td><td>Delivery Opt.</td><td><span style="color:#ff8a8a;font-weight:700">OPEN</span></td><td><span style="color:#ff8a8a;font-weight:700">OPEN</span></td></tr></tbody></table>
+<p class="note" style="color:var(--mut)">The Tailscale column is the host connecting to its own address: it proves binding, not peer reachability. "local" means the connection succeeded on loopback semantics.</p>
+
+<h3>Firewall rules that matter</h3>
+<pre>OpenSSH SSH Server (sshd)          | 22   | Any         | Domain,Private,Public
+OpenSSH Server (sshd)               | 22   | Any         | Domain,Private,Public
+File and Printer Sharing (SMB-In)   | 445  | LocalSubnet | Private,Public
+Netlogon Service (NP-In)            | 445  | Any         | Domain,Private,Public
+usbipd.exe (program rule)           | any  | Any         | Public
+AlterEgo Bridge 8765                | 8765 | Any         | Domain,Private,Public
+Default inbound action              |      | Block       | all three profiles</pre>
+
+<h3>Coverage</h3>
+<div class="panel">
+  <div style="display:flex;gap:8px;height:10px;border-radius:6px;overflow:hidden;margin:6px 0 12px">
+    <div style="width:37%;background:var(--ok)"></div><div style="width:23%;background:var(--med)"></div><div style="width:28%;background:var(--info)"></div><div style="width:12%;background:#3a4a6d"></div>
+  </div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--mut)">
+    <span><b style="color:var(--ok)">24</b> pass</span><span><b style="color:var(--med)">15</b> finding-status</span><span><b style="color:var(--info)">18</b> info</span><span><b>8</b> not tested</span>
+  </div>
+</div>
+</section>
+
+<section id="raw"><h2>07 · Raw output</h2>
+<p class="note" style="color:var(--mut)">The actual command and its output, expandable. This is the Windows pentest detail — nothing here is paraphrased.</p>
+<details><summary>Listener enumeration</summary><div class="dbody"><pre>Get-NetTCPConnection -State Listen | ForEach-Object { $p=Get-Process -Id $_.OwningProcess; "$($_.LocalAddress):$($_.LocalPort) $($p.ProcessName)" }</pre><pre>0.0.0.0:22 sshd
+127.0.0.1:3080 node
+127.0.0.1:4700 com.docker.backend
+0.0.0.0:5432 postgres
+100.64.0.10:8765 python
+[::]:3240 usbipd
+[::]:7680 svchost</pre></div></details>
+<details><summary>SSH handshake</summary><div class="dbody"><pre>ssh -o BatchMode=yes -o StrictHostKeyChecking=no -v One@127.0.0.1 exit</pre><pre>debug1: Remote protocol version 2.0, remote software version OpenSSH_for_Windows_9.5
+debug1: Authentications that can continue: publickey,password,keyboard-interactive
+One@127.0.0.1: Permission denied (publickey,password,keyboard-interactive).</pre></div></details>
+<details><summary>SMB server policy</summary><div class="dbody"><pre>Get-SmbServerConfiguration | Select EnableSMB1Protocol,RequireSecuritySignature,EncryptData</pre><pre>EnableSMB1Protocol       : False
+RequireSecuritySignature : False
+EnableSecuritySignature  : False
+EncryptData              : False</pre></div></details>
+<details><summary>PostgreSQL auth scope</summary><div class="dbody"><pre>Get-Content 'C:\Program Files\PostgreSQL\17\data\pg_hba.conf' | Where { $_ -notmatch '^\s*#' }</pre><pre>local   all  all                  scram-sha-256
+host    all  all  127.0.0.1/32     scram-sha-256
+host    all  all  ::1/128          scram-sha-256</pre></div></details>
+<details><summary>Account policy</summary><div class="dbody"><pre>net accounts</pre><pre>Minimum password length:                 0
+Length of password history maintained:  None
+Maximum password age (days):            42
+Lockout threshold:                      10
+Lockout duration (minutes):             10</pre></div></details>
+<details><summary>Defender</summary><div class="dbody"><pre>Get-MpComputerStatus | Select RealTimeProtectionEnabled,IsTamperProtected,AntivirusSignatureLastUpdated</pre><pre>RealTimeProtectionEnabled        : True
+IsTamperProtected                : True
+AntivirusSignatureLastUpdated    : 11/25/2026 7:09:51 AM</pre></div></details>
+<details><summary>Secret ACLs</summary><div class="dbody"><pre>icacls 'C:\sh\seclayer-hybrid\.env'</pre><pre>BUILTIN\Administrators:(I)(F)
+NT AUTHORITY\SYSTEM:(I)(F)
+BUILTIN\Users:(I)(RX)
+NT AUTHORITY\Authenticated Users:(I)(M)</pre></div></details>
+<details><summary>WSL cross-subnet probe</summary><div class="dbody"><pre>for p in 22 445 5432 3240 7680; do timeout 2 bash -c "exec 3&lt;&gt;/dev/tcp/192.0.2.10/$p" &amp;&amp; echo "$p OPEN"; done</pre><pre>22 OPEN
+3240 OPEN
+7680 OPEN
+# 445/5432/4700/3080 filtered from 172.22.208.0/20</pre></div></details>
+<details><summary>Overlay network</summary><div class="dbody"><pre>tailscale status</pre><pre>100.64.0.10  workstation-01  windows  -
+100.64.0.22      peer-2           active
+100.64.0.33      peer-3           android
+(+3 offline)</pre></div></details>
+<details><summary>Containers</summary><div class="dbody"><pre>docker ps --format '{{.Names}} | {{.Ports}}'</pre><pre>seclayer | 127.0.0.1:4700-&gt;3000/tcp
+vibescan-...-web-1 | 127.0.0.1:4701-&gt;8080/tcp
+stack-db | 5432/tcp (internal)
+vibescan-...-db-1 | 5432/tcp (internal)</pre></div></details>
+</section>
+
+<section id="remediation"><h2>08 · Remediation, in order</h2>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">01</span><b style="flex:1;min-width:260px">Disable SSH password authentication, or scope the port-22 rule to LAN + tailnet</b><span class="chip" style="font-size:11px">HOST-01, HOST-07</span><span class="chip" style="font-size:11px">2 min</span></div><div class="note" style="color:var(--mut);margin-top:6px">No downtime with keys already installed</div></div>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">02</span><b style="flex:1;min-width:260px">Require SMB signing</b><span class="chip" style="font-size:11px">HOST-02</span><span class="chip" style="font-size:11px">1 min</span></div><div class="note" style="color:var(--mut);margin-top:6px">Legacy SMB1 appliances break; none present</div></div>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">03</span><b style="flex:1;min-width:260px">Disable StarDesk USB sharing, or drop the rule from the Public profile</b><span class="chip" style="font-size:11px">HOST-03</span><span class="chip" style="font-size:11px">3 min</span></div><div class="note" style="color:var(--mut);margin-top:6px">Loses network USB redirection</div></div>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">04</span><b style="flex:1;min-width:260px">Bind PostgreSQL to localhost</b><span class="chip" style="font-size:11px">HOST-04</span><span class="chip" style="font-size:11px">2 min + restart</span></div><div class="note" style="color:var(--mut);margin-top:6px">Brief DB outage</div></div>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">05</span><b style="flex:1;min-width:260px">Scope the 8765 rule and add a token</b><span class="chip" style="font-size:11px">HOST-05</span><span class="chip" style="font-size:11px">5 min</span></div><div class="note" style="color:var(--mut);margin-top:6px">Peers relying on it lose access</div></div>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">06</span><b style="flex:1;min-width:260px">Replace inherited ACLs on .env and the DSH profile</b><span class="chip" style="font-size:11px">HOST-06</span><span class="chip" style="font-size:11px">2 min</span></div><div class="note" style="color:var(--mut);margin-top:6px">None for the current user</div></div>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">07</span><b style="flex:1;min-width:260px">14-character password policy + admin password</b><span class="chip" style="font-size:11px">HOST-07</span><span class="chip" style="font-size:11px">5 min</span></div><div class="note" style="color:var(--mut);margin-top:6px">One reset</div></div>
+<div class="panel reveal" style="padding:16px 20px;margin:10px 0"><div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span style="font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:800">08</span><b style="flex:1;min-width:260px">Record ESU end date, plan Windows 11</b><span class="chip" style="font-size:11px">HOST-08</span><span class="chip" style="font-size:11px">project</span></div><div class="note" style="color:var(--mut);margin-top:6px">None</div></div>
+</section>
+
+<section id="platforms"><h2>09 · Platform coverage</h2>
+<p class="note" style="color:var(--mut)">This report shape is the one used for local machines. Windows is exercised end to end; Linux and iOS reuse the same twelve sections with their own oracles.</p>
+<div class="cards" style="grid-template-columns:repeat(3,1fr)"><div class="card" style="padding:20px"><div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 14px var(--ok)"></span><b>Windows 10/11</b></div><div style="margin-top:8px;color:var(--ok);font-size:13px;font-weight:600">Complete — 65 checks, 10 findings</div><div class="note" style="color:var(--mut);margin-top:8px">This document. Firewall, listeners, SSH/SMB/RDP/WinRM, services, accounts, UAC, Defender, BitLocker/TPM, secrets, overlay networks, loopback apps.</div></div><div class="card" style="padding:20px"><div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:var(--acc);box-shadow:0 0 14px var(--acc)"></span><b>Linux</b></div><div style="margin-top:8px;color:var(--acc);font-size:13px;font-weight:600">Catalog ready — not run</div><div class="note" style="color:var(--mut);margin-top:8px">ss -lntup, nft/ufw, sshd -T, smb.conf signing, pg_hba, sudoers, SUID sweep, systemd unit perms, authorized_keys ACLs, LUKS.</div></div><div class="card" style="padding:20px"><div style="display:flex;align-items:center;gap:10px"><span style="width:10px;height:10px;border-radius:50%;background:var(--acc2);box-shadow:0 0 14px var(--acc2)"></span><b>iOS / iPadOS</b></div><div style="margin-top:8px;color:var(--acc2);font-size:13px;font-weight:600">Catalog ready — not run</div><div class="note" style="color:var(--mut);margin-top:8px">Supervision/MDM, jailbreak indicators, passcode + biometric policy, Data Protection classes, backup encryption, entitlements, profiles.</div></div></div>
+</section>
+
+<section id="method"><h2>10 · Method</h2>
+<div class="panel">
+  <ul class="tight">
+    <li>Read-only enumeration through PowerShell: CIM, registry, <code>Get-Net*</code>, <code>netsh advfirewall</code>, <code>Get-Smb*</code>, <code>Get-Local*</code>, <code>Get-Mp*</code>.</li>
+    <li>Service behaviour verified by handshake, not by reading defaults — the SSH auth list is the server's own answer.</li>
+    <li>Reachability measured from a separate network namespace (WSL), not host-to-self.</li>
+    <li>No state changed: no restarts, no firewall edits, no shares mounted, no logons attempted. Lockout threshold read <i>before</i> deciding not to guess.</li>
+  </ul>
+</div>
+</section>
+
+<section id="data"><h2>11 · Complete data set</h2>
+<p class="note" style="color:var(--mut)">Everything captured during the assessment, unsummarised. The same data is embedded as JSON at the end of this file — the download button exports it.</p>
+
+<h3>11.1 Host &amp; OS</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">Computer name</td><td>WORKSTATION-01</td></tr><tr><td style="width:220px;color:var(--mut)">Domain</td><td>WORKGROUP</td></tr><tr><td style="width:220px;color:var(--mut)">Manufacturer / model</td><td>Dell Inc. / OptiPlex 7050</td></tr><tr><td style="width:220px;color:var(--mut)">OS</td><td>Microsoft Windows 10 Enterprise</td></tr><tr><td style="width:220px;color:var(--mut)">Version / build</td><td>10.0.19045 / 19045.6456</td></tr><tr><td style="width:220px;color:var(--mut)">Boot time</td><td>2026-11-24 15:06:17 local</td></tr><tr><td style="width:220px;color:var(--mut)">Addresses</td><td>Ethernet 192.0.2.10/24 · Tailscale 100.64.0.10/32 · WSL 172.22.208.1/20</td></tr></tbody></table>
+
+<h3>11.2 All 42 listening sockets</h3>
+<table><thead><tr><th>Address</th><th>Port</th><th>PID</th><th>Process</th></tr></thead><tbody><tr><td><code>::</code></td><td>22</td><td class="note">3476</td><td>sshd</td></tr><tr><td><code>0.0.0.0</code></td><td>22</td><td class="note">3476</td><td>sshd</td></tr><tr><td><code>0.0.0.0</code></td><td>135</td><td class="note">1092</td><td>svchost</td></tr><tr><td><code>::</code></td><td>135</td><td class="note">1092</td><td>svchost</td></tr><tr><td><code>100.64.0.10</code></td><td>139</td><td class="note">4</td><td>System</td></tr><tr><td><code>192.0.2.10</code></td><td>139</td><td class="note">4</td><td>System</td></tr><tr><td><code>172.22.208.1</code></td><td>139</td><td class="note">4</td><td>System</td></tr><tr><td><code>::</code></td><td>445</td><td class="note">4</td><td>System</td></tr><tr><td><code>127.0.0.1</code></td><td>3080</td><td class="note">20084</td><td>node (DSH Web)</td></tr><tr><td><code>127.0.0.1</code></td><td>3082</td><td class="note">22236</td><td>node</td></tr><tr><td><code>::</code></td><td>3240</td><td class="note">21820</td><td>usbipd</td></tr><tr><td><code>127.0.0.1</code></td><td>4700</td><td class="note">14812</td><td>com.docker.backend</td></tr><tr><td><code>127.0.0.1</code></td><td>4701</td><td class="note">14812</td><td>com.docker.backend</td></tr><tr><td><code>0.0.0.0</code></td><td>5040</td><td class="note">1148</td><td>svchost (CDPSvc)</td></tr><tr><td><code>::</code></td><td>5357</td><td class="note">4</td><td>System (WSDAPI)</td></tr><tr><td><code>0.0.0.0</code></td><td>5432</td><td class="note">16084</td><td>postgres</td></tr><tr><td><code>::</code></td><td>5432</td><td class="note">16084</td><td>postgres</td></tr><tr><td><code>::</code></td><td>7680</td><td class="note">928</td><td>svchost (Delivery Opt.)</td></tr><tr><td><code>100.64.0.10</code></td><td>8765</td><td class="note">9480</td><td>python (AlterEgo)</td></tr><tr><td><code>127.0.0.1</code></td><td>21329</td><td class="note">18628</td><td>StarDeskServer</td></tr><tr><td><code>127.0.0.1</code></td><td>28894</td><td class="note">11152</td><td>opencode-cli</td></tr><tr><td><code>fd7a:115c:a1e0::7528:2150</code></td><td>35421</td><td class="note">5244</td><td>tailscaled</td></tr><tr><td><code>100.64.0.10</code></td><td>35432</td><td class="note">5244</td><td>tailscaled</td></tr><tr><td><code>::1</code></td><td>42050</td><td class="note">17104</td><td>OneDrive.Sync.Service</td></tr><tr><td><code>::</code></td><td>49664</td><td class="note">960</td><td>lsass</td></tr><tr><td><code>0.0.0.0</code></td><td>49664</td><td class="note">960</td><td>lsass</td></tr><tr><td><code>::</code></td><td>49665</td><td class="note">788</td><td>wininit</td></tr><tr><td><code>0.0.0.0</code></td><td>49665</td><td class="note">788</td><td>wininit</td></tr><tr><td><code>::</code></td><td>49666</td><td class="note">1520</td><td>svchost</td></tr><tr><td><code>0.0.0.0</code></td><td>49666</td><td class="note">1520</td><td>svchost</td></tr><tr><td><code>::</code></td><td>49667</td><td class="note">1672</td><td>svchost</td></tr><tr><td><code>0.0.0.0</code></td><td>49667</td><td class="note">1672</td><td>svchost</td></tr><tr><td><code>0.0.0.0</code></td><td>49668</td><td class="note">3000</td><td>spoolsv</td></tr><tr><td><code>::</code></td><td>49668</td><td class="note">3000</td><td>spoolsv</td></tr><tr><td><code>::1</code></td><td>49669</td><td class="note">3296</td><td>jhi_service</td></tr><tr><td><code>::</code></td><td>49670</td><td class="note">932</td><td>services</td></tr><tr><td><code>0.0.0.0</code></td><td>49670</td><td class="note">932</td><td>services</td></tr><tr><td><code>127.0.0.1</code></td><td>50351</td><td class="note">20292</td><td>stardesk-mux</td></tr><tr><td><code>127.0.0.1</code></td><td>50364</td><td class="note">18992</td><td>stardesk-mux</td></tr><tr><td><code>127.0.0.1</code></td><td>51274</td><td class="note">8448</td><td>python (hermes)</td></tr><tr><td><code>127.0.0.1</code></td><td>53495</td><td class="note">12664</td><td>python (hermes)</td></tr><tr><td><code>127.0.0.1</code></td><td>53504</td><td class="note">12664</td><td>python (hermes)</td></tr></tbody></table>
+
+<h3>11.3 Firewall — profiles and every matching rule</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">Profiles</td><td>Domain, Private, Public — all Enabled</td></tr><tr><td style="width:220px;color:var(--mut)">Default inbound</td><td>Block (AllowOutbound)</td></tr><tr><td style="width:220px;color:var(--mut)">Default outbound</td><td>Allow</td></tr></tbody></table>
+<table><thead><tr><th>Rule</th><th>Port</th><th>Remote</th><th>Profiles</th><th>Action</th></tr></thead><tbody><tr><td>AlterEgo Bridge 8765</td><td>8765</td><td>Any</td><td class="note">Domain, Private, Public</td><td>Allow</td></tr><tr><td>OpenSSH Server (sshd)</td><td>22</td><td>Any</td><td class="note">Domain, Private, Public</td><td>Allow</td></tr><tr><td>OpenSSH SSH Server (sshd)</td><td>22</td><td>Any</td><td class="note">Domain, Private, Public</td><td>Allow</td></tr><tr><td>File and Printer Sharing (SMB-In)</td><td>445</td><td>LocalSubnet</td><td class="note">Private, Public</td><td>Allow</td></tr><tr><td>File and Printer Sharing (SMB-In)</td><td>445</td><td>Any</td><td class="note">Domain</td><td>Allow</td></tr><tr><td>Remote Event Log Management (NP-In)</td><td>445</td><td>LocalSubnet</td><td class="note">Private, Public</td><td>Allow</td></tr><tr><td>Remote Service Management (NP-In)</td><td>445</td><td>LocalSubnet</td><td class="note">Private, Public</td><td>Allow</td></tr><tr><td>Netlogon Service (NP-In)</td><td>445</td><td>Any</td><td class="note">Domain, Private, Public</td><td>Allow</td></tr><tr><td>usbipd.exe (program rule)</td><td>any</td><td>Any</td><td class="note">Public</td><td>Allow</td></tr><tr><td>Default inbound action</td><td>—</td><td>—</td><td class="note">all profiles</td><td>Block</td></tr></tbody></table>
+
+<h3>11.4 Reachability, raw</h3>
+<table><thead><tr><th>Port</th><th>Service</th><th>192.0.2.10 (from 172.22.208.1)</th><th>100.64.0.10</th></tr></thead><tbody><tr><td>22</td><td>SSH</td><td><b style="color:#ff8a8a">OPEN</b></td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>135</td><td>RPC</td><td>closed</td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>139</td><td>NetBIOS</td><td>closed</td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>445</td><td>SMB</td><td>closed</td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>5432</td><td>PostgreSQL</td><td>closed</td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>8765</td><td>Bridge</td><td>closed</td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>4700</td><td>SecLayer</td><td>closed</td><td>closed</td></tr><tr><td>4701</td><td>SecScan</td><td>closed</td><td>closed</td></tr><tr><td>3080</td><td>DSH Web</td><td>closed</td><td>closed</td></tr><tr><td>5040</td><td>CDPSvc</td><td>closed</td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>3240</td><td>usbipd</td><td><b style="color:#ff8a8a">OPEN</b></td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>5357</td><td>WSDAPI</td><td>closed</td><td><b style="color:#ff8a8a">OPEN</b></td></tr><tr><td>7680</td><td>Delivery Opt.</td><td><b style="color:#ff8a8a">OPEN</b></td><td><b style="color:#ff8a8a">OPEN</b></td></tr></tbody></table>
+
+<h3>11.5 SSH</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">Service</td><td>sshd — Running, LocalSystem, C:\\Windows\\System32\\OpenSSH\\sshd.exe</td></tr><tr><td style="width:220px;color:var(--mut)">Listeners</td><td>0.0.0.0:22 and [::]:22</td></tr><tr><td style="width:220px;color:var(--mut)">Server version</td><td>OpenSSH_for_Windows_9.5</td></tr><tr><td style="width:220px;color:var(--mut)">Auth methods</td><td>publickey, password, keyboard-interactive</td></tr><tr><td style="width:220px;color:var(--mut)">Admin keys</td><td>2 Ed25519 in administrators_authorized_keys</td></tr></tbody></table>
+<pre>AuthorizedKeysFile	.ssh/authorized_keys
+Subsystem	sftp sftp-server.exe
+Match Group administrators
+       AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys</pre>
+
+<h3>11.6 SMB</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">SMB1</td><td>Disabled</td></tr><tr><td style="width:220px;color:var(--mut)">SMB2/3</td><td>Enabled</td></tr><tr><td style="width:220px;color:var(--mut)">RequireSecuritySignature</td><td>False</td></tr><tr><td style="width:220px;color:var(--mut)">EnableSecuritySignature</td><td>False</td></tr><tr><td style="width:220px;color:var(--mut)">EncryptData</td><td>False</td></tr><tr><td style="width:220px;color:var(--mut)">Shares</td><td>ADMIN$ (C:\\Windows), C$ (C:\\), D$ (D:\\), IPC$</td></tr></tbody></table>
+
+<h3>11.7 RDP &amp; WinRM</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">RDP</td><td>Disabled (fDenyTSConnections = 1)</td></tr><tr><td style="width:220px;color:var(--mut)">WinRM</td><td>Stopped, Manual start</td></tr></tbody></table>
+
+<h3>11.8 PostgreSQL</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">Service</td><td>postgresql-x64-17 — Running, NT AUTHORITY\\NetworkService</td></tr><tr><td style="width:220px;color:var(--mut)">Data dir</td><td>C:\\Program Files\\PostgreSQL\\17\\data</td></tr><tr><td style="width:220px;color:var(--mut)">Listeners</td><td>0.0.0.0:5432, [::]:5432</td></tr><tr><td style="width:220px;color:var(--mut)">Firewall</td><td>No rule — filtered from LAN in testing</td></tr></tbody></table>
+<pre>local   all  all                  scram-sha-256
+host    all  all  127.0.0.1/32     scram-sha-256
+host    all  all  ::1/128          scram-sha-256</pre>
+
+<h3>11.9 Accounts</h3>
+<table><thead><tr><th>Account</th><th>State</th><th>Last logon</th><th>Password required</th><th>Password last set</th></tr></thead><tbody><tr><td>Administrator</td><td><span class="pill nt">disabled</span></td><td class="note">—</td><td>Yes</td><td class="note">—</td></tr><tr><td>DefaultAccount</td><td><span class="pill nt">disabled</span></td><td class="note">—</td><td>No</td><td class="note">—</td></tr><tr><td>Guest</td><td><span class="pill nt">disabled</span></td><td class="note">—</td><td>No</td><td class="note">—</td></tr><tr><td>operator</td><td><span class="pill pass">enabled</span></td><td class="note">2026-11-25 01:32</td><td>No</td><td class="note">2026-11-23 11:25</td></tr><tr><td>WDAGUtilityAccount</td><td><span class="pill nt">disabled</span></td><td class="note">—</td><td>Yes</td><td class="note">2026-11-23 19:18</td></tr></tbody></table>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">Administrators</td><td>Administrator, operator</td></tr><tr><td style="width:220px;color:var(--mut)">Minimum password length</td><td>0</td></tr><tr><td style="width:220px;color:var(--mut)">Password history</td><td>None</td></tr><tr><td style="width:220px;color:var(--mut)">Maximum password age</td><td>42 days</td></tr><tr><td style="width:220px;color:var(--mut)">Lockout</td><td>10 attempts / 10 min</td></tr></tbody></table>
+
+<h3>11.10 Privilege configuration</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">UAC</td><td>EnableLUA=1, ConsentPromptBehaviorAdmin=5, PromptOnSecureDesktop=1</td></tr><tr><td style="width:220px;color:var(--mut)">AlwaysInstallElevated</td><td>Not configured (HKLM/HKCU)</td></tr><tr><td style="width:220px;color:var(--mut)">Autologon</td><td>AutoAdminLogon unset, no DefaultPassword</td></tr><tr><td style="width:220px;color:var(--mut)">cmdkey</td><td>Docker Hub access token + Microsoft SSO (DPAPI, this user)</td></tr><tr><td style="width:220px;color:var(--mut)">Unquoted service path</td><td>CoworkVMService — WindowsApps (TrustedInstaller ACL)</td></tr></tbody></table>
+
+<h3>11.11 Defender</h3>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">AMService</td><td>True</td></tr><tr><td style="width:220px;color:var(--mut)">Real-time protection</td><td>True</td></tr><tr><td style="width:220px;color:var(--mut)">Behaviour monitoring</td><td>True</td></tr><tr><td style="width:220px;color:var(--mut)">Network inspection</td><td>True</td></tr><tr><td style="width:220px;color:var(--mut)">Tamper protection</td><td>True</td></tr><tr><td style="width:220px;color:var(--mut)">Signatures</td><td>2026-11-25 07:09:51</td></tr></tbody></table>
+
+<h3>11.12 Updates</h3>
+<table><thead><tr><th>KB</th><th>Type</th><th>Installed</th></tr></thead><tbody><tr><td><code>KB5126256</code></td><td>Security Update</td><td class="note">2026-11-24</td></tr><tr><td><code>KB5066130</code></td><td>Update</td><td class="note">2026-11-24</td></tr><tr><td><code>KB5066790</code></td><td>Security Update</td><td class="note">2026-11-23</td></tr><tr><td><code>KB5066791</code></td><td>Security Update</td><td class="note">2026-11-23</td></tr><tr><td><code>KB5011048</code></td><td>Update</td><td class="note">2026-11-23</td></tr><tr><td><code>KB5066135</code></td><td>Update</td><td class="note">2026-11-23</td></tr></tbody></table>
+
+<h3>11.13 Secret files and ACLs</h3>
+<pre>BUILTIN\\Administrators:(I)(F)
+NT AUTHORITY\\SYSTEM:(I)(F)
+BUILTIN\\Users:(I)(RX)
+NT AUTHORITY\\Authenticated Users:(I)(M)</pre>
+<ul class="tight"><li><code>C:\\sh\\seclayer-hybrid\\.env</code></li><li><code>C:\\sh\\seclayer-hybrid\\.dsh\\.env</code></li><li><code>C:\\sh\\src\\seclayer.io2026\\.env</code></li><li><code>C:\\sh\\src\\seclayer.io2026\\.env.container</code></li><li><code>C:\\sh\\src\\VibeScan-Enterprise-Build\\.env.docker</code></li><li><code>C:\\sh\\seclayer-hybrid\\.env.example</code></li><li><code>C:\\sh\\src\\deepseek-super\\.env.example</code></li></ul>
+
+<h3>11.14 Tailscale</h3>
+<table><thead><tr><th>Address</th><th>Node</th><th>OS</th><th>State</th></tr></thead><tbody><tr><td><code>100.64.0.10</code></td><td>workstation-01</td><td>windows</td><td class="note">this host</td></tr><tr><td><code>100.122.231.38</code></td><td>peer-2</td><td>—</td><td class="note">active, relay nyc</td></tr><tr><td><code>100.107.174.1</code></td><td>peer-3</td><td>android</td><td class="note">—</td></tr><tr><td><code>100.104.45.77</code></td><td>peer-4</td><td>windows</td><td class="note">offline 3d</td></tr><tr><td><code>100.117.212.122</code></td><td>peer-5</td><td>—</td><td class="note">—</td></tr><tr><td><code>100.72.40.76</code></td><td>peer-6</td><td>linux</td><td class="note">offline 1d</td></tr></tbody></table>
+<table><tbody><tr><td style="width:220px;color:var(--mut)">RunSSH</td><td>false</td></tr><tr><td style="width:220px;color:var(--mut)">ShieldsUp</td><td>false</td></tr><tr><td style="width:220px;color:var(--mut)">serve</td><td>none</td></tr><tr><td style="width:220px;color:var(--mut)">funnel</td><td>none</td></tr></tbody></table>
+
+<h3>11.15 Containers</h3>
+<pre>seclayer                             127.0.0.1:4700-&gt;3000/tcp   healthy
+vibescan-enterprise-build-web-1     127.0.0.1:4701-&gt;8080/tcp   healthy
+vibescan-enterprise-build-secscan-1 internal                  healthy
+vibescan-enterprise-build-db-1      internal                  healthy
+vibescan-enterprise-build-backup-1  internal                  running
+stack-db                            internal                  healthy</pre>
+
+<h3>11.16 Local web surfaces</h3>
+<table><thead><tr><th>URL</th><th>App</th><th>HTTP</th><th>Headers of note</th><th>Framing</th></tr></thead><tbody><tr><td><code>127.0.0.1:4700</code></td><td>SecLayer</td><td>200</td><td class="note">HSTS 31536000; XFO DENY; CSP default-src 'self' … script-src 'self' …</td><td>not embeddable</td></tr><tr><td><code>127.0.0.1:4701</code></td><td>SecScan</td><td>200</td><td class="note">XFO DENY; CSP default-src 'self'; style-src 'self' 'unsafe-inline'</td><td>not embeddable</td></tr><tr><td><code>127.0.0.1:4710</code></td><td>SecLayer via view proxy</td><td>200</td><td class="note">framing headers stripped; /api forwarded</td><td>embeddable</td></tr><tr><td><code>127.0.0.1:4711</code></td><td>SecScan via view proxy</td><td>200</td><td class="note">framing headers stripped</td><td>embeddable</td></tr><tr><td><code>127.0.0.1:3080</code></td><td>DSH Web GUI</td><td>200</td><td class="note">loopback only</td><td>n/a</td></tr></tbody></table>
+
+<h3>11.17 USB devices</h3>
+<pre>1-5    0c76:1700  onn Wired Gaming Headset, USB Input Device   Not shared
+1-7    413c:2501  USB Input Device                             Not shared
+1-22   0480:a006  USB Mass Storage Device                      Not shared</pre>
+
+<h3>11.18 Not tested</h3>
+<ul class="tight"><li>Defender exclusions</li><li>BitLocker</li><li>Secure Boot</li><li>TPM</li><li>Security event log</li><li>Password guessing</li><li>Exploit validation</li><li>Malware/persistence</li><li>CVE matching</li></ul>
+
+<div class="panel" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+  <b>Export</b>
+  <button id="dl" style="font:inherit;font-size:13px;cursor:pointer;padding:9px 16px;border-radius:10px;border:1px solid var(--line2);background:rgba(90,169,255,.12);color:var(--txt)">Download JSON</button>
+  <span class="note" style="color:var(--mut)">9.6 KB · every captured value</span>
+</div>
+</section>
+<script type="application/json" id="rawdata">{"host":{"name":"WORKSTATION-01","domain":"WORKGROUP","model":"Dell OptiPlex 7050","os":"Microsoft Windows 10 Enterprise","version":"10.0.19045","build":19045,"ubr":6456,"boot":"2026-11-24T15:06:17"},"addresses":[["vEthernet (WSL)","172.22.208.1/20"],["Ethernet","192.0.2.10/24"],["Tailscale","100.64.0.10/32"]],"listeners":[{"addr":"::","port":22,"pid":3476,"process":"sshd"},{"addr":"0.0.0.0","port":22,"pid":3476,"process":"sshd"},{"addr":"0.0.0.0","port":135,"pid":1092,"process":"svchost"},{"addr":"::","port":135,"pid":1092,"process":"svchost"},{"addr":"100.64.0.10","port":139,"pid":4,"process":"System"},{"addr":"192.0.2.10","port":139,"pid":4,"process":"System"},{"addr":"172.22.208.1","port":139,"pid":4,"process":"System"},{"addr":"::","port":445,"pid":4,"process":"System"},{"addr":"127.0.0.1","port":3080,"pid":20084,"process":"node (DSH Web)"},{"addr":"127.0.0.1","port":3082,"pid":22236,"process":"node"},{"addr":"::","port":3240,"pid":21820,"process":"usbipd"},{"addr":"127.0.0.1","port":4700,"pid":14812,"process":"com.docker.backend"},{"addr":"127.0.0.1","port":4701,"pid":14812,"process":"com.docker.backend"},{"addr":"0.0.0.0","port":5040,"pid":1148,"process":"svchost (CDPSvc)"},{"addr":"::","port":5357,"pid":4,"process":"System (WSDAPI)"},{"addr":"0.0.0.0","port":5432,"pid":16084,"process":"postgres"},{"addr":"::","port":5432,"pid":16084,"process":"postgres"},{"addr":"::","port":7680,"pid":928,"process":"svchost (Delivery Opt.)"},{"addr":"100.64.0.10","port":8765,"pid":9480,"process":"python (AlterEgo)"},{"addr":"127.0.0.1","port":21329,"pid":18628,"process":"StarDeskServer"},{"addr":"127.0.0.1","port":28894,"pid":11152,"process":"opencode-cli"},{"addr":"fd7a:115c:a1e0::7528:2150","port":35421,"pid":5244,"process":"tailscaled"},{"addr":"100.64.0.10","port":35432,"pid":5244,"process":"tailscaled"},{"addr":"::1","port":42050,"pid":17104,"process":"OneDrive.Sync.Service"},{"addr":"::","port":49664,"pid":960,"process":"lsass"},{"addr":"0.0.0.0","port":49664,"pid":960,"process":"lsass"},{"addr":"::","port":49665,"pid":788,"process":"wininit"},{"addr":"0.0.0.0","port":49665,"pid":788,"process":"wininit"},{"addr":"::","port":49666,"pid":1520,"process":"svchost"},{"addr":"0.0.0.0","port":49666,"pid":1520,"process":"svchost"},{"addr":"::","port":49667,"pid":1672,"process":"svchost"},{"addr":"0.0.0.0","port":49667,"pid":1672,"process":"svchost"},{"addr":"0.0.0.0","port":49668,"pid":3000,"process":"spoolsv"},{"addr":"::","port":49668,"pid":3000,"process":"spoolsv"},{"addr":"::1","port":49669,"pid":3296,"process":"jhi_service"},{"addr":"::","port":49670,"pid":932,"process":"services"},{"addr":"0.0.0.0","port":49670,"pid":932,"process":"services"},{"addr":"127.0.0.1","port":50351,"pid":20292,"process":"stardesk-mux"},{"addr":"127.0.0.1","port":50364,"pid":18992,"process":"stardesk-mux"},{"addr":"127.0.0.1","port":51274,"pid":8448,"process":"python (hermes)"},{"addr":"127.0.0.1","port":53495,"pid":12664,"process":"python (hermes)"},{"addr":"127.0.0.1","port":53504,"pid":12664,"process":"python (hermes)"}],"firewall":{"profiles":"Domain/Private/Public enabled; BlockInbound,AllowOutbound","rules":[{"name":"AlterEgo Bridge 8765","port":"8765","remote":"Any","profiles":"Domain, Private, Public","action":"Allow"},{"name":"OpenSSH Server (sshd)","port":"22","remote":"Any","profiles":"Domain, Private, Public","action":"Allow"},{"name":"OpenSSH SSH Server (sshd)","port":"22","remote":"Any","profiles":"Domain, Private, Public","action":"Allow"},{"name":"File and Printer Sharing (SMB-In)","port":"445","remote":"LocalSubnet","profiles":"Private, Public","action":"Allow"},{"name":"File and Printer Sharing (SMB-In)","port":"445","remote":"Any","profiles":"Domain","action":"Allow"},{"name":"Remote Event Log Management (NP-In)","port":"445","remote":"LocalSubnet","profiles":"Private, Public","action":"Allow"},{"name":"Remote Service Management (NP-In)","port":"445","remote":"LocalSubnet","profiles":"Private, Public","action":"Allow"},{"name":"Netlogon Service (NP-In)","port":"445","remote":"Any","profiles":"Domain, Private, Public","action":"Allow"},{"name":"usbipd.exe (program rule)","port":"any","remote":"Any","profiles":"Public","action":"Allow"},{"name":"Default inbound action","port":"—","remote":"—","profiles":"all profiles","action":"Block"}]},"reachability":[{"port":22,"service":"SSH","fromWSL_lan":"OPEN","fromWSL_tailscale":"OPEN"},{"port":135,"service":"RPC","fromWSL_lan":"closed","fromWSL_tailscale":"OPEN"},{"port":139,"service":"NetBIOS","fromWSL_lan":"closed","fromWSL_tailscale":"OPEN"},{"port":445,"service":"SMB","fromWSL_lan":"closed","fromWSL_tailscale":"OPEN"},{"port":5432,"service":"PostgreSQL","fromWSL_lan":"closed","fromWSL_tailscale":"OPEN"},{"port":8765,"service":"Bridge","fromWSL_lan":"closed","fromWSL_tailscale":"OPEN"},{"port":4700,"service":"SecLayer","fromWSL_lan":"closed","fromWSL_tailscale":"closed"},{"port":4701,"service":"SecScan","fromWSL_lan":"closed","fromWSL_tailscale":"closed"},{"port":3080,"service":"DSH Web","fromWSL_lan":"closed","fromWSL_tailscale":"closed"},{"port":5040,"service":"CDPSvc","fromWSL_lan":"closed","fromWSL_tailscale":"OPEN"},{"port":3240,"service":"usbipd","fromWSL_lan":"OPEN","fromWSL_tailscale":"OPEN"},{"port":5357,"service":"WSDAPI","fromWSL_lan":"closed","fromWSL_tailscale":"OPEN"},{"port":7680,"service":"Delivery Opt.","fromWSL_lan":"OPEN","fromWSL_tailscale":"OPEN"}],"ssh":{"version":"OpenSSH_for_Windows_9.5","listen":["0.0.0.0:22","[::]:22"],"auth":["publickey","password","keyboard-interactive"],"config":["AuthorizedKeysFile .ssh/authorized_keys","Subsystem sftp sftp-server.exe","Match Group administrators","  AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys"],"adminKeys":2},"smb":{"smb1":false,"smb2":true,"requireSigning":false,"enableSigning":false,"encrypt":false,"shares":["ADMIN$","C$","D$","IPC$"]},"rdpDisabled":true,"winrm":"Stopped / Manual","postgres":{"service":"postgresql-x64-17","account":"NT AUTHORITY\\\\NetworkService","listen":["0.0.0.0:5432","[::]:5432"],"hba":["local all all scram-sha-256","host all all 127.0.0.1/32 scram-sha-256","host all all ::1/128 scram-sha-256"]},"accounts":{"users":[{"name":"Administrator","enabled":false,"lastLogon":"—","passwordRequired":true,"passwordLastSet":"—"},{"name":"DefaultAccount","enabled":false,"lastLogon":"—","passwordRequired":false,"passwordLastSet":"—"},{"name":"Guest","enabled":false,"lastLogon":"—","passwordRequired":false,"passwordLastSet":"—"},{"name":"One","enabled":true,"lastLogon":"2026-11-25 01:32","passwordRequired":false,"passwordLastSet":"2026-11-23 11:25"},{"name":"WDAGUtilityAccount","enabled":false,"lastLogon":"—","passwordRequired":true,"passwordLastSet":"2026-11-23 19:18"}],"admins":["Administrator","One"],"policy":{"minLength":0,"history":0,"maxAgeDays":42,"lockoutThreshold":10,"lockoutMinutes":10}},"uac":{"enableLUA":true,"consentPrompt":5,"secureDesktop":true},"alwaysInstallElevated":false,"autologon":false,"defender":{"realTime":true,"tamper":true,"behaviorMonitor":true,"nis":true,"signature":"2026-11-25T07:09:51"},"hotfix":[{"id":"KB5126256","type":"Security Update","date":"2026-11-24"},{"id":"KB5066130","type":"Update","date":"2026-11-24"},{"id":"KB5066790","type":"Security Update","date":"2026-11-23"},{"id":"KB5066791","type":"Security Update","date":"2026-11-23"},{"id":"KB5011048","type":"Update","date":"2026-11-23"},{"id":"KB5066135","type":"Update","date":"2026-11-23"}],"acls":["BUILTIN\\\\Administrators:(I)(F)","NT AUTHORITY\\\\SYSTEM:(I)(F)","BUILTIN\\\\Users:(I)(RX)","NT AUTHORITY\\\\Authenticated Users:(I)(M)"],"envFiles":["C:\\\\sh\\\\seclayer-hybrid\\\\.env","C:\\\\sh\\\\seclayer-hybrid\\\\.dsh\\\\.env","C:\\\\sh\\\\src\\\\seclayer.io2026\\\\.env","C:\\\\sh\\\\src\\\\seclayer.io2026\\\\.env.container","C:\\\\sh\\\\src\\\\VibeScan-Enterprise-Build\\\\.env.docker","C:\\\\sh\\\\seclayer-hybrid\\\\.env.example","C:\\\\sh\\\\src\\\\deepseek-super\\\\.env.example"],"tailscale":{"peers":[{"ip":"100.64.0.10","name":"workstation-01","os":"windows","state":"this host"},{"ip":"100.122.231.38","name":"peer-2","os":"—","state":"active, relay nyc"},{"ip":"100.107.174.1","name":"peer-3","os":"android","state":"—"},{"ip":"100.104.45.77","name":"peer-4","os":"windows","state":"offline 3d"},{"ip":"100.117.212.122","name":"peer-5","os":"—","state":"—"},{"ip":"100.72.40.76","name":"peer-6","os":"linux","state":"offline 1d"}],"runSSH":false,"shieldsUp":false,"serve":"none","funnel":"none"},"docker":[["seclayer","127.0.0.1:4700->3000"],["vibescan-enterprise-build-web-1","127.0.0.1:4701->8080"],["vibescan-enterprise-build-secscan-1","internal"],["vibescan-enterprise-build-db-1","internal"],["vibescan-enterprise-build-backup-1","internal"],["stack-db","internal"]],"usb":[["1-5","0c76:1700","headset","Not shared"],["1-7","413c:2501","input device","Not shared"],["1-22","0480:a006","mass storage","Not shared"]],"web":[{"url":"127.0.0.1:4700","app":"SecLayer","status":200,"headers":"HSTS 31536000; XFO DENY; CSP default-src 'self' … script-src 'self' …","framing":"not embeddable"},{"url":"127.0.0.1:4701","app":"SecScan","status":200,"headers":"XFO DENY; CSP default-src 'self'; style-src 'self' 'unsafe-inline'","framing":"not embeddable"},{"url":"127.0.0.1:4710","app":"SecLayer via view proxy","status":200,"headers":"framing headers stripped; /api forwarded","framing":"embeddable"},{"url":"127.0.0.1:4711","app":"SecScan via view proxy","status":200,"headers":"framing headers stripped","framing":"embeddable"},{"url":"127.0.0.1:3080","app":"DSH Web GUI","status":200,"headers":"loopback only","framing":"n/a"}],"notTested":["Defender exclusions","BitLocker","Secure Boot","TPM","Security event log","Password guessing","Exploit validation","Malware/persistence","CVE matching"]}</script>
+<script>
+document.getElementById('dl').addEventListener('click',function(){
+  var t=document.getElementById('rawdata').textContent;
+  var b=new Blob([t],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(b);
+  a.download='WORKSTATION-01-2026-11-26.json';a.click();
+});
+</script>
+<footer>
+  Generated 2026-11-26 from a read-only assessment of WORKSTATION-01. No configuration was modified and no exploit was executed. Severity reflects reachability and required attacker position, not exploit proof. Re-run &sect;04 after applying fixes to confirm drift. Template: local-host report v2 (Windows / Linux / iOS).
+</footer>
+</div>
+<script>
+(function(){
+  var bar=document.getElementById('progress');
+  function onScroll(){var h=document.documentElement;var max=h.scrollHeight-h.clientHeight;bar.style.width=(max>0?(h.scrollTop/max*100):0)+'%';}
+  document.addEventListener('scroll',onScroll,{passive:true});onScroll();
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.06});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+  var secs=[].slice.call(document.querySelectorAll('section[id]'));
+  var links=[].slice.call(document.querySelectorAll('nav a[href^="#"]'));
+  function active(){var y=window.scrollY+140;var cur=secs[0];secs.forEach(function(s){if(s.offsetTop<=y)cur=s;});links.forEach(function(a){a.classList.toggle('active',a.getAttribute('href')==='#'+cur.id);});}
+  document.addEventListener('scroll',active,{passive:true});active();
+})();
+</script>
+</body></html>
