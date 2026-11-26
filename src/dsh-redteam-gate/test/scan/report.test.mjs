@@ -152,3 +152,75 @@ test('report: network/coverage panels use evidence and coverage, not raw seclaye
   assert.match(html, /www\.mine\.example/)
   assert.match(html, /nginx/)
 })
+
+test('report: the Complete Fix Prompt panel leads the report and is copyable', () => {
+  const prompt = '# Security Remediation Plan — mine.example\n\n- Issues to fix: 1 — 1 high'
+  const html = renderScanReportHtml({ target: 'mine.example', data: fakeData({ fixPrompt: prompt, aiReport: { score: 70, findings: [finding()], aiSummary: 'x' } }) })
+  assert.match(html, /Complete Fix Prompt/)
+  assert.match(html, /1 issue &middot; paste into any AI coding agent/)
+  assert.match(html, /id="complete-fix-prompt"/)
+  assert.match(html, /Security Remediation Plan/)
+  assert.ok(html.indexOf('Complete Fix Prompt') < html.indexOf('What Changed Since Last Scan'), 'panel sits above the rest of the report')
+})
+
+test('report: no fix-prompt panel when the scan found nothing to fix', () => {
+  const html = renderScanReportHtml({ target: 'mine.example', data: fakeData() })
+  assert.ok(!html.includes('Complete Fix Prompt'))
+  assert.ok(!html.includes('complete-fix-prompt'))
+})
+
+test('report: diagnostic evidence is grouped into explained blocks, not one header dump', () => {
+  const seclayer = {
+    url: 'https://mine.example/login?x=1', finalUrl: 'https://mine.example/login?x=1', scannedAt: '2026-11-26T05:00:00.000Z',
+    responseStatus: 200, sslSecure: true, activeProbesSkipped: false,
+    headers: { server: 'nginx', 'content-security-policy': "default-src 'self'", 'x-frame-options': 'DENY' },
+    missingHeaders: ['strict-transport-security'],
+    tls: { checked: true, reachable: true, protocol: 'TLSv1.3', subject: 'mine.example', issuer: 'WE1', validFromMs: 1793640257000, validToMs: 1801419852000 },
+    easmPerimeter: { ip: '203.0.113.5', nameserver: 'ns1.example.test', protocol: 'HTTPS', subdomains: [{ domain: 'www.mine.example', status: 'live', port: '443' }, { domain: 'dev.mine.example', status: 'inactive', port: '0' }] },
+    probedPaths: [{ path: '/.env', status: 404, exposed: false }, { path: '/backup.zip', status: 200, exposed: true }],
+    redTeamFindings: [{ testName: 'No rate limiting', payload: 'x', severity: 'medium', description: 'd', fix: 'f', confidence: 'medium' }],
+    apiSecFindings: [], sastFindings: [], scaLibraries: [], cookieIssues: ['session cookie without HttpOnly'], setCookies: ['sid=abc; Path=/'],
+    crawl: { pagesVisited: 4, endpointsDiscovered: 0, paramsTested: 19, sampleEndpoints: [] },
+  }
+  const data = fakeData({
+    evidence: {
+      scannedAt: '2026-11-26T05:00:00.000Z', responseStatus: 200, protocol: 'HTTPS',
+      resolvedIp: '203.0.113.5', nameserver: 'ns1.example.test', serverHeader: 'nginx',
+      presentSecurityHeaders: ['content-security-policy', 'x-frame-options'],
+      missingSecurityHeaders: ['strict-transport-security'],
+      liveSubdomains: ['www.mine.example'], subdomainsChecked: 2, probedPaths: seclayer.probedPaths,
+      detectedLibraries: [], crawl: seclayer.crawl, activeProbesRun: true,
+    },
+  })
+  const html = renderScanReportHtml({ target: 'mine.example', seclayer, data })
+  // one labelled block per evidence family, each with its explanatory caption
+  for (const title of ['Captured scan trace', 'HTTP response headers', 'EASM', 'DAST', 'Red team', 'SAST / SCA / template checks', 'Cookies']) {
+    assert.ok(html.includes(title), `missing diagnostic block: ${title}`)
+  }
+  assert.match(html, /GET \/login\?x=1 HTTP\/1\.1/)
+  assert.match(html, /Content-Security|content-security-policy/)
+  assert.match(html, /TLSv1\.3/)
+  assert.match(html, /strict-transport-security.*missing/s)
+  assert.match(html, /backup\.zip/)
+  assert.match(html, /EXPOSED/)
+  assert.match(html, /locked down/)
+  assert.match(html, /No rate limiting/)
+  assert.match(html, /session cookie without HttpOnly/)
+  assert.match(html, /dev\.mine\.example/)
+  // captions say what the block is, and every block explains itself
+  assert.match(html, /class="diag-note"/)
+})
+
+test('report: skipped active probes are stated plainly in the diagnostic section', () => {
+  const seclayer = { activeProbesSkipped: true, headers: {}, probedPaths: [], easmPerimeter: { subdomains: [] } }
+  const html = renderScanReportHtml({ target: 'mine.example', seclayer, data: fakeData() })
+  assert.match(html, /Active exploit probing was skipped/)
+})
+
+test('report: a worsened finding is shown in the change box', () => {
+  const data = fakeData({ change: { scoreDelta: -6, newCount: 0, resolvedCount: 0, worsenedCount: 1, newFindings: [], worsenedFindings: [{ title: 'Cross-Tenant Access', severity: 'high', was: 'medium' }] } })
+  const html = renderScanReportHtml({ target: 'mine.example', data })
+  assert.match(html, /WORSENED/)
+  assert.match(html, /SEVERITY INCREASED/)
+  assert.match(html, /was medium/)
+})

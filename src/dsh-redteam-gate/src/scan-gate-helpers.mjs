@@ -12,11 +12,14 @@ export function normalizeDomain(host) {
   return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(h) ? h : null
 }
 
-// SCAN_SKIP_OWNERSHIP_GATE=true turns the DNS-TXT ownership gate OFF: the scanner then runs against any
-// http/https target without verifying ownership first. This removes an authorization safety control, so
-// it is for the operator's own authorized testing only. It is OFF unless the operator explicitly sets it,
-// never a default, so the shipped code stays fail-closed and cannot be pointed at third-party sites by
-// accident. Only an exact "true" (any case, trimmed) enables it.
-export function ownershipGateDisabled(env = (typeof process !== 'undefined' ? process.env : {})) {
-  return String(env.SCAN_SKIP_OWNERSHIP_GATE ?? '').trim().toLowerCase() === 'true'
-}
+// There is deliberately NO environment-variable escape hatch here. The ownership gate used to be
+// switchable with SCAN_SKIP_OWNERSHIP_GATE=true; that was removed on purpose (owner decision
+// 2026-11-25) because an env var is not an authorization control: any process, profile, or session
+// that inherited it could point active exploit probes at a domain nobody had proved they owned.
+//
+// The gate is now unconditionally fail-closed:
+//   - loopback lab hosts are allowed (no real third-party target is reachable there), and
+//   - every other domain must be ownership-verified by DNS TXT challenge.
+//
+// If a time-boxed bypass is ever needed for local development, it must not live in shipping code:
+// point the tool at a loopback lab host instead, which needs no verification at all.

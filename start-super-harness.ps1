@@ -33,16 +33,10 @@ if (Test-Path $envFile) {
         if (-not $env:DATABASE_URL -and $line -match '^\s*DATABASE_URL\s*=\s*(.+?)\s*$') {
             $env:DATABASE_URL = $Matches[1]
         }
-        if (-not $env:SCAN_SKIP_OWNERSHIP_GATE -and $line -match '^\s*SCAN_SKIP_OWNERSHIP_GATE\s*=\s*(.+?)\s*$') {
-            $env:SCAN_SKIP_OWNERSHIP_GATE = $Matches[1]
-        }
-        # Engine-side overrides (VibeScan activeProbeGate.ts): let the deep tier run without a DB verification row.
-        if (-not $env:ALLOW_UNVERIFIED_ACTIVE_PROBES -and $line -match '^\s*ALLOW_UNVERIFIED_ACTIVE_PROBES\s*=\s*(.+?)\s*$') {
-            $env:ALLOW_UNVERIFIED_ACTIVE_PROBES = $Matches[1]
-        }
-        if (-not $env:DEV_SKIP_DOMAIN_VERIFICATION -and $line -match '^\s*DEV_SKIP_DOMAIN_VERIFICATION\s*=\s*(.+?)\s*$') {
-            $env:DEV_SKIP_DOMAIN_VERIFICATION = $Matches[1]
-        }
+        # Deliberately NOT propagated: SCAN_SKIP_OWNERSHIP_GATE, ALLOW_UNVERIFIED_ACTIVE_PROBES and
+        # DEV_SKIP_DOMAIN_VERIFICATION. The ownership gate is a hard, non-configurable control now
+        # (owner decision 2026-11-25); a launcher that exported a bypass would quietly re-open it for
+        # every session started from this folder. Loopback lab hosts need no verification at all.
     }
 }
 # No NODE_OPTIONS here: the harness already starts under tsx (pnpm dsh = node --import tsx/esm), which
@@ -51,10 +45,7 @@ if (Test-Path $envFile) {
 if (-not $env:DATABASE_URL) {
     Write-Host '[warn] DATABASE_URL is not set in .env - webapp_scan will fail until it points at a migrated Postgres database.'
 }
-if ($env:SCAN_SKIP_OWNERSHIP_GATE -eq 'true') {
-    Write-Host '[warn] SCAN_SKIP_OWNERSHIP_GATE=true - the domain ownership gate is OFF. The scanner will run active'
-    Write-Host '       probes against ANY target with no DNS verification. Use only on targets you are authorized to test.'
-}
+# No ownership-gate bypass is honored or advertised: it does not exist in this build.
 
 # --- first-run setup -----------------------------------------------------------
 $setupDone = Join-Path $Root '.setup-done'

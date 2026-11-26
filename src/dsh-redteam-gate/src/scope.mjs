@@ -10,8 +10,10 @@
 //   - A shell command that invokes an active tool is checked on EVERY host it names, so an extra
 //     `curl https://evil.example` in the same command is also denied.
 //   - Everything else (passive tools, file reads, ordinary shell) is allowed.
-
-import { ownershipGateDisabled } from './scan-gate-helpers.mjs';
+//
+// There is no bypass: no environment variable, config value, or session flag loosens this. The
+// former SCAN_SKIP_OWNERSHIP_GATE escape hatch was removed (owner decision 2026-11-25) because an
+// inherited env var could silently authorize active probes against domains nobody had verified.
 
 export const LAB_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
@@ -123,10 +125,6 @@ export async function decideScope(exec, gate) {
   } else {
     return { kind: 'allow' };
   }
-
-  // Operator bypass: with the ownership gate switched off, every target is allowed without verification.
-  // Off unless SCAN_SKIP_OWNERSHIP_GATE=true is explicitly set (see scan-gate-helpers.mjs).
-  if (ownershipGateDisabled()) return { kind: 'allow' };
 
   for (const host of hosts) {
     if (isLoopback(host)) continue;
