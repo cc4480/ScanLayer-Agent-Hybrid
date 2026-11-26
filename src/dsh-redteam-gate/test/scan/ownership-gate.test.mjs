@@ -120,3 +120,19 @@ test('the packet spy is not vacuous: it records a connection attempt when one is
   await new Promise((resolve) => { const s = net.connect({ host: '203.0.113.9', port: 9, timeout: 200 }); s.on('error', resolve); s.on('timeout', () => { s.destroy(); resolve() }); s.on('connect', () => { s.destroy(); resolve() }) })
   assert.ok(seenIp.some((x) => x.startsWith('connect:')), `ip spy saw: ${seenIp.join(', ')}`)
 })
+
+test('domain verification tools: start issues a challenge, check refuses until the record is published', async () => {
+  const { domainVerifyStartHandler, domainVerifyCheckHandler } = await import('../../src/scan-handlers.mjs')
+  let published = []
+  const verifier = new LocalDomainVerifier({
+    storeFile: storeFile('tools'),
+    resolveTxt: async () => published,
+  })
+  const started = JSON.parse(await domainVerifyStartHandler({ domain: 'Mine.Example' }, verifier))
+  assert.equal(started.status, 'challenge_issued')
+  assert.equal(started.txt_record_name, '_secscan-challenge.mine.example')
+  assert.match(started.txt_record_value, /^secscan-verify-/)
+  assert.equal(JSON.parse(await domainVerifyCheckHandler({ domain: 'mine.example' }, verifier)).status, 'not_verified')
+  published = [[started.txt_record_value]]
+  assert.equal(JSON.parse(await domainVerifyCheckHandler({ domain: 'mine.example' }, verifier)).status, 'verified')
+})

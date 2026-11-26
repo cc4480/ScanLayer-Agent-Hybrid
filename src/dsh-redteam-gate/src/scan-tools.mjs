@@ -1,7 +1,7 @@
 // Harness tool wrappers for the scan handlers. The handlers hold the logic; this file only adds the
 // harness schema, the same way redteam-tools.mjs does for its tools.
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { webappScanHandler, seclayerScanHandler } from './scan-handlers.mjs'
+import { webappScanHandler, seclayerScanHandler, domainVerifyStartHandler, domainVerifyCheckHandler } from './scan-handlers.mjs'
 
 const TEXT = { schema: { type: 'string' } }
 
@@ -11,7 +11,7 @@ const TEXT = { schema: { type: 'string' } }
 export function scanTools(verifier) {
   const webappScan = defineTool({
     name: 'webapp_scan',
-    description: 'Run the full VibeScan website check catalog against one URL (verbatim engine). The target must be ownership-verified (DNS TXT) or a loopback lab host; otherwise nothing is sent. Returns the scan result with every finding and its evidence.',
+    description: 'Scan a website for security issues using the built-in VibeScan check catalog. No SecScan account or token is needed. The target domain must first be ownership-verified with domain_verify_start and domain_verify_check (DNS TXT); otherwise nothing is sent. Returns every finding with its evidence.',
     parameters: {
       url: { type: 'string', required: true, description: 'http(s) URL or bare hostname of the site to check.' },
       tier: { type: 'string', description: '"basic" (default) or "deep".' },
@@ -24,7 +24,7 @@ export function scanTools(verifier) {
 
   const seclayerScan = defineTool({
     name: 'seclayer_scan',
-    description: 'Run the full SecLayer diagnostics (verbatim engine: passive checks, then active probes for verified targets) against one URL. Unverified targets are refused with zero packets sent. The aggressive tier requires aggressive=true.',
+    description: 'Scan a website with the built-in SecLayer diagnostics (passive checks, then active probes for verified targets). No SecLayer account or token is needed. Unverified domains are refused with zero packets sent; verify with domain_verify_start and domain_verify_check first. aggressive=true enables the aggressive tier.',
     parameters: {
       url: { type: 'string', required: true, description: 'http(s) URL or bare hostname of the site to check.' },
       aggressive: { type: 'boolean', description: 'Enable the aggressive probe tier (default false).' },
@@ -35,5 +35,29 @@ export function scanTools(verifier) {
     },
   })
 
-  return [webappScan, seclayerScan]
+  const verifyStart = defineTool({
+    name: 'domain_verify_start',
+    description: 'Start ownership verification for a domain the user owns. Returns a DNS TXT record (name and value) to publish. No account or token is needed. Required before any scan of that domain.',
+    parameters: {
+      domain: { type: 'string', required: true, description: 'Bare domain the user owns, for example example.com.' },
+    },
+    output: TEXT,
+    async execute(args) {
+      return domainVerifyStartHandler(args, verifier)
+    },
+  })
+
+  const verifyCheck = defineTool({
+    name: 'domain_verify_check',
+    description: 'Check the published DNS TXT record for a domain. On a match the domain becomes verified for scanning. Call after the user has published the record from domain_verify_start.',
+    parameters: {
+      domain: { type: 'string', required: true, description: 'Bare domain the user owns.' },
+    },
+    output: TEXT,
+    async execute(args) {
+      return domainVerifyCheckHandler(args, verifier)
+    },
+  })
+
+  return [webappScan, seclayerScan, verifyStart, verifyCheck]
 }

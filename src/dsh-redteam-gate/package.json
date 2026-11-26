@@ -2,7 +2,7 @@
   "name": "dsh-redteam-gate",
   "version": "0.1.0",
   "private": true,
-  "description": "Verified-scope gate for native active tools (nmap, nuclei, ffuf, gobuster, nikto, sqlmap, Metasploit) and shell commands that invoke them. Lab hosts (loopback) allowed; other domains require SecScan verification; fail closed.",
+  "description": "Verified-scope gate for native active tools (nmap, nuclei, ffuf, gobuster, nikto, sqlmap, Metasploit), the VibeScan and SecLayer website scans, and shell commands that invoke them. Lab hosts (loopback) allowed; other domains require DNS TXT ownership verification (domain_verify_start / domain_verify_check); fail closed.",
   "type": "module",
   "main": "src/plugin.mjs",
   "exports": {
