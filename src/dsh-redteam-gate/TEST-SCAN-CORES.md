@@ -16,12 +16,17 @@ Copied suites under `src/engines/`:
 ## Environment (test-only; never commit values)
 
     DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/DBNAME   # VibeScan DB tests
+    BILLING_TEST_DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/DBNAME  # enables the real-Postgres suites
     SCAN_DEV_ALLOW_HOSTS=127.0.0.1,localhost                      # lab hosts for loopback probes
     ALLOW_PRIVATE_SCAN_TARGETS=true                               # VibeScan loopback probes only
 
-Apply the VibeScan schema once:
+Use a dedicated, empty test database. The integration suites write rows and expect to own the tables. Recreate it
+before a run, then apply the schema:
 
     npx tsx src/engines/vibescan-core/lib/db/src/migrate.ts
+
+The VibeScan config runs test files one at a time (`fileParallelism: false`), because the integration suites share
+one database.
 
 ## Commands
 
@@ -55,9 +60,20 @@ builds desktop and web targets too.
 - SecLayer core: 1013 pass, 0 fail, 6 skipped.
 - Gate suite (`npm test`): 213 pass, 0 fail, 2 skipped.
 
+## How the former httpbin tests now run
+
+- `monitorPulse.uptime.test.ts`: redirect behaviour runs against a local HTTP server with the scanner's private-target
+  allowance on. The metadata-address refusal runs with the default guard (allowance off), with the public first hop
+  stubbed for example.com. The guard itself is real on every hop.
+- `webhook.test.ts`: the destination check is the real guard. Delivery uses a stubbed transport for example.com, because
+  webhooks may only go to public https hosts, so no local server can receive a real delivery without weakening the guard.
+
+## Finding to decide
+
+With `ALLOW_PRIVATE_SCAN_TARGETS=true` the scan-target guard allows any address, including the cloud metadata address
+169.254.169.254, and a public host can redirect there. That is the intended self-host opt-in, but it is worth a decision
+before anyone deploys with the flag set.
+
 ## Known external failures
 
-- `monitorPulse.uptime.test.ts` ("refuses to follow a redirect to a private address") and
-  `webhook.test.ts` ("bounds the request so a hung endpoint cannot pin the worker"). Both depend on
-  httpbin.org behaviour that changed: `/redirect-to` now returns 403 and `/delay/15` returns 400.
-  The engine code is not at fault. Replace with local servers to make them deterministic.
+None.

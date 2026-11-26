@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { runPulse, summariseUptime, certDaysRemaining } from "./monitorPulse";
 
 describe("summariseUptime", () => {
@@ -90,64 +90,61 @@ describe("certDaysRemaining", () => {
  * failure is visible in the dashboard, which is why it gets a test rather than
  * a comment.
  */
-describe("runPulse — redirects (the real internet, httpbin.org)", () => {
-  // httpbin.org is a public service made for testing HTTP clients. These tests skip when it cannot be reached.
-  const ECHO = "https://httpbin.org";
-  let online = false;
+describe("runPulse — redirects (local lab server, opt-in on)", () => {
+  // A local HTTP server plays the monitored site. Pulses to loopback need the scanner's private-target allowance, which
+  // the scanner's own guard reads; it is set here for these tests only and restored after. The guard still runs on every
+  // hop, which is what these tests exercise: a public-looking first hop is not needed, because the guard checks each hop
+  // before it is sent.
+  let server: import("node:http").Server;
+  let base = "";
   const optOut = process.env["ALLOW_PRIVATE_SCAN_TARGETS"];
 
   beforeAll(async () => {
-    try { online = (await fetch(ECHO + "/status/200", { signal: AbortSignal.timeout(8_000) })).ok; } catch { online = false; }
+    const http = await import("node:http");
+    server = http.createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://lab.local");
+      const send = (status: number, headers: Record<string, string> = {}, body = "ok") => {
+        res.writeHead(status, { "content-type": "text/plain", ...headers });
+        res.end(body);
+      };
+      if (url.pathname.startsWith("/status/")) return send(Number(url.pathname.slice("/status/".length)));
+      if (url.pathname === "/to-metadata") return send(302, { location: "http://169.254.169.254/latest/meta-data/" });
+      if (url.pathname === "/loop") return send(302, { location: "/loop" });
+      if (url.pathname === "/to-final") return send(302, { location: "/final" });
+      if (url.pathname === "/final") return send(200, { "x-frame-options": "DENY" });
+      send(404);
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    base = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
   }, 15_000);
+  afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
-  // vitest.config.ts sets ALLOW_PRIVATE_SCAN_TARGETS=true for the whole suite, because almost every probe test drives the
-  // scanner at a loopback server. With it on the guard correctly permits private addresses, so these tests would pass
-  // whether the guard was called at all. Cleared here so the check is actually exercised.
-  beforeEach(() => { delete process.env["ALLOW_PRIVATE_SCAN_TARGETS"]; });
+  beforeEach(() => { process.env["ALLOW_PRIVATE_SCAN_TARGETS"] = "true"; });
   afterEach(() => {
     if (optOut === undefined) delete process.env["ALLOW_PRIVATE_SCAN_TARGETS"];
     else process.env["ALLOW_PRIVATE_SCAN_TARGETS"] = optOut;
   });
 
-  /** httpbin answers a 302 to `location`. */
-  const redirectTo = (location: string) => ECHO + "/redirect-to?url=" + encodeURIComponent(location) + "&status_code=302";
-
-  it("refuses to follow a redirect to a private address", async ({ skip }) => {
-    if (!online) skip();
-    const started = Date.now();
-    const result = await runPulse(redirectTo("http://169.254.169.254/latest/meta-data/"));
-    // The public first hop was fetched; the metadata address never was (it would have held the check for its full timeout).
-    expect(result.reachable).toBe(false);
-    expect(result.failureReason).toMatch(/^Blocked:/);
-    expect(result.finalUrl).toContain("169.254.169.254");
-    expect(Date.now() - started).toBeLessThan(8_000);
-  }, 20_000);
-
-  it("gives up rather than following a redirect chain forever", async ({ skip }) => {
-    if (!online) skip();
-    // httpbin answers this address with a chain of a thousand redirects; the check follows only a handful.
-    const result = await runPulse(ECHO + "/redirect/1000");
+  it("gives up rather than following a redirect chain forever", async () => {
+    const result = await runPulse(`${base}/loop`);
     expect(result.reachable).toBe(false);
     expect(result.failureReason).toMatch(/redirects/);
   }, 40_000);
 
-  it("records the final URL after a legitimate redirect, not the one asked for", async ({ skip }) => {
-    if (!online) skip();
+  it("records the final URL after a legitimate redirect, not the one asked for", async () => {
     // Monitored URLs redirect to www or to HTTPS constantly, so refusing redirects outright (the webhook module's approach)
     // would break the common case. The final URL is what drift compares against.
-    const final = ECHO + "/response-headers?X-Frame-Options=DENY";
-    const result = await runPulse(redirectTo(final));
+    const result = await runPulse(`${base}/to-final`);
     expect(result.reachable).toBe(true);
     expect(result.httpStatus).toBe(200);
-    expect(result.finalUrl).toBe(final);
+    expect(result.finalUrl).toBe(`${base}/final`);
     expect(result.snapshot?.present).toContain("x-frame-options");
   }, 20_000);
 
-  it("treats a 5xx as unreachable and a 404 as reachable", async ({ skip }) => {
-    if (!online) skip();
+  it("treats a 5xx as unreachable and a 404 as reachable", async () => {
     // Availability is "is the site serving", not "does this path exist".
     for (const [status, reachable] of [[503, false], [404, true], [200, true]] as const) {
-      const result = await runPulse(ECHO + "/status/" + status);
+      const result = await runPulse(`${base}/status/${status}`);
       expect(result.reachable, "HTTP " + status).toBe(reachable);
     }
   }, 30_000);
@@ -158,4 +155,35 @@ describe("runPulse — redirects (the real internet, httpbin.org)", () => {
     expect(result.failureReason).toBeTruthy();
     expect(result.snapshot).toBeNull();
   });
+});
+
+describe("runPulse — redirect to the metadata address, default guard", () => {
+  // Default configuration: ALLOW_PRIVATE_SCAN_TARGETS unset. The guard must refuse the cloud metadata address when a public
+  // host redirects to it. The first hop must be public to get past the first check, and it cannot be a local server, so the
+  // transport is stubbed for example.com only; the guard itself is the real one and runs on every hop.
+  const realFetch = globalThis.fetch;
+  const sent: string[] = [];
+  const optOut = process.env["ALLOW_PRIVATE_SCAN_TARGETS"];
+  beforeAll(() => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.startsWith("https://example.com/")) return realFetch(input, init);
+      sent.push(url);
+      return new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data/" } });
+    }) as typeof fetch;
+  });
+  afterAll(() => { globalThis.fetch = realFetch; });
+  beforeEach(() => { delete process.env["ALLOW_PRIVATE_SCAN_TARGETS"]; sent.length = 0; });
+  afterEach(() => {
+    if (optOut === undefined) delete process.env["ALLOW_PRIVATE_SCAN_TARGETS"];
+    else process.env["ALLOW_PRIVATE_SCAN_TARGETS"] = optOut;
+  });
+
+  it("refuses to follow a public redirect to the metadata address, and never sends to it", async () => {
+    const result = await runPulse("https://example.com/to-metadata");
+    expect(result.reachable).toBe(false);
+    expect(result.failureReason).toMatch(/^Blocked:/);
+    expect(result.finalUrl).toContain("169.254.169.254");
+    expect(sent).toEqual(["https://example.com/to-metadata"]);
+  }, 20_000);
 });

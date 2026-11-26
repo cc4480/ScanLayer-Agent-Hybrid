@@ -17,5 +17,7 @@ export default defineConfig({
     include: ['src/engines/vibescan-core/**/*.test.ts'],
     environment: 'node',
     testTimeout: 30000,
+    // Integration suites share one database; running files in sequence avoids cross-file row and lock conflicts.
+    fileParallelism: false,
   },
 })

@@ -17,21 +17,40 @@ const { fireWebhook } = await import("./webhook");
  * like a delivered webhook.
  *
  * Everything here is real. fireWebhook reports what happened (delivered, skipped, blocked, failed, and how many requests
- * it sent). A refusal is shown by that outcome and, where a listener can exist, by the listener never being contacted.
- * Deliveries go over the real internet to httpbin.org, a public service made for testing HTTP clients; those tests skip
- * when it cannot be reached. A webhook can never be delivered to this machine: the guard refuses private addresses
- * whatever ALLOW_PRIVATE_SCAN_TARGETS says, which is the point.
+ * it sent). The destination check is the real guard (a DNS lookup of a public name, then the address rules).
+ *
+ * The transport is stubbed. A webhook can only go to a public https host, and the guard refuses this machine whatever
+ * ALLOW_PRIVATE_SCAN_TARGETS says, so no local server can receive a real delivery without weakening that guard. The stub
+ * stands in for the network only: it answers the same paths httpbin used to, follows fetch's own rules for redirect:"error"
+ * and holds a request open until the AbortSignal fires, so the request's own time limit is exercised for real.
  */
 
-const ECHO = "https://httpbin.org";
-let online = false;
-beforeAll(async () => {
-  try {
-    online = (await fetch(`${ECHO}/status/200`, { method: "POST", signal: AbortSignal.timeout(8_000) })).ok;
-  } catch {
-    online = false;
-  }
-}, 15_000);
+const ECHO = "https://example.com";
+
+/** Replaces global fetch for requests to ECHO. Everything else goes to the real fetch. */
+const realFetch = globalThis.fetch;
+const transportCalls: Array<{ url: string; redirect?: string }> = [];
+beforeAll(() => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (!url.startsWith(ECHO)) return realFetch(input, init);
+    transportCalls.push({ url, redirect: init?.redirect });
+    const path = url.slice(ECHO.length).split("?")[0];
+    if (path.startsWith("/delay")) {
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })));
+      });
+    }
+    if (path === "/redirect-to") {
+      // fetch with redirect:"error" rejects on any 3xx, as the real one does.
+      if (init?.redirect === "error") throw new TypeError("fetch failed: redirect mode is set to error");
+      return new Response(null, { status: 302, headers: { location: `${ECHO}/post` } });
+    }
+    const status = path.startsWith("/status/") ? Number(path.slice("/status/".length)) : 200;
+    return new Response("ok", { status });
+  }) as typeof fetch;
+});
+afterAll(() => { globalThis.fetch = realFetch; });
 
 async function fire(url: string, notify: { userId: string; severity?: string } = { userId: "user-1" }, event: Parameters<typeof fireWebhook>[1] = "scan_complete") {
   return fireWebhook(url, event, "https://example.com", "sub-1", { grade: "A" }, notify);
@@ -81,7 +100,7 @@ describe("fireWebhook: hosts the guard must refuse", () => {
   it("refuses plain http even on a public host", async () => {
     // A webhook URL often carries a secret token in its path or query. Over http that token leaves in cleartext, so this
     // is refused on transport grounds rather than host grounds.
-    expect(await fire("http://httpbin.org/post")).toEqual(BLOCKED);
+    expect(await fire("http://example.com/post")).toEqual(BLOCKED);
   });
 
   it("refuses a URL that will not parse", async () => {
@@ -91,33 +110,31 @@ describe("fireWebhook: hosts the guard must refuse", () => {
   });
 });
 
-describe("fireWebhook: what it does deliver (the real internet, httpbin.org)", () => {
-  it("posts to a legitimate https endpoint", async ({ skip }) => {
-    if (!online) skip();
+describe("fireWebhook: what it does deliver (stubbed transport, real guard)", () => {
+  it("posts to a legitimate https endpoint", async () => {
     // The control that makes every refusal above mean something: if nothing were ever delivered, all of those would
     // pass while proving nothing.
+    transportCalls.length = 0;
     expect(await fire(`${ECHO}/post`)).toEqual({ status: "delivered", attempts: 1 });
+    expect(transportCalls.map((c) => c.url)).toEqual([`${ECHO}/post`]);
   });
 
-  it("never follows a redirect", async ({ skip }) => {
-    if (!online) skip();
+  it("never follows a redirect", async () => {
     // A permitted host that answers 302 to somewhere else is the standard way around a hostname allowlist. Refusing
     // redirects outright closes it more firmly than re-checking each hop: followed, this would be 'delivered'.
     const out = await fire(`${ECHO}/redirect-to?url=${encodeURIComponent(`${ECHO}/post`)}&status_code=302`);
     expect(out).toEqual({ status: "failed", attempts: 1 });
   });
 
-  it("retries once on a non-2xx, then gives up quietly", async ({ skip }) => {
-    if (!online) skip();
+  it("retries once on a non-2xx, then gives up quietly", async () => {
     const started = Date.now();
     const out = await fire(`${ECHO}/status/500`);
     expect(out).toEqual({ status: "failed", attempts: 2 });
     expect(Date.now() - started).toBeGreaterThanOrEqual(1_000); // the pause between the two attempts
   }, 30_000);
 
-  it("bounds the request so a hung endpoint cannot pin the worker, and a failure never reaches the caller", async ({ skip }) => {
-    if (!online) skip();
-    // httpbin holds this response for 15 seconds; the request's own limit is 10. Delivery runs inside the scan pipeline,
+  it("bounds the request so a hung endpoint cannot pin the worker, and a failure never reaches the caller", async () => {
+    // The endpoint holds the request open; the request's own limit is 10 seconds. Delivery runs inside the scan pipeline,
     // so a webhook nobody can reach must not turn a completed scan into a failed one: it comes back as an outcome.
     const started = Date.now();
     const out = await fire(`${ECHO}/delay/15`);
@@ -155,14 +172,12 @@ describe.skipIf(!TEST_DATABASE_URL)("fireWebhook: notification preferences (real
     expect(await fire(`${ECHO}/post`, { userId, severity: "low" }, "cve_alert")).toEqual({ status: "skipped_preferences", attempts: 0 });
   });
 
-  it("still delivers the kinds they kept", async ({ skip }) => {
-    if (!online) skip();
+  it("still delivers the kinds they kept", async () => {
     const userId = await userWith({ notifyScanCompleteOptedOut: true });
     expect(await fire(`${ECHO}/post`, { userId, severity: "high" }, "cve_alert")).toEqual({ status: "delivered", attempts: 1 });
   });
 
-  it("ignores the EMAIL opt-out: that switch is not about webhooks", async ({ skip }) => {
-    if (!online) skip();
+  it("ignores the EMAIL opt-out: that switch is not about webhooks", async () => {
     // One-click List-Unsubscribe sets alertEmailsOptedOut. If that also killed webhooks, a user tidying their inbox would
     // silently break their team's Slack integration, and nothing would say why.
     const userId = await userWith({ alertEmailsOptedOut: true });
