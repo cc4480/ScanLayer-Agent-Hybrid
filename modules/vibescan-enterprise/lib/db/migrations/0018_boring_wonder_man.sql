@@ -1,1 +1,0 @@
-ALTER TABLE "api_tokens" ADD COLUMN "scope" text DEFAULT 'mcp' NOT NULL;

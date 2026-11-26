@@ -39,8 +39,8 @@ export function redteamTools(verifier) {
     },
     output: TEXT,
     async execute(args) {
-      const { scanTarget } = await import('./engines/secscan-network/adapter.mjs')
-      return asText(await scanTarget(verifier, String(args.url)))
+      const { fetchTarget } = await import('./scan-adapters.mjs')
+      return asText(await fetchTarget(verifier, String(args.url)))
     },
   })
 
@@ -53,8 +53,8 @@ export function redteamTools(verifier) {
     },
     output: TEXT,
     async execute(args) {
-      const { runActiveProbe } = await import('./engines/seclayer-network/adapter.mjs')
-      const result = await runActiveProbe(String(args.probe), { url: String(args.url), fuzzHeaders: {} }, verifier)
+      const { runSeclayerProbe } = await import('./scan-adapters.mjs')
+      const result = await runSeclayerProbe(verifier, String(args.probe), { url: String(args.url), fuzzHeaders: {} })
       return asText(result)
     },
   })

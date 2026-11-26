@@ -10,7 +10,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { apply, Config } from '../src/plugin.mjs'
-import { assertTargetIsScannable } from '../src/engines/seclayer-network/server/ssrf.ts'
+import { assertScanTargetSafe } from '../src/engines/seclayer-core/server/ssrf.ts'
 
 /** A ctx that records registrations but does nothing else. */
 function fakeCtx() {
@@ -41,7 +41,7 @@ async function withAllowlist(value, fn) {
 
 const scannable = async (url) => {
   try {
-    await assertTargetIsScannable(new URL(url))
+    await assertScanTargetSafe(url)
     return true
   } catch {
     return false

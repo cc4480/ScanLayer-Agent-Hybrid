@@ -1,1 +1,0 @@
-ALTER TABLE "scans" ADD COLUMN "origin" text DEFAULT 'user' NOT NULL;

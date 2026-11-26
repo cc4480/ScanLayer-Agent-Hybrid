@@ -1,1 +1,0 @@
-ALTER TABLE "scans" ADD COLUMN "github_repo_url" text;

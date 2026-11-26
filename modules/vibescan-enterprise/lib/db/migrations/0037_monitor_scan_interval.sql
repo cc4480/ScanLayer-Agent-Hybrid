@@ -1,1 +1,0 @@
-ALTER TABLE "monitor_subscriptions" ADD COLUMN "scan_interval_days" integer;

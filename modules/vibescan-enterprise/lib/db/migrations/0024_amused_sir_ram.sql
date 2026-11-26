@@ -1,1 +1,0 @@
-ALTER TABLE "scans" ADD COLUMN "auto_second_account" boolean DEFAULT false NOT NULL;

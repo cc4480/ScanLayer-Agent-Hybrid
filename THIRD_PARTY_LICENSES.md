@@ -1,19 +1,19 @@
-# Third-party and module licenses
+# Third-party and component licenses
 
 This repository combines code under different licenses. Each part keeps its own license.
 
 | Path | License | Notes |
 |---|---|---|
 | `LICENSE` (root, everything not listed below) | MIT | Covers the deepseek-super base. |
-| `modules/vibescan-enterprise/` | Apache License 2.0 | See `modules/vibescan-enterprise/LICENSE`. Keep that file with any copy. |
-| `modules/seclayer/` | Proprietary, all rights reserved | See `modules/seclayer/LICENSE`. Not licensed for reuse. |
+| `src/dsh-redteam-gate/src/engines/vibescan-core/` | Apache License 2.0 | Verbatim VibeScan scan core. See `LICENSE` in that folder. Keep it with any copy. |
+| `src/dsh-redteam-gate/src/engines/seclayer-core/` | Proprietary, all rights reserved | Verbatim SecLayer scan core. See `LICENSE` in that folder. Not licensed for reuse. |
 | `src/deepseek-harness/` | MIT (Copyright 2026 DeepSeek) | See `src/deepseek-harness/LICENSE`. |
 | `src/deepseek-harness/native/system/` and its `packages/*` | BSD-3-Clause | See the LICENSE files in those folders. |
-| `src/deepseek-harness/packages/boot/hmr/` | See folder LICENSE | |
-| `src/deepseek-harness/packages/experimental/**` | See each folder's LICENSE files | Includes `LICENSE-OAR`, `LICENSE.cua-driver`, `LICENSE.computer-use-icon`. |
-| `src/deepseek-harness/packages/client/ui-sidebar-documentpreview/licenses/` | FortuneSheet license | See `FortuneSheet.txt` in that folder. |
+| `src/deepseek-harness/packages/experimental/**` | See each folder's LICENSE files | |
+| `src/deepseek-harness/packages/client/ui-sidebar-documentpreview/licenses/` | FortuneSheet license | See `FortuneSheet.txt`. |
 
 ## Open items
 
-- `modules/seclayer/mcp-server/package.json` declares `"license": "MIT"`. This conflicts with the proprietary `modules/seclayer/LICENSE`. Change one of them. The `package.json` was left as it is.
-- Copyright holder is listed as "SecLayer Hybrid contributors". Replace with the legal name you want to use.
+- The copyright holder line is "SecLayer Hybrid contributors" in the root `LICENSE`. Replace it with the legal name you want to use.
+- Whether the SecLayer core may be published at all is still open. The design doc says the product is closed source, but the hackathon requires a public repository with a license.
+- The original `modules/` folders were removed in this repo. Their history is in git and in the source repositories.
