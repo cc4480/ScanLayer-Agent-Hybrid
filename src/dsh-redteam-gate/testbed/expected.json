@@ -31,6 +31,14 @@
     { "match": "Outdated Library Vulnerability Detected \\(Lodash\\)", "bug": "lodash 4.17.15 named in a loaded script URL" },
     { "match": "Open Directory Listing Enabled", "bug": "the third target's root is an auto-generated index" },
     { "match": "Verbose Server Framework Signature Leaked", "bug": "X-Powered-By names Express and its version" },
+
+    { "match": "Environment File Exposed \\(\\.env\\)", "bug": "SecScan engine: .env served with secrets" },
+    { "match": "Backup Archive Exposed", "bug": "SecScan engine: /backup.zip served" },
+    { "match": "PHP Info Page Exposed", "bug": "SecScan engine: /phpinfo.php served" },
+    { "match": "Verbose Error Pages Expose Internal Application Details", "bug": "SecScan engine: error pages leak stack traces" },
+    { "match": "Directory Listing Enabled", "bug": "SecScan engine: generated index at a target root" },
+    { "match": "Session Cookie Missing HttpOnly Flag", "bug": "SecScan engine: session cookie without HttpOnly" },
+    { "match": "Permissive CORS Policy \\(Wildcard Origin\\)", "bug": "SecScan engine: Origin reflected with credentials" },
     { "match": "discovered parameter .q. on /vuln/search", "bug": "SQLi/XSS on the crawled /vuln/search parameter" },
     { "match": "discovered parameter .page. on /vuln/include", "bug": "LFI on the crawled /vuln/include parameter" },
     { "match": "discovered parameter .name. on /vuln/file", "bug": "path traversal on the crawled /vuln/file parameter" }

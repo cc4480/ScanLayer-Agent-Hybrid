@@ -42,11 +42,33 @@ Running it found six real defects in the engine, all fixed:
 6. The `ssti`/`pathTraversal` conversions initially mangled a template literal
    (`${name}` evaluated as a variable). Caught by running the probes.
 
+## Both engines, not one
+
+The harness runs the two apps' **own code**, imported directly — nothing about
+either scanner is reimplemented here:
+
+| App | Engine entry point | How it runs |
+|---|---|---|
+| SecLayer | `engines/seclayer-core/server/scanner.ts` → `runDiagnostics` | aggressive tier, OOB collaborator on `PORT+2` |
+| SecScan | `engines/vibescan-core/.../lib/scanner.ts` → `runScan` | deep tier |
+
+SecScan has its own SSRF guard and refuses private/local targets, so the harness
+sets its documented self-hoster opt-out `ALLOW_PRIVATE_SCAN_TARGETS=true` — safe
+here because every target is 127.0.0.1. Without it SecScan cannot scan a lab
+target at all, which is why it went unused in the first passes.
+
+Each engine covers checks the other does not. SecLayer owns the active exploit
+proofs (SQLi, XSS, cmd injection, SSRF/XXE, SSTI, LFI, NoSQL, CORS, host header,
+price tampering, webhook bypass, prototype pollution) and the OOB checks; SecScan
+owns the exposure/passive catalog (`.env`, backup archive, phpinfo, git config,
+package manifest, verbose error pages, cookie flags, CORS wildcard, directory
+listing) and is markedly faster (9.4s vs 10-26s per target).
+
 ## Current result
 
-33 detection checks, 0 missed; 0 false positives on the controls. Scans: main app
-~10s, raw-socket CRLF proxy ~26s, plain-file listing server ~26s. The engine
-reports ~131 findings across the three targets (minus duplicates — see below).
+40 detection checks, 0 missed; 0 false positives on the controls, across both
+engines. SecLayer: main app ~10s, CRLF proxy ~26s, listing server ~26s.
+SecScan: ~9s on the main app.
 
 ## Known gaps in this testbed
 

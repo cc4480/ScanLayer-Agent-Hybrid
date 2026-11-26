@@ -20,6 +20,11 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'development'
 const LOCAL = [PORT, PORT + 1, PORT + 2, PORT + 3].map((p) => `127.0.0.1:${p}`).join(',')
 process.env.SCAN_DEV_ALLOW_HOSTS = `${process.env.SCAN_DEV_ALLOW_HOSTS ? process.env.SCAN_DEV_ALLOW_HOSTS + ',' : ''}${LOCAL}`
 
+// SecScan's own SSRF guard refuses private/local targets. Its documented
+// self-hoster opt-out is what lets it scan a lab target at all; it is set here
+// only because every target in this harness is 127.0.0.1.
+process.env.ALLOW_PRIVATE_SCAN_TARGETS = 'true'
+
 const check = process.argv.includes('--check')
 
 function startApp() {
@@ -42,7 +47,7 @@ async function waitFor(url, tries = 60) {
   throw new Error(`testbed did not start at ${url}`)
 }
 
-const { scanSeclayer } = await import('../src/scan-adapters.mjs')
+const { scanSeclayer, scanWebapp } = await import('../src/scan-adapters.mjs')
 const { gateScanTarget } = await import('../src/scan-gate.mjs')
 const { compileStaticFindings } = await import('../src/engines/seclayer-core/server/scanner.ts')
 const { createOobCollaborator } = await import('../src/engines/seclayer-core/server/oob.ts')
@@ -78,6 +83,7 @@ const TARGETS = process.env.TESTBED_ONE
   : [`http://127.0.0.1:${PORT}`, `http://127.0.0.1:${PORT + 1}`, `http://127.0.0.1:${PORT + 3}`]
 const diags = []
 const ticker = []
+const vibescanResults = []
 try {
   await waitFor(`${URL_BASE}/`)
   for (const target of TARGETS) {
@@ -94,13 +100,34 @@ try {
     }))
     console.error(`[timing] ${gate.host} scanned in ${((Date.now() - started) / 1000).toFixed(1)}s`)
   }
+
+  // SecScan's engine (vibescan-core) — the second app's real code, against the
+  // same plants. Must run before the app is killed.
+  {
+    const target = TARGETS[0]
+    const gate = await gateScanTarget(target, { isVerified: async () => false })
+    if (gate.ok) {
+      const started = Date.now()
+      try {
+        const res = await scanWebapp({ isVerified: async () => false }, gate.url, 'deep')
+        vibescanResults.push({ target: gate.host, result: res })
+        console.error(`[timing] vibescan ${gate.host} ${((Date.now() - started) / 1000).toFixed(1)}s`)
+      } catch (e) {
+        console.error('[vibescan] failed:', e.message)
+      }
+    }
+  }
 } finally {
   app.kill()
 }
 
 const rows = []
-for (const diag of diags) {
-  const compiled = compileStaticFindings(diag)
+for (const v of vibescanResults) {
+  for (const f of v.result?.vulnerabilities ?? []) {
+    rows.push({ src: 'vibescan', name: f.name, sev: f.severity, conf: f.confidence ?? '' })
+  }
+}
+for (const diag of diags) {  const compiled = compileStaticFindings(diag)
   for (const f of (compiled.findings ?? []).filter((f) => !f.isFalsePositive)) rows.push({ src: 'scored', name: f.title, sev: f.severity, conf: f.confidence ?? '' })
   for (const f of diag.redTeamFindings ?? []) rows.push({ src: 'redteam', name: f.testName, sev: f.severity, conf: f.confidence ?? '' })
   for (const f of diag.apiSecFindings ?? []) rows.push({ src: 'api', name: f.testName, sev: f.severity, conf: f.confidence ?? '' })
