@@ -1,7 +1,9 @@
-# Loopback port override for SecScan's web tier (its own compose already binds
-# 127.0.0.1:${APP_PORT:-8090}:8080). APP_PORT is set to 4701 by bootstrap.ps1,
-# so this file only documents the contract; it changes nothing by itself.
+﻿# Loopback-only port override for SecScan's web tier.
+#
+# Its own compose binds 127.0.0.1:${APP_PORT:-8090}:8080, and bootstrap.ps1 sets
+# APP_PORT=4701. `!override` replaces the list rather than appending to it, so the
+# published mapping is exactly one loopback port.
 services:
   web:
-    ports:
+    ports: !override
       - '127.0.0.1:4701:8080'

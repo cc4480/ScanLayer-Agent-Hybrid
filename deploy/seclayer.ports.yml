@@ -1,6 +1,10 @@
-# Loopback port overrides. The apps' own compose files publish 3000 / 8090;
-# these pin the ports the DSH bundles and panels point at, on loopback only.
+﻿# Loopback-only port overrides.
+#
+# The apps' own compose files publish 3000 / 8090. Compose MERGES `ports:` lists,
+# so adding a mapping does not replace the original — both get published. `!override`
+# replaces the list, which is what we need: this is an admin surface and must not
+# be reachable from the LAN.
 services:
   seclayer:
-    ports:
+    ports: !override
       - '127.0.0.1:4700:3000'
