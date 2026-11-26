@@ -1,0 +1,285 @@
+// Real-Postgres integration test for the adapter. Runs ONLY when DATABASE_URL
+// is set (so the normal suite on SQLite is unaffected); apply server/pg/schema.sql
+// to that database first. Exercises the full adapter breadth against a live
+// Postgres and cleans up every row it creates.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import pg from "pg";
+import { PostgresDb } from "./pgDb.js";
+import type { PgPool } from "./pgClient.js";
+
+const DATABASE_URL = process.env.DATABASE_URL;
+// Mirror createDb()'s handling in server/db.ts: managed Postgres requires TLS,
+// a local one has none. Hardcoding ssl here made this suite impossible to run
+// against a Postgres container — every test died on "The server does not
+// support SSL connections" — so the adapter's own integration coverage could
+// only ever run against a remote database.
+const isLocal = /localhost|127\.0\.0\.1/.test(DATABASE_URL || "");
+const SSL = isLocal ? undefined : { rejectUnauthorized: false };
+
+test("PostgresDb: full adapter breadth against a real Postgres", { skip: !DATABASE_URL }, async () => {
+  const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: SSL });
+  const db = new PostgresDb(pool as unknown as PgPool);
+  const email = `pgint+${Date.now()}@seclayer.test`;
+  let userId = "";
+  try {
+    // Users + credits (transactions)
+    const u = await db.getOrCreateUser(email);
+    userId = u.id;
+    assert.equal(u.credits, 5);
+    assert.ok(u.createdAt, "camelCase createdAt survives pg lowercasing");
+    assert.equal(u.emailDigest, false);
+    assert.equal((await db.getOrCreateUser(email)).id, u.id, "idempotent");
+    assert.equal((await db.addCredits(u.id, 10, "purchase", "sess_" + Date.now())).credits, 15);
+    assert.equal(await db.deductCredits(u.id, 1), true);
+    assert.equal((await db.getUser(u.id))!.credits, 14);
+    assert.ok((await db.listTransactions(u.id)).length >= 2);
+
+    // User settings
+    assert.equal((await db.setUserWebhook(u.id, "https://hook.test"))!.notifyWebhook, "https://hook.test");
+    assert.equal((await db.setEmailDigest(u.id, true))!.emailDigest, true);
+    assert.ok((await db.listDigestRecipients()).some((r) => r.id === u.id));
+    await db.setUserDeepseekKey(u.id, "  sk-abc  ");
+    assert.equal(await db.getUserDeepseekKey(u.id), "sk-abc", "trimmed BYOK key");
+
+    // Scans: create -> update (JSON round-trip) -> share token -> previous/latest
+    const scan = await db.createScan(u.id, "https://example.test");
+    assert.equal(scan.status, "queued");
+    const findings = [{ id: "f1", title: "X", severity: "high", confidence: "high", category: "RED_TEAM", description: "d", fix: "f" } as any];
+    const updated = await db.updateScan(scan.id, { status: "complete", score: 42, severity: "high", findings, completedAt: new Date().toISOString() });
+    assert.equal(updated.status, "complete");
+    assert.equal(updated.score, 42);
+    assert.deepEqual(updated.findings?.map((f: any) => f.title), ["X"], "findings JSON round-trips through text column");
+    const share = await db.createShareToken(u.id, scan.id);
+    assert.ok(share && share.startsWith("shr_"));
+    assert.equal((await db.getScanByShareToken(share!))!.id, scan.id);
+    assert.equal(await db.createShareToken(u.id, scan.id), share, "share token is idempotent");
+    assert.equal(await db.revokeShareToken(u.id, scan.id), true);
+    assert.equal(await db.getScanByShareToken(share!), undefined, "revoked token no longer resolves");
+    assert.ok((await db.listScans(u.id)).length >= 1);
+
+    // cancelScan refunds a credit IN THE SAME TRANSACTION (a fresh queued scan).
+    const before = (await db.getUser(u.id))!.credits;
+    const q2 = await db.createScan(u.id, "https://cancel.test");
+    const canceled = await db.cancelScan(u.id, q2.id);
+    assert.equal(canceled!.status, "canceled");
+    assert.equal((await db.getUser(u.id))!.credits, before + 1, "credit refunded atomically on cancel");
+
+    // recoverStuckScans: a queued scan is failed + refunded on recovery.
+    const stuck = await db.createScan(u.id, "https://stuck.test");
+    const creditsBeforeRecover = (await db.getUser(u.id))!.credits;
+    const recovered = await db.recoverStuckScans();
+    assert.ok(recovered >= 1);
+    assert.equal((await db.getScan(stuck.id))!.status, "failed");
+    assert.ok((await db.getUser(u.id))!.credits >= creditsBeforeRecover + 1);
+
+    // API keys
+    const { apiKey, rawKey } = await db.generateApiKey(u.id);
+    assert.ok(rawKey.startsWith("sl_live_"));
+    assert.equal((await db.validateApiKey(rawKey))!.id, u.id);
+    assert.ok((await db.listApiKeys(u.id)).some((k) => k.id === apiKey.id));
+    assert.equal(await db.revokeApiKey(u.id, apiKey.id), true);
+    assert.equal(await db.validateApiKey(rawKey), null, "revoked key rejected");
+
+    // Domain verification
+    await db.startDomainVerification(u.id, "example.test", "vtok");
+    assert.equal(await db.isDomainVerified(u.id, "example.test"), false);
+    await db.markDomainVerified(u.id, "example.test", "dns");
+    assert.equal(await db.isDomainVerified(u.id, "example.test"), true);
+
+    // Suppressions + read-model
+    await db.addSuppression(u.id, "https://example.test", "X", "false positive");
+    const withSupp = await db.getScanWithSuppressedFindings(updated);
+    assert.equal(withSupp.findings?.find((f: any) => f.title === "X")?.isFalsePositive, true);
+
+    // Monitored targets (schedule)
+    const mon = await db.addMonitoredTarget(u.id, "https://mon.test", { frequencyDays: 1, hour: 9, minute: 0 });
+    assert.ok(mon.id);
+    assert.equal(await db.setMonitoredPaused(u.id, mon.id, true), true);
+    assert.equal(await db.removeMonitoredTarget(u.id, mon.id), true);
+
+    // Nmap
+    const nmap = await db.createNmapScan(u.id, "https://nmap.test");
+    assert.equal(nmap.status, "queued");
+    assert.equal(await db.hasInFlightNmapScan(u.id), true);
+    await db.updateNmapScan(nmap.id, { status: "complete", resolvedIp: "1.2.3.4", completedAt: new Date().toISOString() });
+    assert.equal((await db.getNmapScan(nmap.id))!.status, "complete");
+
+    // Autofix
+    const afx = await db.createAutofixSession(u.id, "https://x.test", "T", "RED_TEAM");
+    assert.equal((await db.incrementAutofixTurn(afx.id)).turns, 1);
+    assert.equal((await db.completeAutofixSession(afx.id, "done")).status, "done");
+
+    // OOB
+    await db.registerOobToken("oobtok_" + userId);
+    assert.equal(await db.recordOobEvent("oobtok_" + userId, { method: "GET", sourceIp: "9.9.9.9", path: "/x" }), true);
+    assert.ok((await db.getOobEvents("oobtok_" + userId)).length >= 1);
+
+    assert.equal(await db.healthy(), true);
+  } finally {
+    // Clean up everything this test created.
+    for (const t of ["sessions", "scans", "transactions", "api_keys", "domain_verifications", "suppressions", "monitored_targets", "nmap_scans", "autofix_sessions"]) {
+      await pool.query(`DELETE FROM ${t} WHERE userId = $1`, [userId]).catch(() => {});
+    }
+    await pool.query("DELETE FROM oob_events WHERE token = $1", ["oobtok_" + userId]).catch(() => {});
+    await pool.query("DELETE FROM oob_tokens WHERE token = $1", ["oobtok_" + userId]).catch(() => {});
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]).catch(() => {});
+    await pool.end().catch(() => {});
+  }
+});
+
+// Proves the SELECT ... FOR UPDATE atomicity of deductCredits on a real Postgres:
+// concurrent debits sharing one credit must serialize so exactly one wins (no
+// double-spend, balance never negative). The SQLite path has an equivalent test
+// in server/routes/scans.test.ts; this asserts the production backend directly.
+test("PostgresDb: concurrent deductCredits never double-spends the last credit", { skip: !DATABASE_URL }, async () => {
+  const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: SSL });
+  const db = new PostgresDb(pool as unknown as PgPool);
+  const email = `pgconc+${Date.now()}@seclayer.test`;
+  let userId = "";
+  try {
+    const u = await db.getOrCreateUser(email);
+    userId = u.id;
+    await db.deductCredits(u.id, u.credits - 1); // drain to exactly 1
+    assert.equal((await db.getUser(u.id))!.credits, 1);
+
+    const results = await Promise.all(Array.from({ length: 8 }, () => db.deductCredits(u.id, 1)));
+    assert.equal(results.filter(Boolean).length, 1, "exactly one concurrent debit may succeed");
+    assert.equal((await db.getUser(u.id))!.credits, 0, "balance must never go negative");
+  } finally {
+    await pool.query("DELETE FROM transactions WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM api_keys WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]).catch(() => {});
+    await pool.end().catch(() => {});
+  }
+});
+
+// The credit and lease races these guard against only exist where requests
+// truly run concurrently — SQLite's synchronous transactions serialize them.
+test("PostgresDb: cancel, recovery and nmap launch hold up under real concurrency", { skip: !DATABASE_URL }, async () => {
+  const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: SSL });
+  const db = new PostgresDb(pool as unknown as PgPool);
+  await db.ensureScanLeaseSchema();
+  const email = `pgrace+${Date.now()}@seclayer.test`;
+  let userId = "";
+  const stale = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  try {
+    const u = await db.getOrCreateUser(email);
+    userId = u.id;
+    const credits = async () => (await db.getUser(u.id))!.credits;
+
+    // Concurrent cancels of one scan refund exactly once.
+    let c0 = await credits();
+    const s1 = await db.createScan(u.id, "https://race.test");
+    await Promise.all(Array.from({ length: 6 }, () => db.cancelScan(u.id, s1.id)));
+    assert.equal(await credits(), c0 + 1, "one refund for one cancelled scan");
+
+    // Free mode: cancelling mints nothing.
+    c0 = await credits();
+    const s2 = await db.createScan(u.id, "https://free.test");
+    await db.cancelScan(u.id, s2.id, false);
+    assert.equal(await credits(), c0);
+
+    // Refunds and debits racing on one balance lose no update.
+    c0 = await credits();
+    await Promise.all([
+      ...Array.from({ length: 5 }, () => db.addCredits(u.id, 1, "purchase")),
+      ...Array.from({ length: 3 }, () => db.deductCredits(u.id, 1)),
+    ]);
+    assert.equal(await credits(), c0 + 2, "every concurrent adjustment applied");
+
+    // countInFlightScans + the periodic sweep only takes lapsed in-flight leases.
+    const live = await db.createScan(u.id, "https://live.test");
+    await db.updateScan(live.id, { status: "scanning" });
+    await db.touchScan(live.id);
+    const dead = await db.createScan(u.id, "https://dead.test");
+    await db.updateScan(dead.id, { status: "analyzing" });
+    await pool.query("UPDATE scans SET heartbeatAt = $1 WHERE id = $2", [stale, dead.id]);
+    const queued = await db.createScan(u.id, "https://queued.test");
+    assert.equal(await db.countInFlightScans(u.id), 3);
+    c0 = await credits();
+    await Promise.all([db.recoverStuckScans(true, true), db.recoverStuckScans(true, true)]);
+    assert.equal((await db.getScan(live.id))!.status, "scanning");
+    assert.equal((await db.getScan(dead.id))!.status, "failed");
+    assert.equal((await db.getScan(queued.id))!.status, "queued");
+    assert.equal(await credits(), c0 + 1, "two sweeping replicas refund the dead scan once");
+
+    // Concurrent nmap launches: exactly one starts and is charged.
+    c0 = await credits();
+    const launches = await Promise.all(Array.from({ length: 6 }, () => db.startNmapScan(u.id, "https://nmap.test", false, true)));
+    const winners = launches.filter((r) => typeof r !== "string");
+    assert.equal(winners.length, 1, "one in-flight nmap scan per user");
+    assert.equal(await credits(), c0 - 1);
+
+    // nmap recovery respects a live lease, fails a lapsed one.
+    const nmapId = (winners[0] as { id: string }).id;
+    await db.recoverStuckNmapScans();
+    assert.equal((await db.getNmapScan(nmapId))!.status, "queued", "fresh lease: left to its owner");
+    await pool.query("UPDATE nmap_scans SET heartbeatAt = $1 WHERE id = $2", [stale, nmapId]);
+    assert.equal(await db.recoverStuckNmapScans(true, true), 1);
+    assert.equal((await db.getNmapScan(nmapId))!.status, "failed");
+  } finally {
+    await pool.query("DELETE FROM nmap_scans WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM scans WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM transactions WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM api_keys WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]).catch(() => {});
+    await pool.end().catch(() => {});
+  }
+});
+
+// The Stripe grant's whole point: the same event delivered by several replicas at once credits once.
+test("PostgresDb: concurrent deliveries of one Stripe session grant exactly once, and a refund reverses it once", { skip: !DATABASE_URL }, async () => {
+  const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: SSL });
+  const db = new PostgresDb(pool as unknown as PgPool);
+  const email = `pgstripe+${Date.now()}@seclayer.test`;
+  const sessionId = `cs_pg_${Date.now()}`;
+  let userId = "";
+  try {
+    const u = await db.getOrCreateUser(email);
+    userId = u.id;
+    assert.equal(await db.ensureStripeSessionIndex(), true);
+
+    const results = await Promise.all(Array.from({ length: 8 }, () => db.grantStripePurchase(u.id, 5, sessionId)));
+    assert.equal(results.filter((r) => r === "granted").length, 1, "exactly one concurrent delivery may grant");
+    assert.equal((await db.getUser(u.id))!.credits, u.credits + 5);
+
+    const reversals = await Promise.all(Array.from({ length: 4 }, () => db.reverseStripePurchase(sessionId)));
+    assert.equal(reversals.filter((r) => r === "reversed").length, 1, "exactly one concurrent reversal may apply");
+    assert.equal((await db.getUser(u.id))!.credits, u.credits);
+
+    assert.equal(await db.grantStripePurchase("no-such-user", 5, `${sessionId}_x`), "no_user");
+  } finally {
+    await pool.query("DELETE FROM transactions WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM api_keys WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]).catch(() => {});
+    await pool.end().catch(() => {});
+  }
+});
+
+test("PostgresDb: target credentials are sealed at rest, and legacy plaintext rows are sealed by the backfill", { skip: !DATABASE_URL }, async () => {
+  const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: SSL });
+  const db = new PostgresDb(pool as unknown as PgPool);
+  const email = `pgseal+${Date.now()}@seclayer.test`;
+  let userId = "";
+  try {
+    const u = await db.getOrCreateUser(email);
+    userId = u.id;
+    const scan = await db.createScan(u.id, "https://sealed.test", "Bearer pg-secret-token");
+    const raw = async () => (await pool.query("SELECT authHeader FROM scans WHERE id = $1", [scan.id])).rows[0].authheader as string;
+    assert.ok((await raw()).startsWith("enc.v1."), "stored sealed");
+    assert.equal((await db.getScan(scan.id))!.authHeader, "Bearer pg-secret-token", "opened for the worker");
+
+    await pool.query("UPDATE scans SET authHeader = $1 WHERE id = $2", ["Bearer legacy-plain", scan.id]);
+    assert.ok((await db.sealLegacyScanCredentials()) >= 1);
+    assert.ok((await raw()).startsWith("enc.v1."));
+    assert.equal((await db.getScan(scan.id))!.authHeader, "Bearer legacy-plain");
+    assert.equal(await db.sealLegacyScanCredentials(), 0, "idempotent");
+  } finally {
+    await pool.query("DELETE FROM scans WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM api_keys WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM transactions WHERE userId = $1", [userId]).catch(() => {});
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]).catch(() => {});
+    await pool.end().catch(() => {});
+  }
+});

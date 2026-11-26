@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@workspace/db": ["src/engines/vibescan-core/lib/db/src/index.ts"],
+      "@workspace/api-zod": ["src/engines/vibescan-core/lib/api-zod/src/index.ts"],
+      "@/*": ["src/engines/vibescan-core/artifacts/api-server/src/*"]
+    }
+  }
+}
