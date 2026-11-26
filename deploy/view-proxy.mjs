@@ -18,6 +18,10 @@ import http from 'node:http'
 const ROUTES = [
   { port: 4710, target: 'http://127.0.0.1:4700', name: 'SecLayer' },
   { port: 4711, target: 'http://127.0.0.1:4701', name: 'SecScan' },
+  // Legacy/alternate aliases: the operator's saved tabs point at 4070/4071.
+  // Same two upstreams, still loopback-only, so those pages open again.
+  { port: 4070, target: 'http://127.0.0.1:4700', name: 'SecLayer' },
+  { port: 4071, target: 'http://127.0.0.1:4701', name: 'SecScan' },
 ]
 
 // Drop the two headers that refuse framing; keep every other security header.
