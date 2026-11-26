@@ -102,16 +102,16 @@ try {
   }
 
   // SecScan's engine (vibescan-core) — the second app's real code, against the
-  // same plants. Must run before the app is killed.
-  {
-    const target = TARGETS[0]
+  // same plants. Must run before the app is killed. Every target, because CRLF
+  // only exists on the raw-socket proxy.
+  for (const target of TARGETS) {
     const gate = await gateScanTarget(target, { isVerified: async () => false })
     if (gate.ok) {
       const started = Date.now()
       try {
         const res = await scanWebapp({ isVerified: async () => false }, gate.url, 'deep')
         vibescanResults.push({ target: gate.host, result: res })
-        console.error(`[timing] vibescan ${gate.host} ${((Date.now() - started) / 1000).toFixed(1)}s`)
+        console.error(`[timing] vibescan ${gate.host}:${new URL(gate.url).port} ${((Date.now() - started) / 1000).toFixed(1)}s`)
       } catch (e) {
         console.error('[vibescan] failed:', e.message)
       }

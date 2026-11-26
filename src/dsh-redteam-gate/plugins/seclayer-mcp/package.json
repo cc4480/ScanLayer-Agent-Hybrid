@@ -1,0 +1,9 @@
+{
+  "name": "@local/seclayer-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SecLayer's own MCP server (@seclayer/mcp, stdio) as its own DSH section.",
+  "files": ["cordis.patch.yml"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

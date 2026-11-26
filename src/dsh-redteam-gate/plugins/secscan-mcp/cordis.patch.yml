@@ -1,0 +1,19 @@
+# SecScan's official MCP server, unchanged, as its own section.
+#
+# streamable-http: the endpoint the product documents itself
+# (`claude mcp add --transport http secscan https://secscan.us/api/mcp`).
+# The bearer token is referenced as ${credential:SECSCAN_API_TOKEN} — never copied
+# into this file — and the client redacts every resolved value from diagnostics.
+#
+# Tools appear as mcp__secscan__* and cannot collide with the SecLayer section.
+- insert:
+    - id: secscan-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: secscan
+        transport: streamable-http
+        url: https://secscan.us/api/mcp
+        expandTemplates: true
+        headers:
+          Authorization: 'Bearer ${credential:SECSCAN_API_TOKEN}'
+        failOnStartupError: false

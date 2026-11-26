@@ -1,0 +1,22 @@
+# SecLayer's official MCP server, unchanged, as its own section.
+#
+# stdio transport: DSH runs `npx -y @seclayer/mcp` and speaks MCP over the pipe.
+# The key is referenced as ${credential:SECLAYER_API_KEY} — never copied into this
+# file — and the client redacts every resolved value from diagnostics.
+#
+# Tools appear as mcp__seclayer__* and cannot collide with the SecScan section.
+- insert:
+    - id: seclayer-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: seclayer
+        transport: stdio
+        command: npx
+        args:
+          - '-y'
+          - '@seclayer/mcp'
+        expandTemplates: true
+        env:
+          SECLAYER_API_KEY: '${credential:SECLAYER_API_KEY}'
+          SECLAYER_API_URL: '${credential:SECLAYER_API_URL}'
+        failOnStartupError: false

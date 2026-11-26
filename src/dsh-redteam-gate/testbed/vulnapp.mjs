@@ -163,12 +163,13 @@ function rootRoute(req, u, body) {
   const lang = u.searchParams.get('lang') ?? u.searchParams.get('q') ?? u.searchParams.get('name')
   if (lang !== null && /[\r\n]/.test(lang)) return { status: 200, headers: { 'Content-Type': 'text/html', 'Set-Cookie': `lang=${lang}` }, body: `<p>${lang}</p>` }
 
-  // Template injection: {{a*b}} is evaluated. Placed before the SQL loop because
-  // the payload contains no quote and would otherwise fall through to the index.
+  // Template injection: {{a*b}} is evaluated IN PLACE. Substituting the whole value
+  // would drop any surrounding text, which is exactly what a real engine keeps —
+  // and what the probe needs (it fences the expression to prove evaluation).
   for (const key of ['name', 'q', 'template', 'tpl']) {
     const v = u.searchParams.get(key)
     const m = v && v.match(/\{\{\s*(\d+)\s*\*\s*(\d+)\s*\}\}/)
-    if (m) return html(`<p>${Number(m[1]) * Number(m[2])}</p>`)
+    if (m) return html(`<p>${v.replace(m[0], String(Number(m[1]) * Number(m[2])))}</p>`)
   }
 
   // SQL injection: any quote reaching the handler yields a raw engine error.

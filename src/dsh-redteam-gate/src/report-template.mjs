@@ -595,6 +595,10 @@ export function renderScanReportHtml({ target, seclayer, vibescan, data, tickerL
   .tally-item.bad .n { color: var(--bad); } .tally-item.warn .n { color: var(--warn); }
   .tally-item.info .n { color: var(--info); } .tally-item.ok .n { color: var(--accent); }
   .verdict-line { margin: 14px 0 0; padding: 11px 13px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 0 4px 4px 0; font-size: 12px; }
+  .readonly { margin: 12px 0 0; padding: 11px 13px; border: 1px solid var(--border); background: var(--panel-2); border-radius: 5px; font-size: 12px; color: var(--dim); }
+  .readonly strong { color: var(--text); }
+  .cta { display: inline-block; margin-top: 8px; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--accent); color: var(--accent); text-decoration: none; font-size: 11px; font-weight: 700; }
+  .cta:hover { background: var(--accent-dim); }
   .verdict-line .gaps-box { border: 0; padding: 0; background: none; }
   table.summary { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 12px; }
   table.summary th { text-align: left; color: var(--dim); font-weight: 400; font-size: 9px; text-transform: uppercase; letter-spacing: 0.09em; padding: 0 10px 6px 0; border-bottom: 1px solid var(--border); }
@@ -652,6 +656,11 @@ export function renderScanReportHtml({ target, seclayer, vibescan, data, tickerL
     </div>
 
     <p class="verdict-line">${esc(verdictLine)}</p>
+
+    <div class="readonly">
+      <strong>Read-only.</strong> Nothing on ${esc(target)} was changed by this scan: both engines only requested pages and read what came back.
+      ${fixPrompt ? `The only thing this report will write for you is the remediation prompt.<br><a class="cta" href="#fixplan">I can fix this for you now &rarr;</a>` : ''}
+    </div>
 
     ${hardeningGapsBox(posture, findings)}
 

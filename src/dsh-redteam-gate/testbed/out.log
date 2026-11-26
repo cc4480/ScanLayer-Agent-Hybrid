@@ -1,0 +1,392 @@
+
+=== 189 finding(s) from the testbed (raw, both engines) ===
+
+source    severity  confidence  finding
+------------------------------------------------------------------------------------------------
+api       high                  GraphQL Schema Introspection Exposed
+cookie                          Cookie "sid" is set without the HttpOnly attribute
+cookie                          Cookie "lang" is set without the HttpOnly attribute
+header                          missing content-security-policy
+header                          missing strict-transport-security
+header                          missing x-frame-options
+header                          missing x-content-type-options
+header                          missing referrer-policy
+header                          missing content-security-policy
+header                          missing strict-transport-security
+header                          missing x-frame-options
+header                          missing x-content-type-options
+header                          missing referrer-policy
+header                          missing content-security-policy
+header                          missing strict-transport-security
+header                          missing x-frame-options
+header                          missing x-content-type-options
+header                          missing referrer-policy
+path                            exposed /.env
+path                            exposed /.git/config
+path                            exposed /app.js.map
+redteam   critical              Active SQL Injection Probe
+redteam   high                  Active Reflected XSS Probe
+redteam   critical              Active OS Command Injection
+redteam   critical              Active Server-Side Request Forgery (SSRF)
+redteam   critical              Blind Server-Side Request Forgery (out-of-band)
+redteam   critical              Active Server-Side Template Injection (SSTI)
+redteam   critical              Active Path Traversal / Local File Inclusion
+redteam   medium                Active Open Redirect
+redteam   high                  Active CORS Misconfiguration (origin reflection + credentials)
+redteam   critical              Active XML External Entity (XXE) — out-of-band
+redteam   critical              Active NoSQL Injection (operator authentication bypass)
+redteam   medium                Host Header Injection (reflected via X-Forwarded-Host)
+redteam   high                  Server-Side Prototype Pollution (proven via gadget)
+redteam   high                  Business-Logic Price Tampering (client-controlled price honored)
+redteam   high                  Webhook Signature Verification Bypass (conditional on payload)
+redteam   high                  Reflected XSS (discovered parameter "comment" on /vuln/guestbook)
+redteam   high                  Reflected XSS (discovered parameter "q" on /vuln/search)
+redteam   critical              SQL Injection (discovered parameter "q" on /vuln/search)
+redteam   high                  Reflected XSS (discovered parameter "name" on /vuln/greet)
+redteam   critical              Path Traversal / Local File Inclusion (discovered parameter "name" on /vuln/file)
+redteam   critical              Path Traversal / Local File Inclusion (discovered parameter "page" on /vuln/include)
+redteam   medium                Open Redirect (discovered parameter "next" on /vuln/go)
+redteam   high                  Reflected XSS (discovered parameter "name" on /vuln/render)
+redteam   critical              Server-Side Template Injection (discovered parameter "name" on /vuln/render)
+redteam   high                  Reflected XSS (discovered parameter "lang" on /vuln/setlang)
+redteam   critical              SQL Injection (discovered parameter "id" on /)
+redteam   high                  Reflected XSS (discovered parameter "q" on /)
+redteam   critical              SQL Injection (discovered parameter "q" on /)
+redteam   critical              Server-Side Template Injection (discovered parameter "q" on /)
+redteam   critical              SQL Injection (discovered parameter "search" on /)
+redteam   critical              Path Traversal / Local File Inclusion (discovered parameter "page" on /)
+redteam   critical              Stored XSS (discovered form field "comment" on /vuln/guestbook)
+redteam   high                  Active CRLF / HTTP Response Header Injection
+redteam   high                  CRLF / HTTP Response Header Injection (discovered parameter "q" on /)
+sast      high      medium      Exposed Credential Signature (AWS Access Key ID)
+sast      critical  high        Exposed Credential Signature (Stripe Secret Key)
+sast      high      medium      Weak/Predictable Security Token (resetToken)
+sast      high      medium      Weak/Predictable Security Token (sessionToken)
+scored    info      high        Application Surface Mapped (7 pages, 15 endpoints)
+scored    high      high        Insecure Connection Protocol (HTTP)
+scored    info      high        Verbose Server Framework Signature Leaked
+scored    medium    medium      Missing Content-Security-Policy (CSP)
+scored    medium    medium      Missing X-Frame-Options / Clickjacking Immunity
+scored    medium    medium      Missing X-Content-Type-Options (MIME Sniffing)
+scored    medium    high        Cookie "sid" is set without the HttpOnly attribute
+scored    high      medium      Exposed Credential Signature (AWS Access Key ID)
+scored    critical  high        Exposed Credential Signature (Stripe Secret Key)
+scored    high      medium      Weak/Predictable Security Token (resetToken)
+scored    high      medium      Weak/Predictable Security Token (sessionToken)
+scored    high      medium      Outdated Library Vulnerability Detected (Lodash)
+scored    critical  high        Exposed Critical Resource File (/.env)
+scored    critical  high        Exposed Critical Resource File (/.git/config)
+scored    low       high        Exposed JavaScript source map (/app.js.map)
+scored    critical  high        Active SQL Injection Probe
+scored    high      high        Active Reflected XSS Probe
+scored    critical  high        Active OS Command Injection
+scored    critical  high        Active Server-Side Request Forgery (SSRF)
+scored    critical  high        Blind Server-Side Request Forgery (out-of-band)
+scored    critical  high        Active Server-Side Template Injection (SSTI)
+scored    critical  high        Active Path Traversal / Local File Inclusion
+scored    medium    high        Active Open Redirect
+scored    high      high        Active CORS Misconfiguration (origin reflection + credentials)
+scored    critical  high        Active XML External Entity (XXE) — out-of-band
+scored    critical  high        Active NoSQL Injection (operator authentication bypass)
+scored    medium    high        Host Header Injection (reflected via X-Forwarded-Host)
+scored    high      high        Server-Side Prototype Pollution (proven via gadget)
+scored    high      high        Business-Logic Price Tampering (client-controlled price honored)
+scored    high      high        Webhook Signature Verification Bypass (conditional on payload)
+scored    high      high        Reflected XSS (discovered parameter "comment" on /vuln/guestbook)
+scored    high      high        Reflected XSS (discovered parameter "q" on /vuln/search)
+scored    critical  high        SQL Injection (discovered parameter "q" on /vuln/search)
+scored    high      high        Reflected XSS (discovered parameter "name" on /vuln/greet)
+scored    critical  high        Path Traversal / Local File Inclusion (discovered parameter "name" on /vuln/file)
+scored    critical  high        Path Traversal / Local File Inclusion (discovered parameter "page" on /vuln/include)
+scored    medium    high        Open Redirect (discovered parameter "next" on /vuln/go)
+scored    high      high        Reflected XSS (discovered parameter "name" on /vuln/render)
+scored    critical  high        Server-Side Template Injection (discovered parameter "name" on /vuln/render)
+scored    high      high        Reflected XSS (discovered parameter "lang" on /vuln/setlang)
+scored    critical  high        SQL Injection (discovered parameter "id" on /)
+scored    high      high        Reflected XSS (discovered parameter "q" on /)
+scored    critical  high        SQL Injection (discovered parameter "q" on /)
+scored    critical  high        Server-Side Template Injection (discovered parameter "q" on /)
+scored    critical  high        SQL Injection (discovered parameter "search" on /)
+scored    critical  high        Path Traversal / Local File Inclusion (discovered parameter "page" on /)
+scored    critical  high        Stored XSS (discovered form field "comment" on /vuln/guestbook)
+scored    high      high        GraphQL Schema Introspection Exposed
+scored    low       high        package.json Exposed
+scored    high      high        Backup Archive Exposed
+scored    info      high        OpenAPI/Swagger Spec Exposed
+scored    high      high        Insecure Connection Protocol (HTTP)
+scored    medium    medium      Missing Content-Security-Policy (CSP)
+scored    medium    medium      Missing X-Frame-Options / Clickjacking Immunity
+scored    medium    medium      Missing X-Content-Type-Options (MIME Sniffing)
+scored    high      high        Active CRLF / HTTP Response Header Injection
+scored    high      high        CRLF / HTTP Response Header Injection (discovered parameter "q" on /)
+scored    info      high        Application Surface Mapped (3 pages, 0 endpoints)
+scored    high      high        Insecure Connection Protocol (HTTP)
+scored    info      high        Verbose Server Framework Signature Leaked
+scored    medium    medium      Missing Content-Security-Policy (CSP)
+scored    medium    medium      Missing X-Frame-Options / Clickjacking Immunity
+scored    medium    medium      Missing X-Content-Type-Options (MIME Sniffing)
+scored    medium    high        Open Directory Listing Enabled
+template  low       high        package.json Exposed
+template  high      high        Backup Archive Exposed
+template  info      high        OpenAPI/Swagger Spec Exposed
+template  medium    high        Open Directory Listing Enabled
+vibescan  critical  77          No HTTPS / Plaintext HTTP
+vibescan  high      77          Missing Content-Security-Policy (CSP)
+vibescan  medium    77          Missing Clickjacking Protection (X-Frame-Options)
+vibescan  medium    77          Missing X-Content-Type-Options: nosniff
+vibescan  info      77          Missing Referrer-Policy Header
+vibescan  info      77          Missing Permissions-Policy Header
+vibescan  info      77          Missing Cross-Origin-Opener-Policy (COOP)
+vibescan  info      77          Missing Cross-Origin-Embedder-Policy (COEP)
+vibescan  info      77          Missing Cross-Origin-Resource-Policy (CORP)
+vibescan  low       87          Permissive CORS Policy (Wildcard Origin)
+vibescan  info      51          X-Powered-By Header Discloses Technology Stack
+vibescan  high      73          Session Cookie Missing Secure Flag
+vibescan  medium    73          Session Cookie Missing HttpOnly Flag
+vibescan  low       73          Session Cookie Missing SameSite Attribute
+vibescan  high      97          Git Config Exposed
+vibescan  critical  97          Environment File Exposed (.env)
+vibescan  high      81          PHP Info Page Exposed
+vibescan  critical  97          Backup Archive Exposed
+vibescan  info      51          Package Manifest Exposed (package.json)
+vibescan  medium    81          Verbose Error Pages Expose Internal Application Details
+vibescan  info      87          Rate Limiting Not Advertised in Response Headers
+vibescan  medium    87          Directory Listing Enabled
+vibescan  critical  90          CORS Misconfiguration — Credentials Allowed from Arbitrary Origin
+vibescan  medium    100         Open Redirect Vulnerability
+vibescan  info      95          No Structured Data Found
+vibescan  info      95          Incomplete Open Graph Metadata
+vibescan  low       97          JavaScript Source Map Exposed — Source File Names Only
+vibescan  critical  97          Stripe Live Secret Key Exposed
+vibescan  critical  90          Path Traversal / Local File Inclusion (LFI)
+vibescan  high      90          Reflected Cross-Site Scripting (XSS)
+vibescan  critical  90          SQL Injection (Error-Based)
+vibescan  critical  77          No HTTPS / Plaintext HTTP
+vibescan  high      77          Missing Content-Security-Policy (CSP)
+vibescan  medium    77          Missing Clickjacking Protection (X-Frame-Options)
+vibescan  medium    77          Missing X-Content-Type-Options: nosniff
+vibescan  info      77          Missing Referrer-Policy Header
+vibescan  info      77          Missing Permissions-Policy Header
+vibescan  info      77          Missing Cross-Origin-Opener-Policy (COOP)
+vibescan  info      77          Missing Cross-Origin-Embedder-Policy (COEP)
+vibescan  info      77          Missing Cross-Origin-Resource-Policy (CORP)
+vibescan  low       70          Non-Session Cookie Missing Secure Flag
+vibescan  info      60          Non-Session Cookie Missing SameSite Attribute
+vibescan  info      87          Rate Limiting Not Advertised in Response Headers
+vibescan  info      75          Missing security.txt (RFC 9116)
+vibescan  info      95          No Structured Data Found
+vibescan  info      95          Incomplete Open Graph Metadata
+vibescan  medium    95          HTTP Header Injection (CRLF)
+vibescan  critical  77          No HTTPS / Plaintext HTTP
+vibescan  high      77          Missing Content-Security-Policy (CSP)
+vibescan  medium    77          Missing Clickjacking Protection (X-Frame-Options)
+vibescan  medium    77          Missing X-Content-Type-Options: nosniff
+vibescan  info      77          Missing Referrer-Policy Header
+vibescan  info      77          Missing Permissions-Policy Header
+vibescan  info      77          Missing Cross-Origin-Opener-Policy (COOP)
+vibescan  info      77          Missing Cross-Origin-Embedder-Policy (COEP)
+vibescan  info      77          Missing Cross-Origin-Resource-Policy (CORP)
+vibescan  info      51          X-Powered-By Header Discloses Technology Stack
+vibescan  info      87          Rate Limiting Not Advertised in Response Headers
+vibescan  medium    87          Directory Listing Enabled
+vibescan  info      75          Missing security.txt (RFC 9116)
+vibescan  info      95          No Structured Data Found
+vibescan  info      95          Incomplete Open Graph Metadata
+
+=== merged report: 102 finding(s), 87 overlap(s) removed ===
+
+reported by  severity  issue              finding
+----------------------------------------------------------------------------------------------------
+secscan      critical  transport:https    No HTTPS / Plaintext HTTP
+secscan      high      headers:csp        Missing Content-Security-Policy (CSP)
+secscan      medium    headers:xfo        Missing Clickjacking Protection (X-Frame-Options)
+secscan      medium    headers:xcto       Missing X-Content-Type-Options: nosniff
+secscan      info      headers:referrer   Missing Referrer-Policy Header
+secscan      info      headers:permission Missing Permissions-Policy Header
+secscan      info      headers:coop       Missing Cross-Origin-Opener-Policy (COOP)
+secscan      info      headers:coep       Missing Cross-Origin-Embedder-Policy (COEP)
+secscan      info      headers:corp       Missing Cross-Origin-Resource-Policy (CORP)
+secscan      low       headers:cors       Permissive CORS Policy (Wildcard Origin)
+secscan      info      headers:poweredby  X-Powered-By Header Discloses Technology Stack
+secscan      high      cookies:secure     Session Cookie Missing Secure Flag
+secscan      medium    cookies:httponly   Session Cookie Missing HttpOnly Flag
+secscan      low       cookies:samesite   Session Cookie Missing SameSite Attribute
+secscan      high      exposure:git       Git Config Exposed
+secscan      critical  exposure:env       Environment File Exposed (.env)
+secscan      high      exposure:phpinfo   PHP Info Page Exposed
+secscan      critical  exposure:backup    Backup Archive Exposed
+secscan      info      exposure:manifest  Package Manifest Exposed (package.json)
+secscan      medium    errors:verbose     Verbose Error Pages Expose Internal Application Details
+secscan      info      auth:ratelimit     Rate Limiting Not Advertised in Response Headers
+secscan      medium    exposure:listing   Directory Listing Enabled
+secscan      critical  headers:cors       CORS Misconfiguration — Credentials Allowed from Arbitrary Origin
+secscan      medium    injection:redirect Open Redirect Vulnerability
+secscan      info      seo:structured     No Structured Data Found
+secscan      info      seo:structured     Incomplete Open Graph Metadata
+secscan      low       exposure:sourcemap JavaScript Source Map Exposed — Source File Names Only
+secscan      critical  secrets:stripe     Stripe Live Secret Key Exposed
+secscan      critical  injection:lfi      Path Traversal / Local File Inclusion (LFI)
+secscan      high      injection:xss      Reflected Cross-Site Scripting (XSS)
+secscan      critical  injection:sqli     SQL Injection (Error-Based)
+secscan      critical  transport:https    No HTTPS / Plaintext HTTP
+secscan      high      headers:csp        Missing Content-Security-Policy (CSP)
+secscan      medium    headers:xfo        Missing Clickjacking Protection (X-Frame-Options)
+secscan      medium    headers:xcto       Missing X-Content-Type-Options: nosniff
+secscan      info      headers:referrer   Missing Referrer-Policy Header
+secscan      info      headers:permission Missing Permissions-Policy Header
+secscan      info      headers:coop       Missing Cross-Origin-Opener-Policy (COOP)
+secscan      info      headers:coep       Missing Cross-Origin-Embedder-Policy (COEP)
+secscan      info      headers:corp       Missing Cross-Origin-Resource-Policy (CORP)
+secscan      low       cookies:secure     Non-Session Cookie Missing Secure Flag
+secscan      info      cookies:samesite   Non-Session Cookie Missing SameSite Attribute
+secscan      info      auth:ratelimit     Rate Limiting Not Advertised in Response Headers
+secscan      info      exposure:securityt Missing security.txt (RFC 9116)
+secscan      info      seo:structured     No Structured Data Found
+secscan      info      seo:structured     Incomplete Open Graph Metadata
+secscan      medium    injection:crlf     HTTP Header Injection (CRLF)
+secscan      critical  transport:https    No HTTPS / Plaintext HTTP
+secscan      high      headers:csp        Missing Content-Security-Policy (CSP)
+secscan      medium    headers:xfo        Missing Clickjacking Protection (X-Frame-Options)
+secscan      medium    headers:xcto       Missing X-Content-Type-Options: nosniff
+secscan      info      headers:referrer   Missing Referrer-Policy Header
+secscan      info      headers:permission Missing Permissions-Policy Header
+secscan      info      headers:coop       Missing Cross-Origin-Opener-Policy (COOP)
+secscan      info      headers:coep       Missing Cross-Origin-Embedder-Policy (COEP)
+secscan      info      headers:corp       Missing Cross-Origin-Resource-Policy (CORP)
+secscan      info      headers:poweredby  X-Powered-By Header Discloses Technology Stack
+secscan      info      auth:ratelimit     Rate Limiting Not Advertised in Response Headers
+secscan      medium    exposure:listing   Directory Listing Enabled
+secscan      info      exposure:securityt Missing security.txt (RFC 9116)
+secscan      info      seo:structured     No Structured Data Found
+secscan      info      seo:structured     Incomplete Open Graph Metadata
+seclayer     high      api:graphql        GraphQL Schema Introspection Exposed
+seclayer               headers:hsts       missing strict-transport-security
+seclayer               headers:hsts       missing strict-transport-security
+seclayer               headers:hsts       missing strict-transport-security
+seclayer     critical  injection:cmdi     Active OS Command Injection
+seclayer     critical  injection:ssrf     Active Server-Side Request Forgery (SSRF)
+seclayer     critical  injection:ssrf     Blind Server-Side Request Forgery (out-of-band)
+seclayer     critical  injection:ssti     Active Server-Side Template Injection (SSTI)
+seclayer     critical  injection:xxe      Active XML External Entity (XXE) — out-of-band
+seclayer     medium    injection:hosthead Host Header Injection (reflected via X-Forwarded-Host)
+seclayer     high      injection:protopol Server-Side Prototype Pollution (proven via gadget)
+seclayer     high      logic:price        Business-Logic Price Tampering (client-controlled price honored)
+seclayer     high      logic:webhook      Webhook Signature Verification Bypass (conditional on payload)
+seclayer     critical  injection:ssti     Server-Side Template Injection (discovered parameter "name" on /vuln/render)
+seclayer     critical  injection:ssti     Server-Side Template Injection (discovered parameter "q" on /)
+seclayer     high      secrets:aws        Exposed Credential Signature (AWS Access Key ID)
+seclayer     high      auth:weaktoken     Weak/Predictable Security Token (resetToken)
+seclayer     high      auth:weaktoken     Weak/Predictable Security Token (sessionToken)
+seclayer     info      seclayer-only      Application Surface Mapped (7 pages, 15 endpoints)
+seclayer     info      headers:serverbann Verbose Server Framework Signature Leaked
+seclayer     high      secrets:aws        Exposed Credential Signature (AWS Access Key ID)
+seclayer     high      auth:weaktoken     Weak/Predictable Security Token (resetToken)
+seclayer     high      auth:weaktoken     Weak/Predictable Security Token (sessionToken)
+seclayer     high      deps:cve           Outdated Library Vulnerability Detected (Lodash)
+seclayer     critical  injection:cmdi     Active OS Command Injection
+seclayer     critical  injection:ssrf     Active Server-Side Request Forgery (SSRF)
+seclayer     critical  injection:ssrf     Blind Server-Side Request Forgery (out-of-band)
+seclayer     critical  injection:ssti     Active Server-Side Template Injection (SSTI)
+seclayer     critical  injection:xxe      Active XML External Entity (XXE) — out-of-band
+seclayer     medium    injection:hosthead Host Header Injection (reflected via X-Forwarded-Host)
+seclayer     high      injection:protopol Server-Side Prototype Pollution (proven via gadget)
+seclayer     high      logic:price        Business-Logic Price Tampering (client-controlled price honored)
+seclayer     high      logic:webhook      Webhook Signature Verification Bypass (conditional on payload)
+seclayer     critical  injection:ssti     Server-Side Template Injection (discovered parameter "name" on /vuln/render)
+seclayer     critical  injection:ssti     Server-Side Template Injection (discovered parameter "q" on /)
+seclayer     high      api:graphql        GraphQL Schema Introspection Exposed
+seclayer     info      api:docs           OpenAPI/Swagger Spec Exposed
+seclayer     info      seclayer-only      Application Surface Mapped (3 pages, 0 endpoints)
+seclayer     info      headers:serverbann Verbose Server Framework Signature Leaked
+seclayer     info      api:docs           OpenAPI/Swagger Spec Exposed
+
+-- removed as duplicates of a SecScan finding --
+            cookies:httponly   Cookie "sid" is set without the HttpOnly attribute
+            cookies:httponly   Cookie "lang" is set without the HttpOnly attribute
+            headers:csp        missing content-security-policy
+            headers:xfo        missing x-frame-options
+            headers:xcto       missing x-content-type-options
+            headers:referrer   missing referrer-policy
+            headers:csp        missing content-security-policy
+            headers:xfo        missing x-frame-options
+            headers:xcto       missing x-content-type-options
+            headers:referrer   missing referrer-policy
+            headers:csp        missing content-security-policy
+            headers:xfo        missing x-frame-options
+            headers:xcto       missing x-content-type-options
+            headers:referrer   missing referrer-policy
+            exposure:env       exposed /.env
+            exposure:git       exposed /.git/config
+            exposure:sourcemap exposed /app.js.map
+  critical  injection:sqli     Active SQL Injection Probe
+  high      injection:xss      Active Reflected XSS Probe
+  critical  injection:lfi      Active Path Traversal / Local File Inclusion
+  medium    injection:redirect Active Open Redirect
+  high      headers:cors       Active CORS Misconfiguration (origin reflection + credentials)
+  critical  injection:sqli     Active NoSQL Injection (operator authentication bypass)
+  high      injection:xss      Reflected XSS (discovered parameter "comment" on /vuln/guestbook)
+  high      injection:xss      Reflected XSS (discovered parameter "q" on /vuln/search)
+  critical  injection:sqli     SQL Injection (discovered parameter "q" on /vuln/search)
+  high      injection:xss      Reflected XSS (discovered parameter "name" on /vuln/greet)
+  critical  injection:lfi      Path Traversal / Local File Inclusion (discovered parameter "name" on /vuln/file)
+  critical  injection:lfi      Path Traversal / Local File Inclusion (discovered parameter "page" on /vuln/include)
+  medium    injection:redirect Open Redirect (discovered parameter "next" on /vuln/go)
+  high      injection:xss      Reflected XSS (discovered parameter "name" on /vuln/render)
+  high      injection:xss      Reflected XSS (discovered parameter "lang" on /vuln/setlang)
+  critical  injection:sqli     SQL Injection (discovered parameter "id" on /)
+  high      injection:xss      Reflected XSS (discovered parameter "q" on /)
+  critical  injection:sqli     SQL Injection (discovered parameter "q" on /)
+  critical  injection:sqli     SQL Injection (discovered parameter "search" on /)
+  critical  injection:lfi      Path Traversal / Local File Inclusion (discovered parameter "page" on /)
+  critical  injection:xss      Stored XSS (discovered form field "comment" on /vuln/guestbook)
+  high      injection:crlf     Active CRLF / HTTP Response Header Injection
+  high      injection:crlf     CRLF / HTTP Response Header Injection (discovered parameter "q" on /)
+  critical  secrets:stripe     Exposed Credential Signature (Stripe Secret Key)
+  high      transport:https    Insecure Connection Protocol (HTTP)
+  medium    headers:csp        Missing Content-Security-Policy (CSP)
+  medium    headers:xfo        Missing X-Frame-Options / Clickjacking Immunity
+  medium    headers:xcto       Missing X-Content-Type-Options (MIME Sniffing)
+  medium    cookies:httponly   Cookie "sid" is set without the HttpOnly attribute
+  critical  secrets:stripe     Exposed Credential Signature (Stripe Secret Key)
+  critical  exposure:env       Exposed Critical Resource File (/.env)
+  critical  exposure:git       Exposed Critical Resource File (/.git/config)
+  low       exposure:sourcemap Exposed JavaScript source map (/app.js.map)
+  critical  injection:sqli     Active SQL Injection Probe
+  high      injection:xss      Active Reflected XSS Probe
+  critical  injection:lfi      Active Path Traversal / Local File Inclusion
+  medium    injection:redirect Active Open Redirect
+  high      headers:cors       Active CORS Misconfiguration (origin reflection + credentials)
+  critical  injection:sqli     Active NoSQL Injection (operator authentication bypass)
+  high      injection:xss      Reflected XSS (discovered parameter "comment" on /vuln/guestbook)
+  high      injection:xss      Reflected XSS (discovered parameter "q" on /vuln/search)
+  critical  injection:sqli     SQL Injection (discovered parameter "q" on /vuln/search)
+  high      injection:xss      Reflected XSS (discovered parameter "name" on /vuln/greet)
+  critical  injection:lfi      Path Traversal / Local File Inclusion (discovered parameter "name" on /vuln/file)
+  critical  injection:lfi      Path Traversal / Local File Inclusion (discovered parameter "page" on /vuln/include)
+  medium    injection:redirect Open Redirect (discovered parameter "next" on /vuln/go)
+  high      injection:xss      Reflected XSS (discovered parameter "name" on /vuln/render)
+  high      injection:xss      Reflected XSS (discovered parameter "lang" on /vuln/setlang)
+  critical  injection:sqli     SQL Injection (discovered parameter "id" on /)
+  high      injection:xss      Reflected XSS (discovered parameter "q" on /)
+  critical  injection:sqli     SQL Injection (discovered parameter "q" on /)
+  critical  injection:sqli     SQL Injection (discovered parameter "search" on /)
+  critical  injection:lfi      Path Traversal / Local File Inclusion (discovered parameter "page" on /)
+  critical  injection:xss      Stored XSS (discovered form field "comment" on /vuln/guestbook)
+  low       exposure:manifest  package.json Exposed
+  high      exposure:backup    Backup Archive Exposed
+  high      transport:https    Insecure Connection Protocol (HTTP)
+  medium    headers:csp        Missing Content-Security-Policy (CSP)
+  medium    headers:xfo        Missing X-Frame-Options / Clickjacking Immunity
+  medium    headers:xcto       Missing X-Content-Type-Options (MIME Sniffing)
+  high      injection:crlf     Active CRLF / HTTP Response Header Injection
+  high      injection:crlf     CRLF / HTTP Response Header Injection (discovered parameter "q" on /)
+  high      transport:https    Insecure Connection Protocol (HTTP)
+  medium    headers:csp        Missing Content-Security-Policy (CSP)
+  medium    headers:xfo        Missing X-Frame-Options / Clickjacking Immunity
+  medium    headers:xcto       Missing X-Content-Type-Options (MIME Sniffing)
+  medium    exposure:listing   Open Directory Listing Enabled
+  low       exposure:manifest  package.json Exposed
+  high      exposure:backup    Backup Archive Exposed
+  medium    exposure:listing   Open Directory Listing Enabled
+
+(no --check: dumping only)

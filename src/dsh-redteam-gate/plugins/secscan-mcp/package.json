@@ -1,0 +1,9 @@
+{
+  "name": "@local/secscan-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SecScan's own MCP server (streamable-http, secscan.us/api/mcp) as its own DSH section.",
+  "files": ["cordis.patch.yml"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
