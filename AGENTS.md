@@ -222,6 +222,7 @@ Authenticates as `Authorization: Bearer`.
 | `C:\sh\src\seclayer.io2026\.env` | **production/container** config (the app's own file) |
 | `C:\sh\src\seclayer.io2026\.env.container` | copy of the same container config |
 | `C:\sh\src\VibeScan-Enterprise-Build\.env.docker` | SecScan container config (generated secrets) |
+| `C:\sh\src\alterego` | AlterEgo PC bridge (`github.com/cc4480/alterego`), cloned; MCP section `alterego` → 109 `mcp__alterego__*` tools |
 
 Docker Desktop: `AutoStart = true`, but it fires at **Windows sign-in only**. It is
 a desktop app, not a service — it does not come back when DSH restarts. Once the
@@ -330,3 +331,56 @@ them, so the report is ours — but it is **one fixed artifact**, not a per-repo
   real numbers and the file has no mojibake, then give the single HTML file.
 - Finished reports live in `reports/` with a row in `reports/README.md` (date, host,
   platform, findings, skill versions). Sanitize identities — the repo is public.
+
+---
+
+## 14. Verified readiness facts (checked live 2026-11-26)
+
+Each line was observed on this box, not inferred. Re-check before relying on it.
+
+- **The SecLayer MCP tool has no aggressive switch.** `mcp__seclayer__seclayer_scan`
+  accepts `url` only; an extra `aggressive` field is ignored and the saved report always
+  prints the aggressive tier as "not run". The real full sweep is the fallback
+  `seclayer_scan` tool with `aggressive: true` — 150 checks, JSON only, no app record.
+  If you report both, say which path produced which number.
+- **SecScan scans at `deep` tier by default** and spends one credit per scan. Its worker
+  logs every test as RAN or SKIPPED with a reason — quote that reason, never invent one.
+- **`list_verified_domains` returning empty does not mean passive-only here.** The tool
+  prints its shipped "verified domains" warning, but `ALLOW_UNVERIFIED_ACTIVE_PROBES=true`
+  means the injection, traversal, open-redirect, API and IDOR probes really do run —
+  the worker log shows them as RAN. Never describe such a scan to the user as passive.
+- **This PC is not elevated.** DSH runs as `One` with a normal token: `Get-MpPreference`
+  (exclusion lists), `manage-bde`, `sshd -T` and firewall edits are "not tested", never
+  "pass". `Get-MpComputerStatus` and the SMB/RDP/service/listener reads do work
+  unelevated. Host work stays read-only for the same reason.
+- **The `pwsh` tool is Windows PowerShell 5.1** (`$PSVersionTable` 5.1.19041; `pwsh` is
+  null). No PS7-only syntax, no `-SkipHttpErrorCheck`, no `??` or ternaries.
+- **Reachability needs a second namespace.** WSL Ubuntu is installed but Stopped
+  (`wsl -d Ubuntu` starts it); Tailscale is up with live peers. A self-connect proves the
+  binding only, never the firewall path.
+- **The host-report scaffold must be filled in, not shipped.** `new-report.ps1` copies
+  the template *with its example findings* — SSH, SMB, StarDesk cards — and replaces only
+  identity and counters. It exits 0 and renders cleanly while §2/§4/§11 are still sample
+  data, so a scaffold can look finished when it is not.
+- **Skill locations:** source is `skills\<name>`, discovered copy is `.dsh\skills\<name>`.
+  DSH lists only the discovered copy; re-copy after editing the source.
+- **Report links are minted, not automatic.** A fresh scan has no `shareToken`;
+  `POST /api/scans/:id/share` with the API key returns `/r/<shr_…>`. Read it back from
+  the `scans.sharetoken` column when the API is not handy.
+- **AlterEgo is a second, richer PC surface.** The MCP section `alterego` exposes 109
+  `mcp__alterego__*` tools (screen, mouse, keyboard, shell, files, Edge/CDP, jobs,
+  audit). It dials the bridge at `http://100.104.33.79:8765/mcp` — the tailnet address
+  only; `127.0.0.1:8765` is not bound. The bearer token is the pairing secret in
+  `%APPDATA%\pc-mcp-bridge\session_token` (a JSON array), mirrored as `ALTEREGO_TOKEN`
+  in `.dsh\.env`. Check state with `dashboard` / `doctor`. The bridge currently runs
+  `permission_mode: dontask`, so **writes execute with no approval dialog** — say that
+  before calling `shell_exec`, `write_file` or `browser_eval`. Prefer `desktop_state`
+  over screenshot-plus-window-list, `tool_finder` over reading schemas, and
+  `job_status` over resubmitting a job.
+- **The screen is visible through one script.** `tools\screenshot\capture.ps1` takes
+  `-Mode window` (the DSH window **and its in-app Browser panel**, captured with
+  PrintWindow so no focus is stolen), `-Mode screen`, or `-Mode url` (headless Edge,
+  `-Height` for tall pages). It prints JSON; pass `out` to `read_image`. Skill:
+  `screen-capture`. Screenshots go to `%TEMP%\dsh-shots\` and never into the repo —
+  they can contain tokens and customer data. This is the only way the agent sees
+  pixels; without it, a blank Browser panel cannot be diagnosed.
