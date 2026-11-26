@@ -103,12 +103,12 @@ const INDEX = html(`
       '/vuln/api/data', '/vuln/ping?host=127.0.0.1', '/vuln/xml',
       '/safe/search?q=hello', '/safe/greet?name=world', '/safe/file?name=readme.txt',
       '/uploads/', '/backup.zip', '/config.json', '/package.json', '/vuln/boom',
-      '/app.js', '/app.js.map', '/api/token', '/vuln/guestbook', '/uploads/',
+      '/app.js', '/app.js.map', '/api/token?user=alice', '/vuln/guestbook', '/uploads/',
     ].map((h) => `<li><a href="${h}">${h}</a></li>`).join('')}
   </ul>
-  <!-- planted for the SAST/SCA passes: a live-looking key (NOT a documented
-       example value, which the engine's placeholder filter rightly ignores) and a
-       vulnerable version string -->
+  <!-- SCA reads LOADED RESOURCE URLs, not body text, so the version has to be in
+       a script src. -->
+  <script src="/vendor/lodash-4.17.15.min.js"></script>
   <div id="build">bundle: lodash@4.17.15, express@4.17.1</div>
   <div id="cfg">aws_access_key_id = ${sastKey()}</div>
   <form method="post" action="/vuln/guestbook"><input name="comment"><button>sign</button></form>
@@ -439,7 +439,10 @@ const ROUTES = {
   '/vuln/api/orders/1001': () => json({ id: 1001, ownerId: 1, total: 4200, email: 'alice@example.com' }),
   '/vuln/api/orders/1002': () => json({ id: 1002, ownerId: 2, total: 9100, email: 'bob@example.com' }),
   '/vuln/api/admin/users': () => json([{ id: 1, email: 'alice@example.com', role: 'admin' }]),
-  '/vuln/api/token': () => json({ resetToken: 'a1b2c3d4', sessionToken: 'deadbeef' }),
+  '/vuln/api/token': (req, u) => json({ user: u.searchParams.get('user') || 'anonymous', resetToken: 'a1b2c3d4', sessionToken: 'deadbeef' }),
+  // The weak-token check reads the FUZZER's captures, so this endpoint needs a
+  // parameter for the crawler to record and the fuzzer to hit.
+  '/api/token': (req, u) => json({ user: u.searchParams.get('user') || 'anonymous', resetToken: 'a1b2c3d4', sessionToken: 'deadbeef' }),
 
   // OTP verify with NO limiter — the engine must flag this.
   '/vuln/api/auth/verify-code': (req, u, body) => {
@@ -523,6 +526,8 @@ function noSqlLogin(bodyText) {
 
 function respond(res, r) {
   const headers = { ...r.headers }
+  // Planted: a framework banner that names the stack and version.
+  if (headers['X-Powered-By'] === undefined) headers['X-Powered-By'] = 'Express/4.18.2'
   if (r.body != null && headers['Content-Length'] === undefined) {
     headers['Content-Length'] = Buffer.byteLength(String(r.body))
   }
@@ -657,5 +662,27 @@ crlfServer.listen(PORT + 1, HOST, () => {
   console.log(`testbed CRLF proxy listening on http://${HOST}:${PORT + 1}`)
 })
 
+// ---------------------------------------------------------------------------
+// Plain-file server (port PORT+3): its ROOT is an auto-generated directory
+// index. `open-directory-listing` only requests "/", so the listing has to live
+// at the root of a target — a subdirectory of the main app can never trip it.
+const listingServer = http.createServer((req, res) => {
+  const u = new URL(req.url, 'http://x')
+  if (u.pathname === '/' || u.pathname === '/files/') {
+    res.writeHead(200, { 'Content-Type': 'text/html', 'X-Powered-By': 'Express/4.18.2' })
+    res.end(
+      '<!doctype html><html><head><title>Index of /</title></head><body>' +
+      '<h1>Index of /</h1><pre><a href="a.txt">a.txt</a>\n<a href="b.txt">b.txt</a>\n' +
+      '<a href="backup.zip">backup.zip</a></pre></body></html>',
+    )
+    return
+  }
+  res.writeHead(404, { 'Content-Type': 'text/html', 'X-Powered-By': 'Express/4.18.2' })
+  res.end('<title>404 Not Found</title>')
+})
+listingServer.listen(PORT + 3, HOST, () => {
+  console.log(`testbed listing server listening on http://${HOST}:${PORT + 3}`)
+})
+
 /** Every listener, so a harness that imports this module can shut them down. */
-export const __servers = [server, crlfServer, oobServer]
+export const __servers = [server, crlfServer, oobServer, listingServer]

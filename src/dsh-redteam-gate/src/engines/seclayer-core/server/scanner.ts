@@ -1,4 +1,4 @@
-import { crawlSite, targetsFromHtml, dedupeTargets, paramsOf, InjectableTarget } from "./crawler.js";
+﻿import { crawlSite, targetsFromHtml, dedupeTargets, paramsOf, InjectableTarget } from "./crawler.js";
 import { SCANNER_USER_AGENT } from "./config.js";
 import { discoverAndParseApi } from "./openapi.js";
 import { runTemplates, selectTemplates } from "./templateEngine.js";
@@ -47,6 +47,23 @@ export { isBlockedIp, firstBlockedAddress, safeDispatcher, guardedFetch, assertS
 export { looksLikeHtml, parseAuthHeader, renderRawRequest, windowAround } from "./evidence.js";
 export { compileStaticFindings, compileScanEvidence } from "./findings.js";
 export type { DiagnosticResult, ScanOptions } from "./scanTypes.js";
+/**
+ * Dedup key for a capture-sourced finding: the ENDPOINT, not the fuzzed URL.
+ *
+ * The fuzzer hits one endpoint once per payload, and each of those responses is
+ * a separate capture whose `url` carries a different query string. Keying on the
+ * full URL made every payload look like a new finding â€” the same weak reset token
+ * was reported six times in one scan. Stripping the query collapses them to one.
+ */
+function captureKey(issue: string, file: string): string {
+  try {
+    const u = new URL(file);
+    return `${issue}|${u.origin}${u.pathname}`;
+  } catch {
+    return `${issue}|${file}`;
+  }
+}
+
 export async function runDiagnostics(
   targetUrl: string,
   authHeader?: string,
@@ -113,7 +130,7 @@ export async function runDiagnostics(
   // The session the crawl establishes, appended to authedFetch requests AFTER
   // the crawl. Empty until then. Every authedFetch consumer is SAME-ORIGIN (the
   // crawl itself, OpenAPI discovery, and templates all hit the scanned host), so
-  // carrying the target's own session here never leaks it cross-origin — unlike
+  // carrying the target's own session here never leaks it cross-origin â€” unlike
   // the firebase/bucket probes, which fetch third-party origins with plain
   // `headers` on purpose. A real user-supplied auth Cookie is placed first and
   // wins; the crawl session is appended after it.
@@ -136,11 +153,11 @@ export async function runDiagnostics(
   // Passive recon of the root document: headers, cookies, SAST secrets, SCA
   // libraries, EASM perimeter, and sensitive paths. Returns the root HTML to
   // seed the crawler. Throws on an unreachable target. See server/passiveScan.ts.
-  emit?.("system", "Target validated. Passive recon: headers, TLS, secrets, libraries, perimeter & sensitive paths…");
+  emit?.("system", "Target validated. Passive recon: headers, TLS, secrets, libraries, perimeter & sensitive pathsâ€¦");
   const { rootHtml, rootCookies } = await runPassiveScan(url, host, hostname, headers, result, emit);
 
   // TLS/certificate posture (HTTPS only, read-only, SSRF-gated). A plain fetch
-  // can't see an expired cert or a deprecated protocol — one handshake can.
+  // can't see an expired cert or a deprecated protocol â€” one handshake can.
   // Best-effort: never throws, and a failed handshake leaves no finding (the
   // coverage record marks the certificate checks as not completed instead).
   // Checked where the root request ended, so a typed http:// URL that redirects
@@ -148,26 +165,26 @@ export async function runDiagnostics(
   try {
     result.tls = await probeTls(result.finalUrl || url);
   } catch {
-    /* posture is a bonus signal — a probe failure must never fail the scan */
+    /* posture is a bonus signal â€” a probe failure must never fail the scan */
   }
 
   // RED TEAM active fuzzing (SQLi/XSS/cmd-injection/SSRF, incl. blind OOB).
   // Gated behind verified domain ownership. See server/redTeamProbes.ts.
-  if (allowActiveProbes) emit?.("system", "Active red-team probes — firing real exploit payloads at the target…");
+  if (allowActiveProbes) emit?.("system", "Active red-team probes â€” firing real exploit payloads at the targetâ€¦");
   result.redTeamFindings = allowActiveProbes
     ? await runRedTeamProbes(url, headers, { oob: opts.oob, scanId: opts.scanId, emit })
     : [];
 
   // API SECURITY active probes (GraphQL introspection, exposed user object,
   // two-identity BOLA). Gated behind ownership. See server/apiProbes.ts.
-  if (allowActiveProbes) emit?.("system", "API security probes — GraphQL introspection, exposed objects, BOLA/IDOR…");
+  if (allowActiveProbes) emit?.("system", "API security probes â€” GraphQL introspection, exposed objects, BOLA/IDORâ€¦");
   result.apiSecFindings = allowActiveProbes
     ? await runApiSecProbes(url, host, headers, { bolaIdentities: opts.bolaIdentities })
     : [];
 
   // Insecure deserialization (PASSIVE, unconditional): a native serialized
   // object stored in a cookie the server issued is deserialized on every
-  // request — CWE-502 exposure. Inspects only the root Set-Cookie lines already
+  // request â€” CWE-502 exposure. Inspects only the root Set-Cookie lines already
   // captured; makes no new request. Placed AFTER the apiSecFindings assignment
   // above so it isn't overwritten; per-page cookies are scanned in the crawl
   // loop below. See server/deserializationScan.ts.
@@ -182,12 +199,12 @@ export async function runDiagnostics(
       // Label by the finding's actual tier, not a blanket "CONFIRMED". An
       // inconclusive cross-tenant result is NEEDS VERIFICATION; the "Enforced"
       // pass is PASS; only a real, high-confidence finding is CONFIRMED/PROVEN.
-      emit("result", `${resultMarker(resultTier(f))}: ${f.testName} [${f.severity.toUpperCase()}] — ${f.endpoint}`);
+      emit("result", `${resultMarker(resultTier(f))}: ${f.testName} [${f.severity.toUpperCase()}] â€” ${f.endpoint}`);
     }
   }
 
   // JWT auth-weakness probe runs AFTER the crawl below (it can use a signing
-  // secret the crawl discovers in a leaked file, e.g. a served .env) — see
+  // secret the crawl discovers in a leaked file, e.g. a served .env) â€” see
   // the crawl.captures loop.
   if (allowActiveProbes) {
     // DOM-based XSS (headless-browser execution proof). No-ops unless
@@ -206,7 +223,7 @@ export async function runDiagnostics(
   // signature/OOB-proven. Appended to the red-team findings so they share the
   // RED_TEAM category, PROVEN-receipt scoring, and the report/fix-prompt pipeline.
   if (allowAggressiveProbes) {
-    emit?.("system", "Aggressive tier — SSTI, LFI, XXE, CORS, CRLF, open-redirect, NoSQL, host-header…");
+    emit?.("system", "Aggressive tier â€” SSTI, LFI, XXE, CORS, CRLF, open-redirect, NoSQL, host-headerâ€¦");
     const aggressive = await runAggressiveProbes(url, headers, { oob: opts.oob, scanId: opts.scanId, emit });
     result.redTeamFindings = [...(result.redTeamFindings || []), ...aggressive];
   }
@@ -217,7 +234,7 @@ export async function runDiagnostics(
   // than only a few hardcoded names. Strictly bounded by page/request/time caps.
   try {
     if (rootHtml && result.responseStatus > 0) {
-      emit?.("system", "Crawling to map the attack surface (links, forms, JS-referenced endpoints)…");
+      emit?.("system", "Crawling to map the attack surface (links, forms, JS-referenced endpoints)â€¦");
       const crawl = await crawlSite(url, authedFetch, {
         maxPages: 10,
         maxDepth: 2,
@@ -225,18 +242,18 @@ export async function runDiagnostics(
         seedHtml: rootHtml,
         // Seed the crawl's session jar with the root response's cookies (the
         // session cookie most apps set on first contact) so pages that only
-        // render in-session are mapped. Read-only GET crawl — never a
+        // render in-session are mapped. Read-only GET crawl â€” never a
         // state-changing request. See CookieJar in server/crawler.ts.
         initialCookies: rootCookies,
       });
 
       // Extend secret-signature + cookie-flag analysis beyond the root
-      // document to every page the crawler actually visited, HTML or not —
+      // document to every page the crawler actually visited, HTML or not â€”
       // e.g. a JSON API endpoint (like /api/settings) that hardcodes secrets
       // in its response, or a cookie set by a page other than the root.
       // Deduped so the same secret/cookie found via multiple pages isn't
       // repeated in the report.
-      const seenSecretKeys = new Set(result.sastFindings.map((f) => `${f.issue}|${f.file}`));
+      const seenSecretKeys = new Set(result.sastFindings.map((f) => captureKey(f.issue, f.file)));
       const isHttpsTarget = result.sslSecure;
       // The page's own scripts (the crawler follows links, not <script src>): a built single-page app keeps its
       // project URL, keys and table and bucket names there.
@@ -244,13 +261,13 @@ export async function runDiagnostics(
       const scriptCaptures = scripts.map((sc) => ({ url: sc.url, status: 200, contentType: "application/javascript", text: sc.text, setCookie: [] as string[] }));
       for (const capture of [...crawl.captures, ...scriptCaptures]) {
         for (const sf of analyzeSecrets(capture.text, capture.url)) {
-          const key = `${sf.issue}|${sf.file}`;
+          const key = captureKey(sf.issue, sf.file);
           if (seenSecretKeys.has(key)) continue;
           seenSecretKeys.add(key);
           result.sastFindings.push(sf);
         }
         for (const df of analyzeDataDumpExposure(capture.text, capture.url)) {
-          const key = `${df.issue}|${df.file}`;
+          const key = captureKey(df.issue, df.file);
           if (seenSecretKeys.has(key)) continue;
           seenSecretKeys.add(key);
           result.sastFindings.push(df);
@@ -262,14 +279,14 @@ export async function runDiagnostics(
             result.cookieEvidence[issue] = ci.observed;
           }
         }
-        // Passive — no new request, just inspecting what the crawler already
-        // fetched — so this runs unconditionally like the checks above, not
+        // Passive â€” no new request, just inspecting what the crawler already
+        // fetched â€” so this runs unconditionally like the checks above, not
         // gated behind allowActiveProbes (unlike the fixed-path exposed-
         // user-object probe in apiProbes.ts, which makes its own requests).
         for (const capFinding of [
           exposedUserListInCapture(capture.text, capture.url),
           exposedCredentialListInCapture(capture.text, capture.url),
-          // Serialized object in a cookie this page set — insecure-deser exposure.
+          // Serialized object in a cookie this page set â€” insecure-deser exposure.
           ...scanCookiesForSerialized(capture.setCookie, capture.url),
         ]) {
           if (!capFinding) continue;
@@ -281,7 +298,7 @@ export async function runDiagnostics(
       }
 
       // Every response body this scan has actually seen the text of, for the
-      // two content-correlation checks below — NOT just crawl.captures,
+      // two content-correlation checks below â€” NOT just crawl.captures,
       // which only covers pages the crawler itself fetched while following
       // links. The root document is SEEDED into the crawler (never
       // "fetched" by it, so it's absent from captures) and a sensitive-path
@@ -289,7 +306,7 @@ export async function runDiagnostics(
       // from the crawl. Missing either source means missing exactly the
       // cases these checks exist for (a key declared on the homepage itself;
       // a secret leaked via sensitive-path probing rather than a crawled
-      // link) — confirmed by a real miss against the Tier 3 fixture before
+      // link) â€” confirmed by a real miss against the Tier 3 fixture before
       // this was added.
       const allScannedText = [
         rootHtml,
@@ -302,7 +319,7 @@ export async function runDiagnostics(
       // established session (see CookieJar in server/crawler.ts) merged in
       // behind whatever Cookie the caller already supplied. A probe that
       // re-requests a page can then reach content that only renders once that
-      // GET-only session is present — the crawl already proved it reads, so
+      // GET-only session is present â€” the crawl already proved it reads, so
       // reusing it here costs no extra request. Never overrides a real
       // user-supplied auth Cookie: appended after it when both exist, used
       // alone only when the caller supplied none.
@@ -316,14 +333,14 @@ export async function runDiagnostics(
         ? { ...headers, Cookie: mergedCookie }
         : headers;
       // Also make the SAME-ORIGIN authedFetch consumers (OpenAPI discovery,
-      // templates) session-aware — they run after this point and would otherwise
+      // templates) session-aware â€” they run after this point and would otherwise
       // re-request with only the caller's headers. Cross-origin probes never use
       // authedFetch, so this stays inside the same-origin boundary.
       crawlSessionCookie = crawl.sessionCookie || "";
 
       // Weak-session-token probe, run FIRST after the crawl. It spends exactly one
       // real login, and every later POST probe (prototype pollution, price
-      // tampering, webhook signature, then fuzzing) also hits the login form —
+      // tampering, webhook signature, then fuzzing) also hits the login form â€”
       // on a target with a login rate limiter (Tier 1: 5 per 15 min) those
       // used the allowance up and this login got a 429, so a real weak token
       // went unreported. Found by re-running the Tier 1 fixture 2026-09-25.
@@ -333,7 +350,7 @@ export async function runDiagnostics(
         const loginTarget = findLoginTarget(targets);
         if (!loginTarget) return;
         weakTokenProbed = true;
-        emit?.("system", `Testing session token strength via ${loginTarget.url}…`);
+        emit?.("system", `Testing session token strength via ${loginTarget.url}â€¦`);
         try {
           const weakToken = await probeWeakSessionToken(loginTarget, opts.loginCredentials, { ...postCrawlHeaders, "Cache-Control": "no-cache" });
           if (weakToken) result.redTeamFindings = [...(result.redTeamFindings || []), weakToken];
@@ -346,7 +363,7 @@ export async function runDiagnostics(
 
       // Exposed JavaScript source maps (passive, same-origin): a shipped .js.map
       // reconstructs the original un-minified source. Runs unconditionally like
-      // the sensitive-path probing above — it only GETs the target's OWN .map
+      // the sensitive-path probing above â€” it only GETs the target's OWN .map
       // assets, confirmed by the Source-Map-v3 JSON signature (never a 200 alone).
       // Reported LOW via the probedPaths `meta` mechanism.
       try {
@@ -360,7 +377,7 @@ export async function runDiagnostics(
 
       // Cross-origin credential chaining: a client-side key paired with the
       // URL it's for (both disclosed in the SAME served content) is tested
-      // against that OTHER origin — the only probe in this codebase that
+      // against that OTHER origin â€” the only probe in this codebase that
       // ever calls back to somewhere other than the scanned target. The
       // target origin is one the scanned app's own content named, not a
       // guess, and reuses safeFetch's existing SSRF gate unchanged. Gated
@@ -389,7 +406,7 @@ export async function runDiagnostics(
 
       // Firebase Realtime Database open-rules: extract any RTDB URL the scanned
       // app's own bundle references (Firebase web config is public by design) and
-      // prove the database's security RULES permit an unauthenticated read — a
+      // prove the database's security RULES permit an unauthenticated read â€” a
       // 200 at `<db>/.json` where a locked-down DB returns 401. Read-only, and
       // the DB origin is one the app named, not a guess. Same cross-origin BaaS
       // discipline + ownership gate as the credential-chain probe above.
@@ -414,7 +431,7 @@ export async function runDiagnostics(
       // Open cloud-storage buckets: extract any S3/GCS/Azure bucket the scanned
       // app's own content references and prove it permits an anonymous object
       // LIST (a 200 listing document where a locked-down bucket returns 403).
-      // Read-only GETs, buckets named by the app not guessed — same cross-origin
+      // Read-only GETs, buckets named by the app not guessed â€” same cross-origin
       // discipline + ownership gate as the Firebase/credential-chain probes above.
       if (allowActiveProbes) {
         const bucketRefs = extractBucketUrls(allScannedText.join("\n"));
@@ -422,7 +439,7 @@ export async function runDiagnostics(
           try {
             // Deliberately plain `headers`, NOT postCrawlHeaders: this hits a
             // third-party bucket origin (S3/GCS/Azure), not the scanned app.
-            // Same reasoning as the Firebase probe above — never offer the
+            // Same reasoning as the Firebase probe above â€” never offer the
             // crawl's session Cookie to a different origin.
             const bucketFinding = await probeOpenBuckets(bucketRefs, headers, hostname);
             if (bucketFinding) result.apiSecFindings = [...(result.apiSecFindings || []), bucketFinding];
@@ -435,7 +452,7 @@ export async function runDiagnostics(
 
       // CSRF posture: a SameSite=None session cookie (cross-site-sendable) plus a
       // state-changing form with no anti-CSRF token. Read-only inference over
-      // data already gathered — the Set-Cookie attributes and the crawled forms —
+      // data already gathered â€” the Set-Cookie attributes and the crawled forms â€”
       // so it needs no extra request and no ownership gate (passive posture, not
       // an exploit). Reported medium-confidence / needs-verification.
       try {
@@ -470,7 +487,7 @@ export async function runDiagnostics(
 
       // JWT auth-weakness probe. Delayed until after the crawl above so it
       // can also try re-signing with any JWT signing secret the crawl found
-      // leaked in a served file (e.g. .env) — a validly-signed forged token
+      // leaked in a served file (e.g. .env) â€” a validly-signed forged token
       // is a materially stronger proof than the alg:none/tampered-signature
       // forgeries alone (see extractJwtSecretCandidates in jwtProbe.ts).
       if (allowActiveProbes) {
@@ -515,7 +532,7 @@ export async function runDiagnostics(
       // Server-side prototype pollution (AGGRESSIVE tier). Needs discovered POST
       // endpoints, so it runs here (after the crawl) rather than in the root-only
       // aggressive orchestrator above. It POSTs a benign body then the "json
-      // spaces" gadget and proves pollution via a response-formatting flip — the
+      // spaces" gadget and proves pollution via a response-formatting flip â€” the
       // one probe that leaves a transient (cosmetic, self-healing) trace, so it's
       // gated behind the aggressive+ownership tier and reverts the gadget on a hit.
       if (allowAggressiveProbes) {
@@ -531,7 +548,7 @@ export async function runDiagnostics(
         }
 
         // Business-logic price tampering (client-controlled price honored). Sends
-        // only line items — no payment instrument, no confirmation — so it can
+        // only line items â€” no payment instrument, no confirmation â€” so it can
         // elicit at most a quote/total, never a real charge. Same aggressive+owned
         // gate + discovered-POST-target set as the prototype-pollution probe.
         try {
@@ -544,7 +561,7 @@ export async function runDiagnostics(
 
         // Webhook signature-verification bypass. Sends only a zero-amount
         // FAILURE event for a nonexistent entity, so acceptance processes nothing
-        // of value — proving the (conditional) signature skip without a real
+        // of value â€” proving the (conditional) signature skip without a real
         // payment side effect. Same aggressive+owned gate + discovered-POST set.
         try {
           const webhookFinding = await probeWebhookSignatureBypass(url, postUrls, { ...postCrawlHeaders, "Cache-Control": "no-cache" });
@@ -555,7 +572,7 @@ export async function runDiagnostics(
         }
 
         // Missing rate-limit on OTP/2FA verification. Observational (absence of a
-        // control) → reported at LOW confidence and LOW severity, never PROVEN. A
+        // control) â†’ reported at LOW confidence and LOW severity, never PROVEN. A
         // bounded burst of wrong codes sized to outlast the common 3-30 limiter
         // thresholds; bails the instant any throttle signal appears.
         try {
@@ -588,21 +605,21 @@ export async function runDiagnostics(
       }
 
       // Weak-session-token probe: only runs when the caller explicitly supplied
-      // real login credentials for a target they own (never guessed) — logs in
+      // real login credentials for a target they own (never guessed) â€” logs in
       // ONCE against a discovered login-shaped form and tries to reproduce the
       // resulting token from common weak (seed, algorithm) recipes. Aggressive
       // tier, same trust bar as the other credentialed/mutating probes below.
       // Deliberately runs BEFORE discovered-parameter fuzzing: fuzzing hits
       // every discovered form (including this same login form) with many
       // payloads, which can exhaust a target's own login rate limiter before
-      // this probe's one legitimate login gets a turn — so it goes first.
+      // this probe's one legitimate login gets a turn â€” so it goes first.
       //
       // Normally it already ran right after the crawl (see runWeakTokenProbe
       // above); this later call only covers a login form that browser rendering
       // surfaced after that point.
       if (!weakTokenProbed) await runWeakTokenProbe(allTargets);
 
-      // Mapping (crawl) is always allowed — it's passive same-origin GETs.
+      // Mapping (crawl) is always allowed â€” it's passive same-origin GETs.
       // Fuzzing the discovered parameters is an active exploit attempt, so it
       // is gated behind verified domain ownership like the other red-team probes.
       let fuzz = { findings: [] as any[], paramsTested: 0, captures: [] as FuzzCapture[] };
@@ -616,13 +633,13 @@ export async function runDiagnostics(
         // Parameter MINING: on the root and any crawled pages that linked no
         // parameters, guess common injectable names and keep the ones the app
         // reflects (plus a small always-test set), so injection probing reaches a
-        // surface even on SPAs / JSON APIs that link or form nothing — the case
+        // surface even on SPAs / JSON APIs that link or form nothing â€” the case
         // where the crawl otherwise yields zero fuzzable parameters. See
         // server/paramMiner.ts.
         const pathOf = (u: string) => { try { const p = new URL(u); return p.origin + p.pathname; } catch { return u; } };
         const paramPaths = new Set(discovered.map((t) => pathOf(t.url)));
         const mineBases = [url, ...crawl.pages].filter((p) => !paramPaths.has(pathOf(p)));
-        emit?.("system", "Parameter mining: guessing common injectable parameter names on paths that linked none…");
+        emit?.("system", "Parameter mining: guessing common injectable parameter names on paths that linked noneâ€¦");
         const guessed = await buildGuessedTargets(mineBases, { ...postCrawlHeaders, "Cache-Control": "no-cache" });
         if (guessed.length) {
           const total = guessed.reduce((n, g) => n + g.params.length, 0);
@@ -630,7 +647,7 @@ export async function runDiagnostics(
         }
 
         // API-first testing: discover an OpenAPI/Swagger spec and fuzz every
-        // DECLARED operation's parameters — the full API surface, not just what
+        // DECLARED operation's parameters â€” the full API surface, not just what
         // the crawl referenced. GET operations (reads) run here under active
         // probing; POST operations (which can create state) are held to the
         // aggressive opt-in, the same non-destructive line the rest of the fuzzer
@@ -645,7 +662,7 @@ export async function runDiagnostics(
             apiTargets = api.targets;
             let specPath = api.specUrl;
             try { specPath = new URL(api.specUrl).pathname; } catch { /* keep full */ }
-            emit?.("recon", `API schema: ${api.format} at ${specPath} — ${api.operationCount} declared operation(s) queued for fuzzing.`);
+            emit?.("recon", `API schema: ${api.format} at ${specPath} â€” ${api.operationCount} declared operation(s) queued for fuzzing.`);
           }
         } catch (e) {
           console.warn("API-schema discovery encountered an error", e);
@@ -662,17 +679,17 @@ export async function runDiagnostics(
           .map((t) => ({ url: t.url, method: "POST" as const, params: t.params, source: "script" as const, contentType: "json" as const }));
         fuzzTargets = [...fuzzTargets, ...jsonTwins];
 
-        if (fuzzTargets.length) emit?.("system", `Fuzzing ${fuzzTargets.length} parameterized endpoint(s) (discovered + mined) with injection payloads…`);
+        if (fuzzTargets.length) emit?.("system", `Fuzzing ${fuzzTargets.length} parameterized endpoint(s) (discovered + mined) with injection payloadsâ€¦`);
         fuzz = await fuzzDiscoveredTargets(fuzzTargets, { ...postCrawlHeaders, "Cache-Control": "no-cache" }, { aggressive: allowAggressiveProbes, emit });
         result.redTeamFindings = [...(result.redTeamFindings || []), ...fuzz.findings];
 
         // Fuzzing is the only pass that ever POSTs to these endpoints, so it's
         // the only place a JSON response like a password-reset token is ever
-        // seen — scan every response it captured for weak/low-entropy security
+        // seen â€” scan every response it captured for weak/low-entropy security
         // tokens the app put in its own body (see weakTokenScan.ts).
         for (const capture of fuzz.captures) {
           for (const wf of weakTokenFindings(capture.text, capture.url)) {
-            const key = `${wf.issue}|${wf.file}`;
+            const key = captureKey(wf.issue, wf.file);
             if (seenSecretKeys.has(key)) continue;
             seenSecretKeys.add(key);
             result.sastFindings.push(wf);
@@ -682,7 +699,7 @@ export async function runDiagnostics(
 
       // Stored/persistent XSS over discovered POST forms. Aggressive tier: it
       // submits a persisting marker (mutates state), so it requires the same
-      // explicit opt-in as the other invasive probes. Proves the two-step flow —
+      // explicit opt-in as the other invasive probes. Proves the two-step flow â€”
       // POST the marker, then see it on a separate GET.
       if (allowAggressiveProbes) {
         const formTargets = allTargets.filter((t) => t.method === "POST" && t.params.length > 0);
@@ -693,7 +710,7 @@ export async function runDiagnostics(
       // LLM prompt-injection (aggressive tier): POSTs a prompt to any LLM-backed
       // endpoint the crawl found (or a small curated guess-list) and proves the
       // model obeys an injected instruction-override via a DOUBLE computed-canary
-      // oracle (two independent products it must compute — reflection/templating
+      // oracle (two independent products it must compute â€” reflection/templating
       // can't). Aggressive+owned because it POSTs prompts that cost the owner LLM
       // tokens. See server/llmProbe.ts.
       if (allowAggressiveProbes) {
@@ -705,7 +722,7 @@ export async function runDiagnostics(
 
           // AI-scope probes (proof-gated): memory poisoning (a planted canary
           // that leaks into an independent request) and insecure tool use (the
-          // model fetching an injected OOB URL — callback is the proof, needs a
+          // model fetching an injected OOB URL â€” callback is the proof, needs a
           // collaborator). Both fire only on hard evidence. See server/llmProbe.ts.
           const memFinding = await probeLlmMemoryPoisoning(llmTargets, host, llmHeaders);
           if (memFinding) result.redTeamFindings = [...(result.redTeamFindings || []), memFinding];

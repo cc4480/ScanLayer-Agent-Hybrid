@@ -27,6 +27,10 @@
     { "match": "Exposed JavaScript source map", "bug": "/app.js.map is served next to a sourceMappingURL reference" },
     { "match": "Exposed Credential Signature \\(Stripe Secret Key\\)", "bug": "a live-looking Stripe key in the page markup" },
     { "match": "Exposed Credential Signature \\(AWS Access Key ID\\)", "bug": "a non-placeholder AWS key id in the page markup" },
+    { "match": "Weak/Predictable Security Token \\(resetToken\\)", "bug": "an 8-char reset token in a fuzzed JSON response" },
+    { "match": "Outdated Library Vulnerability Detected \\(Lodash\\)", "bug": "lodash 4.17.15 named in a loaded script URL" },
+    { "match": "Open Directory Listing Enabled", "bug": "the third target's root is an auto-generated index" },
+    { "match": "Verbose Server Framework Signature Leaked", "bug": "X-Powered-By names Express and its version" },
     { "match": "discovered parameter .q. on /vuln/search", "bug": "SQLi/XSS on the crawled /vuln/search parameter" },
     { "match": "discovered parameter .page. on /vuln/include", "bug": "LFI on the crawled /vuln/include parameter" },
     { "match": "discovered parameter .name. on /vuln/file", "bug": "path traversal on the crawled /vuln/file parameter" }

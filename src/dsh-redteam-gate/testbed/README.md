@@ -44,28 +44,28 @@ Running it found six real defects in the engine, all fixed:
 
 ## Current result
 
-28 detection checks, 0 missed; 0 false positives on the controls. One full
-aggressive scan of the app takes ~10s; the raw-socket CRLF proxy target takes
-~26s (every probe gets a fixed answer there, so several retry). The engine
-reports ~94 findings across both targets.
+33 detection checks, 0 missed; 0 false positives on the controls. Scans: main app
+~10s, raw-socket CRLF proxy ~26s, plain-file listing server ~26s. The engine
+reports ~131 findings across the three targets (minus duplicates — see below).
 
 ## Known gaps in this testbed
 
-Still unproven, in the order they will be taken:
-
-1. **Weak-token entropy** — `/api/token` returns an 8-char `resetToken`, but the
-   check runs over crawl captures and that JSON endpoint is apparently not one.
-2. **SCA (vulnerable library)** — `lodash@4.17.15` is in the page markup but the
-   library scan does not report it; probably needs to appear in a JS capture.
-3. **Directory listing** — `/uploads/` serves an "Index of" page; no finding.
-4. **Verbose errors** — the 404 leaks a stack trace; no finding.
-5. **IDOR/BOLA** — deliberately last: it needs two authenticated identities and
-   endpoints the crawler can reach, so it is a bigger fixture than the rest.
-
-For each, the open question is whether the probe cannot *reach* the plant
-(harness wiring) or cannot *detect* it (engine gap).
+Only one left: **IDOR/BOLA**, deliberately last. It needs two authenticated
+identities plus endpoints the crawler can reach, so it is a bigger fixture than
+the rest.
 
 ## Resolved since the first pass
+
+- **Duplicate findings.** The same weak reset token was reported six times in one
+  scan: the dedup key was `${issue}|${capture.url}`, and the fuzzer hits one
+  endpoint once per payload, so every payload's URL looked like a new finding.
+  `captureKey()` now keys on origin+pathname. 6 → 2 (one per token field).
+- **Weak-token entropy, SCA, directory listing, framework signature** — all four
+  were fixture problems, not engine gaps: the token endpoint needed a parameter
+  for the fuzzer to reach it, the library version had to be in a *loaded resource
+  URL* (not body text), `open-directory-listing` only requests `/` so it needs a
+  target whose root really is a listing, and the framework check needs a revealing
+  `X-Powered-By`.
 
 - **XXE and blind SSRF** — now proven end to end. `scanSeclayer` forwards
   `ScanOptions.oob`, `vulnapp.mjs` runs a local collector on `PORT+2`, and the

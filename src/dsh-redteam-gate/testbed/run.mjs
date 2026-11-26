@@ -17,7 +17,7 @@ const URL_BASE = `http://127.0.0.1:${PORT}`
 
 // The engine's SSRF guard allows loopback only when it is named explicitly.
 process.env.NODE_ENV = process.env.NODE_ENV || 'development'
-const LOCAL = [PORT, PORT + 1, PORT + 2].map((p) => `127.0.0.1:${p}`).join(',')
+const LOCAL = [PORT, PORT + 1, PORT + 2, PORT + 3].map((p) => `127.0.0.1:${p}`).join(',')
 process.env.SCAN_DEV_ALLOW_HOSTS = `${process.env.SCAN_DEV_ALLOW_HOSTS ? process.env.SCAN_DEV_ALLOW_HOSTS + ',' : ''}${LOCAL}`
 
 const check = process.argv.includes('--check')
@@ -75,7 +75,7 @@ const app = startApp()
 // TESTBED_ONE=1 scans only the app — the comparable "one deep scan" number.
 const TARGETS = process.env.TESTBED_ONE
   ? [`http://127.0.0.1:${PORT}`]
-  : [`http://127.0.0.1:${PORT}`, `http://127.0.0.1:${PORT + 1}`]
+  : [`http://127.0.0.1:${PORT}`, `http://127.0.0.1:${PORT + 1}`, `http://127.0.0.1:${PORT + 3}`]
 const diags = []
 const ticker = []
 try {
