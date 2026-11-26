@@ -1,0 +1,4 @@
+﻿# Generated TLS material and runtime files for the container stack.
+deploy/pg-tls/
+*.key
+*.crt
