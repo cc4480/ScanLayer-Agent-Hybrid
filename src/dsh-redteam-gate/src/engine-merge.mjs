@@ -48,7 +48,12 @@ const ISSUE_KEYS = [
   [/package manifest|package\.json/i, 'exposure:manifest'],
   [/directory listing|index of \//i, 'exposure:listing'],
   [/source map|\.js\.map\b|\.map\b/i, 'exposure:sourcemap'],
-  [/(secret key|credential signature|exposed credential|api key exposed)/i, 'secrets:exposed'],
+  // Secrets are keyed by KIND. "Stripe key exposed" and "AWS key id exposed" are
+  // different findings; keying them both as `secrets:exposed` silently dropped the
+  // AWS one because a Stripe finding was already reported.
+  [/stripe/i, 'secrets:stripe'],
+  [/\baws\b|amazon/i, 'secrets:aws'],
+  [/(secret key|credential signature|exposed credential|api key exposed)/i, 'secrets:other'],
   [/sensitive file/i, 'exposure:sensitivefile'],
   [/security\.txt/i, 'exposure:securitytxt'],
 
@@ -66,8 +71,8 @@ const ISSUE_KEYS = [
   [/template injection|ssti/i, 'injection:ssti'],
   [/nosql/i, 'injection:nosql'],
   [/path traversal|lfi|local file inclusion/i, 'injection:lfi'],
-  [/crlf|header injection/i, 'injection:crlf'],
-  [/host.header/i, 'injection:hostheader'],
+  [/host.header|host header/i, 'injection:hostheader'],
+  [/crlf|response header injection|header injection/i, 'injection:crlf'],
   [/open redirect/i, 'injection:redirect'],
   [/prototype pollution/i, 'injection:protopollution'],
   [/ssrf|server.side request forgery/i, 'injection:ssrf'],
