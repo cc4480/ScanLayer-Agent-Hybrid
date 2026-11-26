@@ -5,6 +5,8 @@
     { "match": "Active Reflected XSS Probe", "bug": "reflected XSS at the root ?q= parameter" },
     { "match": "Active OS Command Injection", "bug": "command injection at the root ?ping= parameter" },
     { "match": "Active Server-Side Request Forgery", "bug": "SSRF via the root ?url= parameter" },
+    { "match": "Blind Server-Side Request Forgery", "bug": "blind SSRF proven by a callback to the local OOB collaborator" },
+    { "match": "Active XML External Entity", "bug": "XXE proven by the app resolving an external entity to the collaborator" },
     { "match": "Active Server-Side Template Injection", "bug": "SSTI via the root ?name= parameter" },
     { "match": "Active NoSQL Injection", "bug": "NoSQL operator auth bypass at /login" },
     { "match": "Active CORS Misconfiguration", "bug": "Origin reflection with credentials on /" },
@@ -18,6 +20,9 @@
     { "match": "Missing X-Content-Type-Options", "bug": "no nosniff header" },
     { "match": "exposed /\\.env", "bug": ".env served with secrets" },
     { "match": "exposed /\\.git/config", "bug": ".git/config served" },
+    { "match": "Exposed JavaScript source map", "bug": "/app.js.map is served next to a sourceMappingURL reference" },
+    { "match": "Exposed Credential Signature \\(Stripe Secret Key\\)", "bug": "a live-looking Stripe key in the page markup" },
+    { "match": "Exposed Credential Signature \\(AWS Access Key ID\\)", "bug": "a non-placeholder AWS key id in the page markup" },
     { "match": "discovered parameter .q. on /vuln/search", "bug": "SQLi/XSS on the crawled /vuln/search parameter" },
     { "match": "discovered parameter .page. on /vuln/include", "bug": "LFI on the crawled /vuln/include parameter" },
     { "match": "discovered parameter .name. on /vuln/file", "bug": "path traversal on the crawled /vuln/file parameter" }

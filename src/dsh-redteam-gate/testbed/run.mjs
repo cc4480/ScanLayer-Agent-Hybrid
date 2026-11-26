@@ -7,7 +7,7 @@
 // Loopback is the lab-host path in the scope gate, so no DNS ownership proof is
 // involved and nothing leaves the machine.
 import { spawn } from 'node:child_process'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -45,18 +45,37 @@ async function waitFor(url, tries = 60) {
 const { scanSeclayer } = await import('../src/scan-adapters.mjs')
 const { gateScanTarget } = await import('../src/scan-gate.mjs')
 const { compileStaticFindings } = await import('../src/engines/seclayer-core/server/scanner.ts')
+const { createOobCollaborator } = await import('../src/engines/seclayer-core/server/oob.ts')
 
-// NOTE: XXE and blind SSRF stay unverified. Both need an out-of-band collaborator
-// (ScanOptions.oob). scanSeclayer now forwards one, and vulnapp.mjs runs a local
-// collector on PORT+2 plus /__oob/events to read its hit log, but wiring it into
-// this harness hangs the run — unresolved, so the collaborator is left off rather
-// than half-enabled. Until it is fixed, those two checks can only report "no
-// signal" here, which says nothing about the target.
+// Out-of-band collaborator for the blind checks (XXE, blind SSRF). The testbed
+// appends every callback to oob-hits.log; the store reads that file instead of
+// making its own HTTP request, because a fetch issued while the engine's scoped
+// fetch guard is installed stalled for ~80s inside the XXE poll.
+const HITS = path.join(HERE, 'oob-hits.log')
+const oobStore = {
+  async registerOobToken() { /* the testbed records whatever token it is called on */ },
+  async getOobEvents(token) {
+    try {
+      return readFileSync(HITS, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .filter((e) => e.token === token)
+    } catch {
+      return []
+    }
+  },
+}
+const oob = createOobCollaborator(oobStore, `http://127.0.0.1:${PORT + 2}`)
+try { rmSync(HITS, { force: true }) } catch { /* first run */ }
 
 const app = startApp()
 // Two targets: the app itself, and its raw-socket CRLF proxy (which exists only
 // because Node's http layer refuses to emit a header containing CR/LF).
-const TARGETS = [`http://127.0.0.1:${PORT}`, `http://127.0.0.1:${PORT + 1}`]
+// TESTBED_ONE=1 scans only the app — the comparable "one deep scan" number.
+const TARGETS = process.env.TESTBED_ONE
+  ? [`http://127.0.0.1:${PORT}`]
+  : [`http://127.0.0.1:${PORT}`, `http://127.0.0.1:${PORT + 1}`]
 const diags = []
 const ticker = []
 try {
@@ -64,10 +83,16 @@ try {
   for (const target of TARGETS) {
     const gate = await gateScanTarget(target, { isVerified: async () => false })
     if (!gate.ok) throw new Error(`gate refused the lab target ${target}: ${gate.reason}`)
+    const started = Date.now()
     diags.push(await scanSeclayer({ isVerified: async () => false }, gate.url, {
       aggressive: true,
-      emit: (channel, text) => ticker.push(`[${gate.host}] [${channel}] ${text}`),
+      oob: process.env.TESTBED_NO_OOB ? undefined : oob,
+      emit: (channel, text) => {
+        ticker.push(`[${gate.host}] [${channel}] ${text}`)
+        if (process.env.TESTBED_TRACE) console.error(`[t] ${gate.host} ${channel} ${text.slice(0, 80)}`)
+      },
     }))
+    console.error(`[timing] ${gate.host} scanned in ${((Date.now() - started) / 1000).toFixed(1)}s`)
   }
 } finally {
   app.kill()

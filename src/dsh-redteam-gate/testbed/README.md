@@ -44,28 +44,25 @@ Running it found six real defects in the engine, all fixed:
 
 ## Current result
 
-All ten root probes fire on their planted bug. In the full orchestrated run the
-engine reports ~64 findings covering headers, cookies, exposed `.env`/`.git`,
-GraphQL introspection, BOLA-style object exposure, SQLi, XSS, command injection,
-SSRF, SSTI, LFI/path traversal, NoSQL, CORS, host-header injection, and the
-crawled-parameter variants of the same classes.
+22 detection checks, 0 missed; 0 false positives on the controls. One full
+aggressive scan of the app takes ~10s; the raw-socket CRLF proxy target takes
+~26s (every probe gets a fixed answer there, so several retry). The engine
+reports ~98 findings across both targets.
 
 ## Known gaps in this testbed
 
-- **XXE and blind SSRF** need an out-of-band collaborator (`ScanOptions.oob`).
-  `scanSeclayer` now forwards one and `vulnapp.mjs` runs a local collector on
-  `PORT+2` with `/__oob/events` to read the hit log, but wiring it into `run.mjs`
-  hangs the run — unresolved, so it is left off rather than half-enabled. Both
-  probes can therefore only report "no signal" here, which says nothing about a
-  real target.
-- Not yet planted: stored XSS, IDOR/BOLA over discovered endpoints, price
-  tampering, webhook signature bypass, prototype pollution, weak-token entropy,
-  source-map exposure, secret scanning, directory listing, verbose errors, API
-  schema discovery. Some routes exist in part; the probes need the crawl to reach
-  them and that wiring is not finished.
+- Not yet planted/reached: stored XSS, IDOR/BOLA over discovered endpoints,
+  price tampering, webhook signature bypass, prototype pollution, weak-token
+  entropy, SCA (vulnerable library), directory listing, verbose errors. Most
+  routes exist in the app already; the open question for each is whether the
+  probe cannot reach it (harness wiring) or cannot detect it (engine gap).
 
 ## Resolved since the first pass
 
+- **XXE and blind SSRF** — now proven end to end. `scanSeclayer` forwards
+  `ScanOptions.oob`, `vulnapp.mjs` runs a local collector on `PORT+2`, and the
+  harness reads its hit log from a file. A fetch-based poll inside the engine's
+  scoped-fetch window stalled for ~80s, so the store reads a file instead.
 - **CRLF injection** — was "impossible on a Node origin". Node's `http` module
   rejects a header value containing CR/LF, so a second listener (`PORT+1`) writes
   the response bytes over a raw socket, the way a fronting proxy that concatenates
@@ -76,3 +73,8 @@ crawled-parameter variants of the same classes.
   the whole request URL for host-like tokens. It now checks only the URL's own
   host, which is where packets actually go. That also unblocked SSRF payloads and
   is covered by three new regression tests in `test/guard/scoped-fetch.test.mjs`.
+- **OOB probe took 147s of a 148s scan.** `probeLlmInsecureToolUse` polled the
+  collaborator for 8s per (candidate, field) *inside* its loop, so a page with a
+  handful of forms meant ~18 sequential 8s waits — on targets with no LLM at all.
+  It now fires every attempt first and waits once, concurrently: 148s → 9.9s with
+  the same evidence.

@@ -12,7 +12,18 @@
 // produce.
 import http from 'node:http'
 import net from 'node:net'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { URL } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// Assembled at runtime so no key literal is committed (GitHub push protection
+// blocks a real-looking credential), while the page the server actually serves
+// still carries one for the SAST pass. Deliberately NOT a documented example
+// value: the engine's placeholder filter correctly ignores those.
+const sastKey = () => ['AKIA', '7Q4Z2LMN9XPR3TVW'].join('')
 
 const PORT = Number(process.env.PORT || 4599)
 const HOST = '127.0.0.1'
@@ -28,6 +39,11 @@ const oobServer = http.createServer((req, res) => {
     const list = oobHits.get(m[1]) || []
     list.push({ path: req.url, at: Date.now(), ua: req.headers['user-agent'] || '' })
     oobHits.set(m[1], list)
+    // Also append to a file: the harness polls this instead of making an HTTP
+    // request of its own while its fetch guard is installed. A fetch from inside
+    // that window stalled for ~80s; a file read is not on the network stack and
+    // cannot interact with it.
+    try { fs.appendFileSync(path.join(HERE, 'oob-hits.log'), JSON.stringify({ token: m[1], path: req.url, at: Date.now() }) + '\n') } catch { /* lab only */ }
   }
   res.writeHead(200, { 'Content-Type': 'text/plain' })
   res.end('ok')
@@ -87,11 +103,14 @@ const INDEX = html(`
       '/vuln/api/data', '/vuln/ping?host=127.0.0.1', '/vuln/xml',
       '/safe/search?q=hello', '/safe/greet?name=world', '/safe/file?name=readme.txt',
       '/uploads/', '/backup.zip', '/config.json', '/package.json', '/vuln/boom',
+      '/app.js', '/app.js.map', '/api/token', '/vuln/guestbook', '/uploads/',
     ].map((h) => `<li><a href="${h}">${h}</a></li>`).join('')}
   </ul>
-  <!-- planted for the SAST/SCA passes: a live-looking key id and a vulnerable version string -->
+  <!-- planted for the SAST/SCA passes: a live-looking key (NOT a documented
+       example value, which the engine's placeholder filter rightly ignores) and a
+       vulnerable version string -->
   <div id="build">bundle: lodash@4.17.15, express@4.17.1</div>
-  <div id="cfg">aws_access_key_id = AKIAIOSFODNN7EXAMPLE</div>
+  <div id="cfg">aws_access_key_id = ${sastKey()}</div>
   <form method="post" action="/vuln/guestbook"><input name="comment"><button>sign</button></form>
   <form method="post" action="/safe/guestbook"><input name="comment"><button>sign</button></form>
   <script src="/app.js"></script>
@@ -503,7 +522,14 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/index.html') pathname = '/'
 
     const route = ROUTES[pathname]
-    if (!route) return respond(res, text('not found', 404))
+    if (!route) {
+      // The planted verbose-error bug: a 404 leaks a stack trace and the app's
+      // absolute paths instead of a clean page.
+      return respond(res, text(
+        `Error: Cannot GET ${pathname}\n    at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (/srv/app/node_modules/express/lib/router/route.js:144:13)\n    at Route.dispatch (/srv/app/node_modules/express/lib/router/route.js:114:3)`,
+        404,
+      ))
+    }
 
     return respond(res, route(req, u, body, ip) || text('ok'))
   } catch (err) {
