@@ -14,6 +14,6 @@ This repository combines code under different licenses. Each part keeps its own 
 
 ## Open items
 
-- The copyright holder line is "SecLayer Hybrid contributors" in the root `LICENSE`. Replace it with the legal name you want to use.
+- Copyright holder for the root `LICENSE` and the SecLayer core `LICENSE` is Carlos Cuellar.
 - The SecLayer core is published as source-available: viewable, not reusable. Decided by the owner on 2026-11-25.
 - The original `modules/` folders were removed in this repo. Their history is in git and in the source repositories.
