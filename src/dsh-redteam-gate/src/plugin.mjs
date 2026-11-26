@@ -4,6 +4,7 @@ import { LocalDomainVerifier } from './verifier.mjs'
 import { nativeTools } from './tools.mjs'
 import { redteamTools } from './redteam-tools.mjs'
 import { scanTools } from './scan-tools.mjs'
+import { checkAvailability } from './availability.mjs'
 import { alterEgoScopeDecision } from './alterego-scope.mjs'
 import { alterEgoTools } from './engines/alterego/registry.mjs'
 
@@ -28,7 +29,9 @@ export const Config = {
     validate(input) {
       const raw = input && typeof input === 'object' ? input : {}
       const labHosts = Array.isArray(raw.labHosts) ? raw.labHosts.map((h) => String(h ?? '')) : []
-      return { value: { labHosts } }
+      // registerUnavailable: also register tools whose program is not installed here (off by default).
+      const registerUnavailable = raw.registerUnavailable === true
+      return { value: { labHosts, registerUnavailable } }
     },
   },
 }
@@ -64,14 +67,22 @@ export function apply(ctx, config = {}) {
   if (labHosts.length > 0) {
     process.env.SCAN_DEV_ALLOW_HOSTS = labHosts.join(',')
   }
+  // Optional tools are registered only when their program is installed here, so the agent never calls one
+  // that can only fail. The scope gate below still checks every shell command that names one of them.
+  const { available, missing } = checkAvailability()
+  const usable = (name) => config?.registerUnavailable === true || available.has(name)
+  const skipped = Object.keys(missing).filter((name) => !usable(name))
+  if (skipped.length > 0) {
+    console.warn(`[dsh-redteam-gate] not registered, program not installed here: ${skipped.join(', ')}`)
+  }
   // Native scanners: each call still passes the scope gate below before it runs.
-  for (const tool of nativeTools) ctx.tools.register(tool)
+  for (const tool of nativeTools) if (usable(tool.name)) ctx.tools.register(tool)
   // SecScan fetch, SecLayer probes, Metasploit scanner, passive recon. Each target-sending tool is gated inside its adapter.
-  for (const tool of redteamTools(verifier)) ctx.tools.register(tool)
+  for (const tool of redteamTools(verifier)) if (tool.name !== 'msfconsole' || usable('msfconsole')) ctx.tools.register(tool)
   // Verbatim VibeScan and SecLayer scan cores: whole-site checks, gated by ownership in each tool.
   for (const tool of scanTools(verifier)) ctx.tools.register(tool)
   // AlterEgo tools (ae_ prefix, generated catalog). They run without an approval prompt; scope still applies.
-  for (const tool of alterEgoTools()) ctx.tools.register(tool)
+  if (usable('alterego')) for (const tool of alterEgoTools()) ctx.tools.register(tool)
   ctx.on('tools/pre-execute', async (exec, next) => {
     const decision = await decideScope(
       { toolName: exec.name, arguments: exec.arguments ?? {} },

@@ -12,7 +12,8 @@ test('the plugin loads and registers native scanners plus red-team tools, and ho
   const registered = []
   const hooks = []
   const ctx = { tools: { register: (t) => registered.push(t.name) }, on: (name) => hooks.push(name) }
-  apply(ctx)
+  // Every tool, installed or not: this test checks the full set the plugin can offer.
+  apply(ctx, { registerUnavailable: true })
   assert.equal(plugin.name, 'dsh-redteam-gate')
   assert.deepEqual(hooks, ['tools/pre-execute'])
   for (const n of ['nmap', 'nuclei', 'ffuf', 'gobuster', 'sqlmap', 'nikto', 'john']) assert.ok(registered.includes(n), n)
@@ -31,9 +32,12 @@ test('the plugin Config satisfies the harness Standard Schema contract (a plain 
   const std = plugin.Config?.['~standard']
   assert.ok(std, 'Config must expose ~standard')
   assert.equal(typeof std.validate, 'function')
-  assert.deepEqual(std.validate({}), { value: { labHosts: [] } })
-  assert.deepEqual(std.validate({ labHosts: ['127.0.0.1'] }), { value: { labHosts: ['127.0.0.1'] } })
-  assert.deepEqual(std.validate(undefined), { value: { labHosts: [] } })
+  assert.deepEqual(std.validate({}), { value: { labHosts: [], registerUnavailable: false } })
+  assert.deepEqual(std.validate({ labHosts: ['127.0.0.1'] }), { value: { labHosts: ['127.0.0.1'], registerUnavailable: false } })
+  assert.deepEqual(std.validate(undefined), { value: { labHosts: [], registerUnavailable: false } })
+  assert.deepEqual(std.validate({ registerUnavailable: true }), { value: { labHosts: [], registerUnavailable: true } })
+  // Only a real boolean true turns it on.
+  assert.equal(std.validate({ registerUnavailable: 'yes' }).value.registerUnavailable, false)
 })
 
 test('every target-sending red-team tool is gate-active', () => {
