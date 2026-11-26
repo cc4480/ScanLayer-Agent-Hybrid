@@ -41,6 +41,27 @@ if (-not (Have-Engine)) {
 }
 Say ("Docker engine: " + (& $DockerExe info --format '{{.ServerVersion}}'))
 
+# The view proxy is what the Browser panel embeds. The apps send
+# X-Frame-Options: DENY and frame-ancestors 'none', so an iframe can never load
+# them directly; the proxy serves the same app on 4710/4711 with only those two
+# refusals removed. It is a host process, so it must be restarted after a reboot.
+function Test-Port([int]$p) {
+    return [bool](Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)
+}
+if (-not (Test-Port 4710) -or -not (Test-Port 4711)) {
+    $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if ($nodeExe) {
+        Say 'Starting the view proxy (4710 SecLayer, 4711 SecScan)...'
+        Start-Process -FilePath $nodeExe -ArgumentList (Join-Path $Root 'deploy\view-proxy.mjs') `
+            -WorkingDirectory $Root -WindowStyle Hidden `
+            -RedirectStandardOutput (Join-Path $Root '.dsh\view-proxy.log') `
+            -RedirectStandardError (Join-Path $Root '.dsh\view-proxy.err.log')
+        Start-Sleep -Seconds 2
+    } else {
+        Say 'WARN: node not found - the Browser panel proxy was not started.'
+    }
+}
+
 # Read-only fast path. If everything is already healthy, touch nothing: a
 # `compose up -d` on a live stack can recreate containers, and restarting a
 # working scanner mid-use is worse than doing nothing.

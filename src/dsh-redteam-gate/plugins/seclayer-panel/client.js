@@ -9,8 +9,8 @@ window.__ModuleLoader__.load({
     // ticker, and a finished one opens its own report page. Nothing here
     // re-renders any of that — the Browser tab loads the app itself.
     const APPS = [
-      { key: 'seclayer', name: 'Seclayer', url: 'http://127.0.0.1:4700', hint: 'SecLayer on 4700 — scans, live progress, reports' },
-      { key: 'secscan', name: 'Secscan', url: 'http://127.0.0.1:4701', hint: 'SecScan on 4701 — scans, monitors, reports' },
+      { key: 'seclayer', name: 'Seclayer', url: 'http://127.0.0.1:4710', hint: 'SecLayer via view proxy 4710 — scans, live progress, reports' },
+      { key: 'secscan', name: 'Secscan', url: 'http://127.0.0.1:4711', hint: 'SecScan via view proxy 4711 — scans, monitors, reports' },
     ];
 
     const btn = {
