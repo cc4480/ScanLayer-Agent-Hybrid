@@ -1,0 +1,6 @@
+# Loopback port overrides. The apps' own compose files publish 3000 / 8090;
+# these pin the ports the DSH bundles and panels point at, on loopback only.
+services:
+  seclayer:
+    ports:
+      - '127.0.0.1:4700:3000'
