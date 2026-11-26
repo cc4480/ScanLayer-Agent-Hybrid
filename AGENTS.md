@@ -274,6 +274,11 @@ These are deliberate, local-only choices. **None of them may reach a deployment.
     `docker compose --env-file .env.docker -f docker-compose.yml -f C:\sh\seclayer-hybrid\deploy\secscan.overrides.yml up -d`
   - Restoring the shipped behaviour means dropping those flags and the
     override — never editing scanner source.
+- `DEEPSEEK_API_KEY` is set in **both apps' gitignored env files** (never in this
+  repo, never in a tracked file): SecScan's worker reads it for the AI narrative,
+  SecLayer reads it at boot for the AI analyst. Unset, both silently fall back to
+  deterministic summaries, which is why a report can look "AI-written" while the
+  AI never ran — check for `DeepSeek analysis skipped or failed` in the worker log.
 - DSH's MCP client aborts a tool call after 60 s, so a long aggressive scan
   times out client-side while the app still finishes and saves it. Both `*-mcp`
   rows carry `toolCallTimeoutMs: 330000`, effective on the next DSH start.
