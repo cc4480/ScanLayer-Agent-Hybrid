@@ -51,6 +51,30 @@ while ($true) {
                 & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $StackScript *> $null
                 Write-Log 'stack-up.ps1 returned'
             }
+
+            # The view proxy is a separate host process; neither the containers nor
+            # stack-up's container path revives it. If it is gone, the Browser panel
+            # is blank even though both apps answer - so start it here too.
+            if (-not (Test-Listener 4710) -or -not (Test-Listener 4711)) {
+                $gap = ((Get-Date) - $lastRun).TotalSeconds
+                if ($gap -ge $MinGapSeconds) {
+                    $lastRun = Get-Date
+                    $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+                    if ($nodeExe) {
+                        Write-Log 'view proxy not listening - starting view-proxy.mjs'
+                        $root = Split-Path -Parent $PSScriptRoot
+                        Start-Process -FilePath $nodeExe `
+                            -ArgumentList (Join-Path $PSScriptRoot 'view-proxy.mjs') `
+                            -WorkingDirectory $root -WindowStyle Hidden `
+                            -RedirectStandardOutput (Join-Path $root '.dsh\view-proxy.log') `
+                            -RedirectStandardError (Join-Path $root '.dsh\view-proxy.err.log')
+                        Start-Sleep -Seconds 2
+                        Write-Log ('view proxy now listening: ' + ((Test-Listener 4710) -and (Test-Listener 4711)))
+                    } else {
+                        Write-Log 'WARN: node not found - view proxy not started'
+                    }
+                }
+            }
         }
     } catch {
         Write-Log ('watcher error: ' + $_.Exception.Message)
