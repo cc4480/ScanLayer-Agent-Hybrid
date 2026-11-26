@@ -8,6 +8,8 @@
     { "match": "Active Server-Side Template Injection", "bug": "SSTI via the root ?name= parameter" },
     { "match": "Active NoSQL Injection", "bug": "NoSQL operator auth bypass at /login" },
     { "match": "Active CORS Misconfiguration", "bug": "Origin reflection with credentials on /" },
+    { "match": "Active Open Redirect", "bug": "redirect target taken from the ?next= parameter" },
+    { "match": "Active CRLF / HTTP Response Header Injection", "bug": "CRLF in ?lang= splits the response header block (raw-socket proxy on PORT+1)" },
     { "match": "Host Header Injection", "bug": "X-Forwarded-Host trusted for canonical links on /" },
     { "match": "GraphQL Schema Introspection Exposed", "bug": "introspection enabled on /graphql" },
     { "match": "Cookie .sid. is set without the HttpOnly", "bug": "session cookie without HttpOnly on /" },
@@ -21,7 +23,6 @@
     { "match": "discovered parameter .name. on /vuln/file", "bug": "path traversal on the crawled /vuln/file parameter" }
   ],
   "clean": [
-    { "match": "on /safe/", "bug": "no finding may reference a hardened /safe/* control route" },
-    { "match": "on /vuln/go", "bug": "the non-followed redirect endpoint must not be reported as SQLi/XSS" }
+    { "match": "on /safe/", "bug": "no finding may reference a hardened /safe/* control route (escaped input, allow-listed redirects, parameterised query)" }
   ]
 }

@@ -34,11 +34,11 @@ export function scanWebapp(gate, url, tier, { onTest } = {}) {
  * `emit`, when given, is the engine's own EmitFn (channel, text): fired for each recon/probe/system/
  * result step as it happens (see scanEvents.ts) — the exact live-ticker feed the product's own UI uses.
  */
-export function scanSeclayer(gate, url, { aggressive = false, emit } = {}) {
+export function scanSeclayer(gate, url, { aggressive = false, emit, oob } = {}) {
   return withScopedFetch(gate, async () => {
     await assertScope(url, gate)
     const { runDiagnostics } = await import(SECLAYER_SCANNER)
-    return runDiagnostics(url, undefined, { allowActiveProbes: true, allowAggressiveProbes: aggressive, emit })
+    return runDiagnostics(url, undefined, { allowActiveProbes: true, allowAggressiveProbes: aggressive, emit, oob })
   })
 }
 

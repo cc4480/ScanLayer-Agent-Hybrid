@@ -22,7 +22,10 @@ export async function probeOpenRedirect(ctx: ProbeContext): Promise<RedTeamFindi
       let res: Response;
       try {
         res = await aggFetchRaw(attackUrl, { headers: ctx.fuzzHeaders });
-      } catch {
+      } catch (err: any) {
+        // A transport failure is not evidence the target "resisted": without this
+        // log the probe silently degrades to "no signal" and hides its own bug.
+        console.warn(`[aggressive] open-redirect probe could not reach ${attackUrl}:`, err?.message ?? err);
         continue;
       }
       const location = res.headers.get("location") || "";

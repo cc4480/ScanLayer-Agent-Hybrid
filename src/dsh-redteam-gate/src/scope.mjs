@@ -40,7 +40,7 @@ export function baseName(toolName) {
 }
 
 /** Strip a trailing :port, brackets, and a trailing dot. */
-function normalizeHost(raw) {
+export function normalizeHost(raw) {
   let h = String(raw).trim().toLowerCase();
   if (h.startsWith('[') && h.includes(']')) h = h.slice(1, h.indexOf(']'));
   else if (h.split(':').length === 2) h = h.split(':')[0]; // host:port (not IPv6)

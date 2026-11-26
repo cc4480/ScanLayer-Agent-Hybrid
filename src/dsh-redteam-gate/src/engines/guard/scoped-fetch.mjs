@@ -9,7 +9,7 @@
 // Limits (documented, not hidden): this covers global fetch and everything built on it (undici dispatchers
 // included). It does NOT cover raw node:net / node:tls / node:dns / node:http sockets; modules that use those must
 // be ported behind an explicit gate, not run through this guard.
-import { decideScope } from '../../scope.mjs'
+import { LAB_HOSTS, normalizeHost } from '../../scope.mjs'
 
 export class ScopeDeniedError extends Error {
   constructor(reason, url) {
@@ -30,8 +30,21 @@ function urlOf(input) {
   throw new TypeError('fetch input must be a string, URL or Request')
 }
 
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
+
 /**
  * Check one URL against the gate. Throws ScopeDeniedError before any network activity.
+ *
+ * Only the URL's OWN host is checked — never the hosts that appear inside its
+ * query string. A probe must be able to send `?next=https://evil.example/` or
+ * `?url=http://169.254.169.254/` as a PAYLOAD: those bytes go to the verified
+ * target, which is the whole point of an SSRF or open-redirect test. Scanning the
+ * full URL string for host-like tokens (what this used to do) refused every such
+ * request, so those probes reported "no signal" without sending a packet — and it
+ * turned the payload's host, not the request's, into the thing being authorized.
+ * A redirect the target actually issues is still gated: makeGuardedFetch checks
+ * every hop it follows.
+ *
  * @param {string} rawUrl
  * @param {{isVerified: (domain: string) => Promise<boolean>}} gate
  */
@@ -45,8 +58,20 @@ export async function assertScope(rawUrl, gate) {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     throw new ScopeDeniedError(`scheme ${u.protocol} is not allowed`, rawUrl)
   }
-  const decision = await decideScope({ toolName: 'nuclei', arguments: { target: rawUrl } }, gate)
-  if (decision.kind === 'deny') throw new ScopeDeniedError(decision.reason, rawUrl)
+  const host = normalizeHost(u.hostname)
+  if (LAB_HOSTS.has(host)) return
+  if (IPV4.test(host) || host.includes(':')) {
+    throw new ScopeDeniedError(`${host} is not a lab host and IP targets cannot be ownership-verified`, rawUrl)
+  }
+  let verified = false
+  try {
+    verified = (await gate.isVerified(host)) === true
+  } catch {
+    verified = false
+  }
+  if (!verified) {
+    throw new ScopeDeniedError(`${host} is not a lab host and is not verified in SecScan; zero packets sent`, rawUrl)
+  }
 }
 
 /**

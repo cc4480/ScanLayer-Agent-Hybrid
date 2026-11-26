@@ -17,7 +17,8 @@ const URL_BASE = `http://127.0.0.1:${PORT}`
 
 // The engine's SSRF guard allows loopback only when it is named explicitly.
 process.env.NODE_ENV = process.env.NODE_ENV || 'development'
-process.env.SCAN_DEV_ALLOW_HOSTS = `${process.env.SCAN_DEV_ALLOW_HOSTS || '127.0.0.1:' + PORT},127.0.0.1:${PORT}`
+const LOCAL = [PORT, PORT + 1, PORT + 2].map((p) => `127.0.0.1:${p}`).join(',')
+process.env.SCAN_DEV_ALLOW_HOSTS = `${process.env.SCAN_DEV_ALLOW_HOSTS ? process.env.SCAN_DEV_ALLOW_HOSTS + ',' : ''}${LOCAL}`
 
 const check = process.argv.includes('--check')
 
@@ -45,33 +46,45 @@ const { scanSeclayer } = await import('../src/scan-adapters.mjs')
 const { gateScanTarget } = await import('../src/scan-gate.mjs')
 const { compileStaticFindings } = await import('../src/engines/seclayer-core/server/scanner.ts')
 
+// NOTE: XXE and blind SSRF stay unverified. Both need an out-of-band collaborator
+// (ScanOptions.oob). scanSeclayer now forwards one, and vulnapp.mjs runs a local
+// collector on PORT+2 plus /__oob/events to read its hit log, but wiring it into
+// this harness hangs the run — unresolved, so the collaborator is left off rather
+// than half-enabled. Until it is fixed, those two checks can only report "no
+// signal" here, which says nothing about the target.
+
 const app = startApp()
-let diag
+// Two targets: the app itself, and its raw-socket CRLF proxy (which exists only
+// because Node's http layer refuses to emit a header containing CR/LF).
+const TARGETS = [`http://127.0.0.1:${PORT}`, `http://127.0.0.1:${PORT + 1}`]
+const diags = []
 const ticker = []
 try {
   await waitFor(`${URL_BASE}/`)
-  const gate = await gateScanTarget(URL_BASE, { isVerified: async () => false })
-  if (!gate.ok) throw new Error(`gate refused the lab target: ${gate.reason}`)
-  diag = await scanSeclayer({ isVerified: async () => false }, gate.url, {
-    aggressive: true,
-    emit: (channel, text) => ticker.push(`[${channel}] ${text}`),
-  })
+  for (const target of TARGETS) {
+    const gate = await gateScanTarget(target, { isVerified: async () => false })
+    if (!gate.ok) throw new Error(`gate refused the lab target ${target}: ${gate.reason}`)
+    diags.push(await scanSeclayer({ isVerified: async () => false }, gate.url, {
+      aggressive: true,
+      emit: (channel, text) => ticker.push(`[${gate.host}] [${channel}] ${text}`),
+    }))
+  }
 } finally {
   app.kill()
 }
 
-const compiled = compileStaticFindings(diag)
-const scored = (compiled.findings ?? []).filter((f) => !f.isFalsePositive)
-
 const rows = []
-for (const f of scored) rows.push({ src: 'scored', name: f.title, sev: f.severity, conf: f.confidence ?? '' })
-for (const f of diag.redTeamFindings ?? []) rows.push({ src: 'redteam', name: f.testName, sev: f.severity, conf: f.confidence ?? '' })
-for (const f of diag.apiSecFindings ?? []) rows.push({ src: 'api', name: f.testName, sev: f.severity, conf: f.confidence ?? '' })
-for (const f of diag.templateFindings ?? []) rows.push({ src: 'template', name: f.title, sev: f.severity, conf: f.confidence ?? '' })
-for (const f of diag.sastFindings ?? []) rows.push({ src: 'sast', name: f.issue, sev: f.severity, conf: f.confidence ?? '' })
-for (const c of diag.cookieIssues ?? []) rows.push({ src: 'cookie', name: c, sev: '', conf: '' })
-for (const h of diag.missingHeaders ?? []) rows.push({ src: 'header', name: `missing ${h}`, sev: '', conf: '' })
-for (const p of diag.probedPaths ?? []) if (p.exposed) rows.push({ src: 'path', name: `exposed ${p.path}`, sev: '', conf: '' })
+for (const diag of diags) {
+  const compiled = compileStaticFindings(diag)
+  for (const f of (compiled.findings ?? []).filter((f) => !f.isFalsePositive)) rows.push({ src: 'scored', name: f.title, sev: f.severity, conf: f.confidence ?? '' })
+  for (const f of diag.redTeamFindings ?? []) rows.push({ src: 'redteam', name: f.testName, sev: f.severity, conf: f.confidence ?? '' })
+  for (const f of diag.apiSecFindings ?? []) rows.push({ src: 'api', name: f.testName, sev: f.severity, conf: f.confidence ?? '' })
+  for (const f of diag.templateFindings ?? []) rows.push({ src: 'template', name: f.title, sev: f.severity, conf: f.confidence ?? '' })
+  for (const f of diag.sastFindings ?? []) rows.push({ src: 'sast', name: f.issue, sev: f.severity, conf: f.confidence ?? '' })
+  for (const c of diag.cookieIssues ?? []) rows.push({ src: 'cookie', name: c, sev: '', conf: '' })
+  for (const h of diag.missingHeaders ?? []) rows.push({ src: 'header', name: `missing ${h}`, sev: '', conf: '' })
+  for (const p of diag.probedPaths ?? []) if (p.exposed) rows.push({ src: 'path', name: `exposed ${p.path}`, sev: '', conf: '' })
+}
 
 const pad = (s, n) => String(s ?? '').padEnd(n).slice(0, n)
 console.log(`\n=== ${rows.length} finding(s) from the testbed ===\n`)

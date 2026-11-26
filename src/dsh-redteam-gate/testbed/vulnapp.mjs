@@ -11,11 +11,44 @@
 // stay clean. `expected.json` maps each planted bug to the finding it should
 // produce.
 import http from 'node:http'
+import net from 'node:net'
 import { URL } from 'node:url'
 
 const PORT = Number(process.env.PORT || 4599)
 const HOST = '127.0.0.1'
 
+// ---- out-of-band collaborator (port PORT+2) ---------------------------------
+// Proves BLIND vulnerabilities: the target is made to call a URL the scanner
+// minted. The scan process imports this module, so the hit log is shared memory.
+export const oobHits = new Map() // token -> [{ path, at, ua }]
+
+const oobServer = http.createServer((req, res) => {
+  const m = /^\/api\/oob\/([a-f0-9]{16,})$/.exec(new URL(req.url, 'http://x').pathname)
+  if (m) {
+    const list = oobHits.get(m[1]) || []
+    list.push({ path: req.url, at: Date.now(), ua: req.headers['user-agent'] || '' })
+    oobHits.set(m[1], list)
+  }
+  res.writeHead(200, { 'Content-Type': 'text/plain' })
+  res.end('ok')
+})
+oobServer.listen(PORT + 2, HOST, () => {
+  console.log(`testbed OOB collaborator listening on http://${HOST}:${PORT + 2}`)
+})
+
+// A real SSRF: the server fetches the URL it was handed. Only loopback targets
+// are fetched (this is a lab), fire-and-forget so the response is not delayed.
+function ssrfFetch(rawUrl) {
+  try {
+    const u = new URL(rawUrl)
+    if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') fetch(u.href).catch(() => {})
+  } catch { /* not a URL */ }
+}
+
+/** Simulates an XML parser that resolves external entities: fetches each SYSTEM URL. */
+function resolveXmlEntities(bodyText) {
+  for (const m of (bodyText || '').matchAll(/SYSTEM\s+["']([^"']+)["']/gi)) ssrfFetch(m[1])
+}
 // ---- tiny rate limiter (the "correct" control) -------------------------------
 const buckets = new Map()
 function limited(key, max, windowMs) {
@@ -84,6 +117,9 @@ function rootRoute(req, u, body) {
 
   const target = u.searchParams.get('url')
   if (target !== null) {
+    // The planted SSRF: fetch whatever we were given (loopback only, in this lab),
+    // which is what makes a blind callback to the collaborator possible.
+    ssrfFetch(target)
     if (/127\.0\.0\.1:22|localhost:22/.test(target)) return text('SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13\r\n')
     if (/169\.254\.169\.254/.test(target)) return text('ami-id: ami-123456\niam/security-credentials/: app-role\n')
     if (/127\.0\.0\.1|localhost|0\.0\.0\.0/.test(target)) return text('root:x:0:0:root:/root:/bin/bash\n')
@@ -140,6 +176,11 @@ function rootRoute(req, u, body) {
 const ROUTES = {
   // ---- ROOT (target of the root-URL exploit probes) -------------------------
   '/': (req, u, body) => {
+    // The planted XXE: an XML body is "parsed" and its external entities resolved.
+    if (req.method === 'POST' && /<\!(?:DOCTYPE|ENTITY)/i.test(body || '')) {
+      resolveXmlEntities(body)
+      return { status: 200, headers: { 'Content-Type': 'application/xml' }, body: '<?xml version="1.0"?><root>ok</root>' }
+    }
     const planted = rootRoute(req, u, body)
     if (planted) return planted
     // Reflect any Origin with credentials (CORS) and the Host header into the
@@ -262,6 +303,7 @@ const ROUTES = {
   // ---- SSRF ----------------------------------------------------------------
   '/vuln/fetch': (req, u) => {
     const target = u.searchParams.get('url') || ''
+    ssrfFetch(target)
     // Canned internal-looking response for loopback/metadata targets only.
     if (/127\.0\.0\.1|localhost|169\.254\.169\.254|0\.0\.0\.0/.test(target)) {
       return text('root:x:0:0:root:/root:/bin/bash\nami-id: ami-123456\n')
@@ -451,6 +493,12 @@ const server = http.createServer(async (req, res) => {
     // Client went away mid-body (probe timeout). Fall through with what we have.
   }
 
+  // The harness (a separate process) reads the collaborator's hit log here.
+  if (u.pathname === '/__oob/events') {
+    const token = u.searchParams.get('token') || ''
+    return respond(res, json(oobHits.get(token) ?? []))
+  }
+
   try {
     if (pathname === '/index.html') pathname = '/'
 
@@ -480,3 +528,48 @@ process.on('unhandledRejection', (e) => console.error('[testbed] unhandled:', e?
 server.listen(PORT, HOST, () => {
   console.log(`testbed listening on http://${HOST}:${PORT}`)
 })
+
+// ---------------------------------------------------------------------------
+// Raw-socket "fronting proxy" for CRLF injection (port PORT+1).
+//
+// Node's http module REJECTS a header value containing CR/LF (ERR_INVALID_CHAR),
+// so a Node origin physically cannot demonstrate response-header injection — the
+// testbed would be testing Node's own validation, not the app's. Real CRLF bugs
+// live in code that writes the header block by hand (or in a proxy that
+// concatenates input into a header), which is exactly what this listener does: it
+// takes `lang`, decodes it, and writes the raw response bytes with the value
+// pasted into a Set-Cookie line. A `%0d%0a` in `lang` therefore starts a real new
+// header line, the classic response-splitting primitive.
+const crlfServer = net.createServer((socket) => {
+  let buf = ''
+  socket.on('error', () => {})
+  socket.on('data', (chunk) => {
+    buf += chunk.toString('latin1')
+    const end = buf.indexOf('\r\n\r\n')
+    if (end === -1) return
+    const requestLine = buf.split('\r\n')[0] || ''
+    const target = requestLine.split(' ')[1] || '/'
+    const qIndex = target.indexOf('?')
+    const rawQuery = qIndex === -1 ? '' : target.slice(qIndex + 1)
+    const params = new URLSearchParams(rawQuery)
+    const lang = params.get('lang') || params.get('q') || params.get('next') || 'en'
+    // The bug: the decoded value goes straight into a header line.
+    const injected = `Set-Cookie: lang=${lang}\r\n`
+    const body = 'ok'
+    socket.end(
+      'HTTP/1.1 200 OK\r\n' +
+      'Content-Type: text/html\r\n' +
+      injected +
+      'X-Testbed: crlf-proxy\r\n' +
+      `Content-Length: ${body.length}\r\n` +
+      'Connection: close\r\n\r\n' +
+      body,
+    )
+  })
+})
+crlfServer.listen(PORT + 1, HOST, () => {
+  console.log(`testbed CRLF proxy listening on http://${HOST}:${PORT + 1}`)
+})
+
+/** Every listener, so a harness that imports this module can shut them down. */
+export const __servers = [server, crlfServer, oobServer]

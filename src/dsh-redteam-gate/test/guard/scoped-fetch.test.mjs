@@ -84,3 +84,49 @@ test('the original fetch is restored even when the guarded run throws', async ()
 test('a gate is required', () => {
   assert.throws(() => withScopedFetch(null, async () => {}), TypeError)
 })
+
+// A probe must be able to send an attacker URL as a PAYLOAD to a verified target:
+// `?next=https://evil.example/` and `?url=http://169.254.169.254/` are the whole
+// point of an open-redirect / SSRF test. The gate used to substring-scan the whole
+// request URL for host-like tokens and refused every such request with "zero
+// packets sent", which silently disabled those probes against every target (they
+// reported "no signal" having sent nothing). Only the URL's own host may decide.
+test('a payload host inside the query string does not deny a verified/lab target', async () => {
+  let calls = 0
+  const srv = await labServer((req, res) => { calls++; res.writeHead(302, { Location: '//evil.example/' }); res.end() })
+  const port = srv.address().port
+  try {
+    await withScopedFetch(never, async () => {
+      const a = await fetch(`http://127.0.0.1:${port}/?next=https%3A%2F%2Fevil.example%2F`, { redirect: 'manual' })
+      const b = await fetch(`http://127.0.0.1:${port}/?url=http://169.254.169.254/latest/meta-data`, { redirect: 'manual' })
+      assert.equal(a.status, 302)
+      assert.equal(b.status, 302)
+    })
+    assert.equal(calls, 2, 'both payload requests must actually be sent')
+  } finally {
+    srv.close()
+  }
+})
+
+test('the target host still decides: an unverified host is denied even when the query names a lab host', async () => {
+  let calls = 0
+  const spy = async () => { calls++; return new Response('x') }
+  const original = globalThis.fetch
+  globalThis.fetch = spy
+  try {
+    await assert.rejects(
+      () => withScopedFetch(never, async () => fetch('https://evil.example/?next=http://127.0.0.1:4599/')),
+      (e) => e instanceof ScopeDeniedError && /evil\.example/.test(e.message),
+    )
+    assert.equal(calls, 0, 'no packet may be sent to the unverified host')
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('a bare public IP target is still denied', async () => {
+  await assert.rejects(
+    () => withScopedFetch(never, async () => fetch('http://169.254.169.254/latest/meta-data')),
+    (e) => e instanceof ScopeDeniedError && /169\.254\.169\.254/.test(e.message),
+  )
+})

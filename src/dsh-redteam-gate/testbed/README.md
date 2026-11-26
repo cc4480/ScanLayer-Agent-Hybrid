@@ -52,16 +52,27 @@ crawled-parameter variants of the same classes.
 
 ## Known gaps in this testbed
 
-- **CRLF injection** cannot be demonstrated by a Node origin: Node rejects a
-  header value containing CR/LF, so the injected header never appears. It needs a
-  fronting proxy that concatenates input into headers.
-- **Open redirect** fires when the probe is called directly but reports "no
-  signal" inside the orchestrated aggressive tier — unresolved. Suspect a fetch
-  abort/timeout in the preceding probes being swallowed as "no signal".
-- **XXE and blind SSRF** need an out-of-band collaborator (`OOB_BASE_URL`);
-  without one the probes can only report "no signal".
+- **XXE and blind SSRF** need an out-of-band collaborator (`ScanOptions.oob`).
+  `scanSeclayer` now forwards one and `vulnapp.mjs` runs a local collector on
+  `PORT+2` with `/__oob/events` to read the hit log, but wiring it into `run.mjs`
+  hangs the run — unresolved, so it is left off rather than half-enabled. Both
+  probes can therefore only report "no signal" here, which says nothing about a
+  real target.
 - Not yet planted: stored XSS, IDOR/BOLA over discovered endpoints, price
   tampering, webhook signature bypass, prototype pollution, weak-token entropy,
   source-map exposure, secret scanning, directory listing, verbose errors, API
-  schema discovery. The routes exist in part; the probes need the crawl to reach
+  schema discovery. Some routes exist in part; the probes need the crawl to reach
   them and that wiring is not finished.
+
+## Resolved since the first pass
+
+- **CRLF injection** — was "impossible on a Node origin". Node's `http` module
+  rejects a header value containing CR/LF, so a second listener (`PORT+1`) writes
+  the response bytes over a raw socket, the way a fronting proxy that concatenates
+  input into a header would. The probe now detects it.
+- **Open redirect** — was "fires standalone, no signal in the orchestrated run".
+  Not a probe bug: the DSH scope gate refused every request whose *query string*
+  contained a hostname (`?next=https://evil.example/`), because it substring-scanned
+  the whole request URL for host-like tokens. It now checks only the URL's own
+  host, which is where packets actually go. That also unblocked SSRF payloads and
+  is covered by three new regression tests in `test/guard/scoped-fetch.test.mjs`.
