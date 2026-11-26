@@ -274,8 +274,10 @@ testbed. Their removal is why the apps own the report.
 Host assessments (the machine itself: Windows, Linux, iOS/iPadOS) have no app behind
 them, so the report is ours — but it is **one fixed artifact**, not a per-report design.
 
-- **Load the skill first:** `local-host-report`. It ships the canonical template at
-  `skills/local-host-report/assets/template.html`; that file *is* the specification.
+- **Two skills are required:** `web-scan-catalog` (the checks and their oracles) and
+  `local-host-report` (the document). Load both before writing.
+- **Use the template:** `skills/local-host-report/assets/template.html`; that file *is*
+  the specification.
 - **Copy, do not rebuild.** Take the template, replace the content, keep the markup
   patterns. Same 11 sections, same ids, same palette, same animation, same data
   appendix and the same embedded-JSON export.
@@ -286,4 +288,5 @@ them, so the report is ours — but it is **one fixed artifact**, not a per-repo
   admin-gated is ever reported as a pass.
 - **Render before handing over** (headless Edge, 1400×15000), check that counters show
   real numbers and the file has no mojibake, then give the single HTML file.
-- Finished reports live in `reports/` and are committed with the skill version they used.
+- Finished reports live in `reports/` with a row in `reports/README.md` (date, host,
+  platform, findings, skill versions). Sanitize identities — the repo is public.
