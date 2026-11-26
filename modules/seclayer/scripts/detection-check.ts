@@ -36,8 +36,8 @@ import { compileStaticFindings } from "../server/findings.js";
 const STRIPE_FIXTURE = `sk_live_${randomBytes(18).toString("hex")}`;
 
 const INLINE_SECRETS = `
-  const AWS_KEY = "AKIA3XKWQZJ7NRVB4TMD";
-  const gh = "gho_16C7e42F292c6912E7710c838347Ae178B4a";
+  const AWS_KEY = "AKIAQ23FMDZEDN4BK8JE";
+  const gh = "gho_0Vse33JkaZt7EB1SJ4qQ8NaAdJKti5l1l0yk";
   const stripe = "${STRIPE_FIXTURE}";
 `;
 

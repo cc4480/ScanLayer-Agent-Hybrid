@@ -54,6 +54,6 @@ test('secrets: a Google browser API key is not reported on its own', () => {
 
 test('secrets: genuinely secret credentials are still reported', () => {
   // The removal above must not blunt the signatures that matter.
-  const aws = analyzeSecrets('const k="AKIA3XKWQZJ7NRVB4TMD";');
+  const aws = analyzeSecrets('const k="AKIAQ23FMDZEDN4BK8JE";');
   assert.ok(aws.length > 0, 'AWS access key id must still be reported');
 });

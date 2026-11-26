@@ -22,7 +22,7 @@ test('placeholder secrets: low-entropy / repeated / sequential filler is filtere
 test('placeholder secrets: realistic random keys are NOT filtered', () => {
   assert.equal(isLikelyPlaceholderSecret('sk_live_51H8xN2eZvKYlo2Cq7Bd4RtP9wMz'), false);
   assert.equal(isLikelyPlaceholderSecret('AKIA3F7K9QZ2WLMN8XYT'), false);
-  assert.equal(isLikelyPlaceholderSecret('gho_16C7e42F292c6912E7710c838347Ae178B4a'), false);
+  assert.equal(isLikelyPlaceholderSecret('gho_0Vse33JkaZt7EB1SJ4qQ8NaAdJKti5l1l0yk'), false);
 });
 
 test('xss gate: HTML reflection in an executing context is exploitable', () => {

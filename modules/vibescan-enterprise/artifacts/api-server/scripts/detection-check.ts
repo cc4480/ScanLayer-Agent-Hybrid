@@ -31,7 +31,7 @@ const INLINE_SECRETS = `
   // Not AWS's documented AKIAIOSFODNN7EXAMPLE: that contains "EXAMPLE" and the
   // scanner correctly suppresses placeholder keys, so planting it tested the
   // false-positive guard rather than detection.
-  const AWS_KEY = "AKIA3XKWQZJ7NRVB4TMD";
+  const AWS_KEY = "AKIAQ23FMDZEDN4BK8JE";
   const cfg = { apiUrl: "https://api.example.com" };
   const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTg4MTQiLCJlbWFpbCI6Im9wc0BleGFtcGxlLmNvbSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTU0NjMwMDgwMH0.ccccccccccccccccccccccccccccccccccccccccccc";
 `;
