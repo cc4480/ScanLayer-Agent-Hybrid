@@ -211,7 +211,7 @@ Authenticates as `Authorization: Bearer`.
 | `.dsh\profiles\web\cordis.patch.yml` | machine-local MCP config: full concrete config + keys |
 | `.dsh\.env` | credential values |
 | `.env` (repo root, gitignored) | `SECLAYER_API_KEY`, `SECLAYER_API_URL`, `SECSCAN_*` |
-| `deploy\` | README, `bootstrap.ps1`, `stack-up.ps1`, `view-proxy.mjs`, port overrides, `seclayer.db.yml`, `pg-tls\` (gitignored certs) |
+| `deploy\` | README, `bootstrap.ps1`, `stack-up.ps1`, `view-proxy.mjs`, port overrides, `seclayer.db.yml`, `secscan.overrides.yml` (local scan allowances), `pg-tls\` (gitignored certs) |
 | `src\dsh-redteam-gate\plugins\` | `seclayer-mcp`, `secscan-mcp`, `seclayer-panel` |
 | `C:\sh\src\seclayer.io2026\.env` | **production/container** config (the app's own file) |
 | `C:\sh\src\seclayer.io2026\.env.container` | copy of the same container config |
@@ -252,17 +252,22 @@ These are deliberate, local-only choices. **None of them may reach a deployment.
 - `ALLOW_UNVERIFIED_ACTIVE_PROBES=true` — active probes run with no ownership proof.
   Anyone who can use the instance can aim exploits at any domain.
 - `ALLOW_MISSING_EMAIL_PROVIDER=true` — sign-in codes go to the container log.
-- **No scan limits (set 2026-11-26, operator request).** Both apps run uncapped:
-  - SecLayer (`.env`): `FREE_MODE=true` (no credits), `DISABLE_RATE_LIMITS=true`
-    (every route limiter is a no-op — now honoured in production by
-    `server/config.ts`, not just dev), `ENABLE_BROWSER_RENDERING=true` (headless
-    crawl + DOM-XSS proof), `MAX_CONCURRENT_SCANS=8`. The aggressive tier runs
-    **by default** (`aggressiveProbes !== false`) on dashboard and MCP scans alike.
-  - SecScan (`.env.docker`, wired through `docker-compose.yml`):
-    `FREE_TRIAL_SCAN_LIMIT=1000000`, `SCAN_LIMIT_PER_HOUR/DAY` and their
-    `_PER_IP` twins at 100000, `SCAN_DAILY_LIMIT_ANON/ACCOUNT=100000`.
-  - To restore the shipped limits, unset those variables in the two env files
-    (`DISABLE_RATE_LIMITS` included). Do not put product defaults back in code.
+- **Scan allowances are runtime overrides only (2026-11-26).** The scanner
+  repos (`seclayer.io2026`, `VibeScan-Enterprise-Build`) are READ-ONLY for us:
+  no edits, no commits. Every deviation from the shipped product lives outside
+  them, in gitignored env files and this repo:
+  - SecLayer — its `.env`: `FREE_MODE=true` (a credit balance never stops a
+    scan), `ENABLE_BROWSER_RENDERING=true` (headless crawl + DOM-XSS proof),
+    `MAX_CONCURRENT_SCANS=8`. The image is built from pristine source. Rate
+    limits and the aggressive tier stay on the shipped default, so **pass
+    `aggressive: true` explicitly** when scanning here.
+  - SecScan — its `.env.docker` raises `FREE_TRIAL_SCAN_LIMIT`, `SCAN_LIMIT_*`
+    and `SCAN_DAILY_LIMIT_*`; `deploy/secscan.overrides.yml` in this repo is
+    what forwards them into the container, because the app's own compose file
+    must stay untouched:
+    `docker compose --env-file .env.docker -f docker-compose.yml -f C:\sh\seclayer-hybrid\deploy\secscan.overrides.yml up -d`
+  - Restoring the shipped behaviour means dropping those flags and the
+    override — never editing scanner source.
 - DSH's MCP client aborts a tool call after 60 s, so a long aggressive scan
   times out client-side while the app still finishes and saves it. Both `*-mcp`
   rows carry `toolCallTimeoutMs: 330000`, effective on the next DSH start.

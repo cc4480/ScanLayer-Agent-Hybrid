@@ -1,0 +1,26 @@
+# Operator-local scan allowances for SecScan — kept OUT of
+# C:\sh\src\VibeScan-Enterprise-Build on purpose: that repo stays pristine,
+# so nothing here is a change to the app's source or its compose file.
+#
+# Compose merges environment maps, so this only sets these keys. Use it on
+# top of the app's own file:
+#
+#   cd C:\sh\src\VibeScan-Enterprise-Build
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.yml \
+#     -f C:\sh\seclayer-hybrid\deploy\secscan.overrides.yml up -d
+#
+# Without it the shipped defaults apply again (3 free scans a month, 5/hour,
+# 20/day, 10 anonymous/day, 50/account/day).
+#
+# ALLOW_UNVERIFIED_ACTIVE_PROBES is already the app's own value in .env.docker.
+services:
+  web:
+    environment:
+      FREE_TRIAL_SCAN_LIMIT: ${FREE_TRIAL_SCAN_LIMIT:-3}
+      SCAN_LIMIT_PER_HOUR: ${SCAN_LIMIT_PER_HOUR:-5}
+      SCAN_LIMIT_PER_DAY: ${SCAN_LIMIT_PER_DAY:-20}
+      SCAN_LIMIT_PER_HOUR_PER_IP: ${SCAN_LIMIT_PER_HOUR_PER_IP:-10}
+      SCAN_LIMIT_PER_DAY_PER_IP: ${SCAN_LIMIT_PER_DAY_PER_IP:-30}
+      SCAN_DAILY_LIMIT_ANON: ${SCAN_DAILY_LIMIT_ANON:-10}
+      SCAN_DAILY_LIMIT_ACCOUNT: ${SCAN_DAILY_LIMIT_ACCOUNT:-50}
