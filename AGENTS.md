@@ -81,11 +81,13 @@ Preferred: the section's own tools —
 Keyless local fallback (no MCP section connected): the DSH tools `seclayer_scan`
 and `webapp_scan`, which return findings as **JSON data**. They do not render.
 
-Then hand the user the app's own link:
+Then hand the user the app's own link — via the view proxy port, because the app
+itself refuses to render in a Browser tab (see the framing note below):
 
 ```
-http://127.0.0.1:4700/r/<shareToken>     # SecLayer public report
-http://127.0.0.1:4700                    # dashboard: scans, live ticker
+http://127.0.0.1:4710/r/<shareToken>     # SecLayer public report
+http://127.0.0.1:4710                    # SecLayer dashboard: scans, live ticker
+http://127.0.0.1:4711                    # SecScan dashboard
 ```
 
 `shareToken` comes from the scan record (`GET /api/scans/<id>`).
@@ -108,6 +110,29 @@ Both apps now run **in Docker**, from their own images, each against its own dat
 | `vibescan-enterprise-build-web-1` | `127.0.0.1:4701` | SecScan web + API + `/api/mcp` |
 | `vibescan-enterprise-build-secscan-1` | internal | the scanner worker |
 | `vibescan-enterprise-build-db-1` | internal | its own Postgres 16 |
+
+**Browser panel ports (the ones a human opens):**
+
+| Port | What | Why |
+|---|---|---|
+| `127.0.0.1:4710` | SecLayer via view proxy | embeddable in a Browser tab |
+| `127.0.0.1:4711` | SecScan via view proxy | embeddable in a Browser tab |
+| `127.0.0.1:4700` | SecLayer itself | direct; **not** embeddable |
+| `127.0.0.1:4701` | SecScan itself | direct; **not** embeddable |
+
+Both apps send `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'`, so an
+iframe can never load them directly — that is correct hardening, not a bug. The
+proxy (`deploy/view-proxy.mjs`) serves the same app with only those two refusals
+removed, and forwards `/api` untouched. It is a **host process**, so after a reboot
+it needs `deploy/stack-up.ps1` to start it; the containers come back by themselves.
+
+Report links to hand a human:
+
+```
+http://127.0.0.1:4710/r/<shareToken>   # SecLayer public report (no sign-in)
+http://127.0.0.1:4710                  # SecLayer dashboard / live ticker
+http://127.0.0.1:4711                  # SecScan dashboard
+```
 
 - **Docker Desktop must be running.** `AutoStart` is on, but it fires at Windows
   sign-in only. Once the engine starts, containers return by themselves
