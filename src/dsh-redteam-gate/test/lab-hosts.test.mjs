@@ -119,11 +119,11 @@ test('lab host entries cannot smuggle a scheme, path or credentials', async () =
   })
 })
 
-test('apply still registers all fifteen harness tools and the pre-execute hook', () => {
+test('apply still registers all sixteen harness tools and the pre-execute hook', () => {
   const { ctx, registered, hooks } = fakeCtx()
   apply(ctx, { labHosts: ['127.0.0.1'], registerUnavailable: true })
   const names = registered.map((t) => t.name ?? t)
-  assert.equal(names.filter((n) => !String(n).startsWith('ae_')).length, 15)
+  assert.equal(names.filter((n) => !String(n).startsWith('ae_')).length, 16)
   assert.equal(names.filter((n) => String(n).startsWith('ae_')).length, alterEgoCount())
   assert.deepEqual(hooks, ['tools/pre-execute'])
 })

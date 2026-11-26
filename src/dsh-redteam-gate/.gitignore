@@ -2,3 +2,7 @@
 # Test artifacts written by the scan-core suites (SQLite databases, backups)
 src/engines/seclayer-core/data.sqlite*
 src/engines/seclayer-core/backups/
+
+# Generated scan reports (generate_scan_report tool) — hold real findings about the operator's own
+# target, never checked in.
+reports/

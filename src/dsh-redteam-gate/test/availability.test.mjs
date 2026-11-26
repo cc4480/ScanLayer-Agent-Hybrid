@@ -7,7 +7,7 @@ import { apply } from '../src/plugin.mjs'
 import { decideScope } from '../src/scope.mjs'
 
 const OPTIONAL = ['nmap', 'nuclei', 'ffuf', 'gobuster', 'sqlmap', 'john', 'nikto', 'msfconsole', 'alterego']
-const ALWAYS = ['webapp_scan', 'seclayer_scan', 'domain_verify_start', 'domain_verify_check', 'secscan_fetch', 'seclayer_probe', 'recon_passive']
+const ALWAYS = ['webapp_scan', 'seclayer_scan', 'domain_verify_start', 'domain_verify_check', 'secscan_fetch', 'seclayer_probe', 'recon_passive', 'generate_scan_report']
 
 function registered(config) {
   const names = []

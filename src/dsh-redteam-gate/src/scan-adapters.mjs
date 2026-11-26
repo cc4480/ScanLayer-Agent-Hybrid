@@ -16,21 +16,29 @@ const SECLAYER_PROBES = {
   ssrf: ['./engines/seclayer-core/server/redTeam/ssrf.ts', 'probeSsrf'],
 }
 
-/** Full VibeScan website scan (verbatim runScan). `tier` is "basic" or "deep". */
-export function scanWebapp(gate, url, tier) {
+/**
+ * Full VibeScan website scan (verbatim runScan). `tier` is "basic" or "deep".
+ * `onTest`, when given, is the engine's own onTest callback: fired once per completed check
+ * (see testLedger.ts's TestRecord), which is what drives a live ticker.
+ */
+export function scanWebapp(gate, url, tier, { onTest } = {}) {
   return withScopedFetch(gate, async () => {
     await assertScope(url, gate)
     const { runScan } = await import(VIBESCAN_SCANNER)
-    return runScan(url, tier, true, undefined, null, undefined, undefined)
+    return runScan(url, tier, true, undefined, null, onTest, undefined)
   })
 }
 
-/** Full SecLayer diagnostics (verbatim runDiagnostics). */
-export function scanSeclayer(gate, url, { aggressive = false } = {}) {
+/**
+ * Full SecLayer diagnostics (verbatim runDiagnostics).
+ * `emit`, when given, is the engine's own EmitFn (channel, text): fired for each recon/probe/system/
+ * result step as it happens (see scanEvents.ts) — the exact live-ticker feed the product's own UI uses.
+ */
+export function scanSeclayer(gate, url, { aggressive = false, emit } = {}) {
   return withScopedFetch(gate, async () => {
     await assertScope(url, gate)
     const { runDiagnostics } = await import(SECLAYER_SCANNER)
-    return runDiagnostics(url, undefined, { allowActiveProbes: true, allowAggressiveProbes: aggressive })
+    return runDiagnostics(url, undefined, { allowActiveProbes: true, allowAggressiveProbes: aggressive, emit })
   })
 }
 
