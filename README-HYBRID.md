@@ -28,3 +28,10 @@ the other two sit under `modules/`.
   `modules/seclayer/server/`. The checks are used verbatim; do not rewrite them.
 - **Integration:** nothing yet wires the modules into the harness. That is the
   next build step.
+
+## Update: licensing (2026-11-25)
+
+- Root `LICENSE` is MIT (placeholder copyright: "SecLayer Hybrid contributors").
+- `modules/seclayer/LICENSE` is proprietary, all rights reserved, matching the module's own design doc.
+- `THIRD_PARTY_LICENSES.md` maps every component to its license.
+- Still open: `modules/seclayer/mcp-server/package.json` says MIT and conflicts with the proprietary notice; and the copyright holder name needs your final choice.
