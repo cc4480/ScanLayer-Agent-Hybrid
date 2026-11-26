@@ -89,6 +89,12 @@ fix prompt. DSH shows those pages; it never re-renders them.
    **Exception:** the *local-host* report template is a separate, deliberate artifact,
    owned by the `local-host-report` skill. It is the only HTML report an agent authors.
 7. **Never present a skipped check as a pass.** Say skipped, and why.
+8. **Only this repo is pushed.** `C:\sh\seclayer-hybrid` is the single remote
+   that may receive commits. `C:\sh\src\seclayer.io2026` and
+   `C:\sh\src\VibeScan-Enterprise-Build` are the operator's product repos:
+   change them locally only when a task genuinely requires it, and **never
+   commit, push or rewrite history there** — no reverts, no force-pushes, no
+   "restoring" a state on their behalf.
 
 ---
 
