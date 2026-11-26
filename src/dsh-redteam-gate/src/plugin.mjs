@@ -3,6 +3,7 @@ import { decideScope } from './scope.mjs'
 import { LocalDomainVerifier } from './verifier.mjs'
 import { nativeTools } from './tools.mjs'
 import { redteamTools } from './redteam-tools.mjs'
+import { scanTools } from './scan-tools.mjs'
 import { alterEgoScopeDecision } from './alterego-scope.mjs'
 import { alterEgoTools } from './engines/alterego/registry.mjs'
 
@@ -67,6 +68,8 @@ export function apply(ctx, config = {}) {
   for (const tool of nativeTools) ctx.tools.register(tool)
   // SecScan fetch, SecLayer probes, Metasploit scanner, passive recon. Each target-sending tool is gated inside its adapter.
   for (const tool of redteamTools(verifier)) ctx.tools.register(tool)
+  // Verbatim VibeScan and SecLayer scan cores: whole-site checks, gated by ownership in each tool.
+  for (const tool of scanTools(verifier)) ctx.tools.register(tool)
   // AlterEgo tools (ae_ prefix, generated catalog). They run without an approval prompt; scope still applies.
   for (const tool of alterEgoTools()) ctx.tools.register(tool)
   ctx.on('tools/pre-execute', async (exec, next) => {
