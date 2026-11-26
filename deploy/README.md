@@ -63,6 +63,38 @@ pwsh -File deploy/bootstrap.ps1
 Then DSH reads those values at startup through `${credential:...}` — the same
 mechanism already in the two bundles, unchanged.
 
+## Opening everything at once (autostart)
+
+Three tasks, two installers, all idempotent. Nothing here restarts a healthy
+component: every step is guarded by a port test.
+
+| Task | Installer | What it does |
+|---|---|---|
+| `SecLayer Hybrid Stack` | `install-autostart.ps1` | at logon **and every 5 min**: Docker Desktop, both scanner stacks, the view proxy (`stack-up.ps1`) |
+| `SecLayer Stack Watch` | `install-autostart.ps1` | continuous 2 s health poll while the DSH web profile listens on `:3080`; restores the stack within seconds |
+| `DSH Autostart` | `install-dsh-autostart.ps1` | at logon **+30 s**: the above, then the DSH `web` (`:3080`) and `superagent` (`:3082`) profiles if their ports are closed |
+
+```powershell
+pwsh -File deploy\install-autostart.ps1        # scanners + watcher
+pwsh -File deploy\install-dsh-autostart.ps1    # + DSH profiles  (-Uninstall to remove)
+```
+
+DSH liveness is decided by **port**, not URL: both profiles answer `401` on `/`
+when they are perfectly healthy, so a URL probe would start a second copy
+against a bound port. Logs: `.dsh\dsh-autostart.log`, plus
+`.dsh\dsh-web.out.log` and `.dsh\dsh-superagent.out.log` for the profile output.
+
+Two related settings in `.dsh\profiles\web\cordis.patch.yml` (machine-local,
+effective at the next DSH start):
+
+- `reconnect.maxAttempts: 1000` on both MCP rows. The client default is 10
+  attempts at 0.5 s→30 s (~2.5 min), after which the section drops its tools for
+  the rest of the session — longer than a `docker restart` of one scanner, but
+  not longer than "Docker Desktop was closed while I made coffee".
+- Those MCP rows exist **only in the `web` profile**. The `superagent` profile
+  (the `:3082` GUI) has no MCP sections, so its app access is the fallback tools
+  plus the API tokens in `.env`.
+
 ## Why containers, and what the alternative costs
 
 | Option | Works on any PC | Cost |
