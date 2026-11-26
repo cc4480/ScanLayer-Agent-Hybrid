@@ -35,8 +35,9 @@ if (Test-Path $envFile) {
         }
     }
 }
-# The scan engines in src\dsh-redteam-gate are TypeScript; the harness process must load them through tsx.
-$env:NODE_OPTIONS = '--import tsx'
+# No NODE_OPTIONS here: the harness already starts under tsx (pnpm dsh = node --import tsx/esm), which
+# loads the TypeScript scan engines. A global --import tsx would also apply to every node process the agent's
+# shell starts, and those fail with "Cannot find package 'tsx'" outside this folder.
 if (-not $env:DATABASE_URL) {
     Write-Host '[warn] DATABASE_URL is not set in .env - webapp_scan will fail until it points at a migrated Postgres database.'
 }
