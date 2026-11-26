@@ -66,7 +66,7 @@
     "windsurf",
     "ai-agent"
   ],
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "publishConfig": {
     "access": "public"
   }
