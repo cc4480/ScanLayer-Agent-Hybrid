@@ -16,10 +16,10 @@ Three read-only checks on the Windows PC this harness runs on, from one PowerShe
 
 ## Run it
 
-With the `pwsh` tool, exactly this line (the path contains a space, so keep the quotes and the leading `&`):
+With the `pwsh` tool, exactly this line (keep the quotes and the leading `&`):
 
 ```
-& "C:\Users\Cho-zen\OneDrive\Desktop\Deepseek super\skills\windows-system-info\windows-system-info.ps1" -Info idle
+& "C:\sh\seclayer-hybrid\skills\windows-system-info\windows-system-info.ps1" -Info idle
 ```
 
 Swap `idle` for `system`, `window` or `all`. A call takes about 1 to 3 seconds; ask only for the part you need, and call it again later rather than in a tight loop.

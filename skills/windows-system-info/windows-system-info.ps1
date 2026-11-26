@@ -18,7 +18,7 @@
     Copy-Item -LiteralPath '<project root>\skills\windows-system-info' -Destination '<project root>\.dsh\skills' -Recurse -Force
 
 .EXAMPLE
-  & "C:\Users\Cho-zen\OneDrive\Desktop\Deepseek super\skills\windows-system-info\windows-system-info.ps1" -Info idle
+  & "C:\sh\seclayer-hybrid\skills\windows-system-info\windows-system-info.ps1" -Info idle
 #>
 [CmdletBinding()]
 param(
