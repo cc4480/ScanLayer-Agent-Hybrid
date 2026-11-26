@@ -36,6 +36,13 @@ if (Test-Path $envFile) {
         if (-not $env:SCAN_SKIP_OWNERSHIP_GATE -and $line -match '^\s*SCAN_SKIP_OWNERSHIP_GATE\s*=\s*(.+?)\s*$') {
             $env:SCAN_SKIP_OWNERSHIP_GATE = $Matches[1]
         }
+        # Engine-side overrides (VibeScan activeProbeGate.ts): let the deep tier run without a DB verification row.
+        if (-not $env:ALLOW_UNVERIFIED_ACTIVE_PROBES -and $line -match '^\s*ALLOW_UNVERIFIED_ACTIVE_PROBES\s*=\s*(.+?)\s*$') {
+            $env:ALLOW_UNVERIFIED_ACTIVE_PROBES = $Matches[1]
+        }
+        if (-not $env:DEV_SKIP_DOMAIN_VERIFICATION -and $line -match '^\s*DEV_SKIP_DOMAIN_VERIFICATION\s*=\s*(.+?)\s*$') {
+            $env:DEV_SKIP_DOMAIN_VERIFICATION = $Matches[1]
+        }
     }
 }
 # No NODE_OPTIONS here: the harness already starts under tsx (pnpm dsh = node --import tsx/esm), which
