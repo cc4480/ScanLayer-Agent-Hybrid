@@ -1,15 +1,22 @@
-Proprietary License
+Source-Available Proprietary License
 
 Copyright (c) 2026 SecLayer Hybrid contributors. All rights reserved.
 
-This software and its documentation are proprietary. No license is granted to
-use, copy, modify, merge, publish, distribute, sublicense, or sell any part of
-it, in whole or in part, except as stated in a separate written agreement with
-the copyright holder.
+SOURCE AVAILABILITY
+You may view, read and study this source code, and you may open issues about it,
+in the public repository where it is published.
 
+RESTRICTIONS
+Except as stated in the section above, no license is granted to use, copy, modify,
+merge, publish, distribute, sublicense, or sell any part of this software, in whole
+or in part, and no derivative work may be made from it, unless a separate written
+agreement with the copyright holder says so.
+
+INTENDED USE
 The code performs active security testing. It is provided only for use against
 systems the user owns or is explicitly authorized to test.
 
+NO WARRANTY
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR
 PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE

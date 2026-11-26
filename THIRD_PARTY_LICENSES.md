@@ -6,7 +6,7 @@ This repository combines code under different licenses. Each part keeps its own 
 |---|---|---|
 | `LICENSE` (root, everything not listed below) | MIT | Covers the deepseek-super base. |
 | `src/dsh-redteam-gate/src/engines/vibescan-core/` | Apache License 2.0 | Verbatim VibeScan scan core. See `LICENSE` in that folder. Keep it with any copy. |
-| `src/dsh-redteam-gate/src/engines/seclayer-core/` | Proprietary, all rights reserved | Verbatim SecLayer scan core. See `LICENSE` in that folder. Not licensed for reuse. |
+| `src/dsh-redteam-gate/src/engines/seclayer-core/` | Source-available proprietary (all rights reserved) | Verbatim SecLayer scan core. Viewable in the public repo; not licensed for reuse or redistribution. See `LICENSE` in that folder. |
 | `src/deepseek-harness/` | MIT (Copyright 2026 DeepSeek) | See `src/deepseek-harness/LICENSE`. |
 | `src/deepseek-harness/native/system/` and its `packages/*` | BSD-3-Clause | See the LICENSE files in those folders. |
 | `src/deepseek-harness/packages/experimental/**` | See each folder's LICENSE files | |
@@ -15,5 +15,5 @@ This repository combines code under different licenses. Each part keeps its own 
 ## Open items
 
 - The copyright holder line is "SecLayer Hybrid contributors" in the root `LICENSE`. Replace it with the legal name you want to use.
-- Whether the SecLayer core may be published at all is still open. The design doc says the product is closed source, but the hackathon requires a public repository with a license.
+- The SecLayer core is published as source-available: viewable, not reusable. Decided by the owner on 2026-11-25.
 - The original `modules/` folders were removed in this repo. Their history is in git and in the source repositories.
