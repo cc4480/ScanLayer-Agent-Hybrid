@@ -25,17 +25,21 @@ Run this in order. Do not skip to scanning.
 1. **Read the request literally.** "Scan X" means run a scan and hand back the app's
    report link. "Where is my report?" means find the app's link for a scan that
    already ran — it does not mean write a report.
-2. **Check the app is up.**
+2. **Check the apps are up — and if they are, do not touch them.**
    ```powershell
    (Invoke-WebRequest http://127.0.0.1:4700/api/system/health -UseBasicParsing).Content
+   (Invoke-WebRequest http://127.0.0.1:4701/api/healthz   -UseBasicParsing).Content
    ```
-   Expect `{"status":"Online",...}`. If it fails, start it detached — and **clear
-   `DATABASE_URL` first**, or it connects to a stale Postgres and dies:
+   Expect `{"status":"Online",...}` and `{"status":"ok"}`.
+   A running scanner must not be restarted to "check" it: a `compose up -d` on a
+   live stack can recreate containers and kill a scan in progress. Only when a URL
+   fails, run the recovery script (it verifies first and returns immediately when
+   everything is healthy):
    ```powershell
-   cd C:\sh\src\seclayer.io2026
-   $env:DATABASE_URL=''
-   Start-Process node -ArgumentList 'node_modules/tsx/dist/cli.mjs','server.ts' -WorkingDirectory . -WindowStyle Hidden
+   powershell -ExecutionPolicy Bypass -File C:\sh\seclayer-hybrid\deploy\stack-up.ps1
    ```
+   That script starts Docker Desktop if the engine is down, brings up only what is
+   missing, and re-checks health.
 3. **Check which scan path is live.** If the `mcp__seclayer__*` tools are present,
    use them. Otherwise fall back to `seclayer_scan` / `webapp_scan`, which return
    JSON with no rendering.
