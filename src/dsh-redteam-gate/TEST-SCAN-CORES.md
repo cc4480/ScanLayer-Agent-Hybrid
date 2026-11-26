@@ -32,13 +32,8 @@ Apply the VibeScan schema once:
     cd src/engines/seclayer-core
     node --import tsx --test $(find server -name '*.test.ts')
 
-    # Gate and agent-tool tests.
-    npx tsx --test test/lab-hosts.test.mjs test/scope.test.mjs test/verifier.test.mjs test/runner.test.mjs \
-      test/tools.test.mjs test/recon/domain.test.mjs test/recon/passive.test.mjs \
-      test/seclayer/redteam-modules.test.mjs test/metasploit/msf.test.mjs test/alterego/*.test.mjs \
-      test/guard/scoped-fetch.test.mjs test/redteam-tools.test.mjs test/render.test.mjs test/scan/scan-tools.test.mjs
-    npx tsx --test test/secscan-src/gate.test.mjs test/seclayer-src/gate.test.mjs test/seclayer-network/adapter.test.mjs
-    npx vitest run test/secscan-network
+    # Gate and agent-tool tests (the same list as `npm test`).
+    npm test
 
 ## Harness build (needed by the gate tests)
 
@@ -58,8 +53,7 @@ builds desktop and web targets too.
 
 - VibeScan core: 3425 pass, 2 fail, 293 skipped. The two failures are external (see below).
 - SecLayer core: 1013 pass, 0 fail, 6 skipped.
-- Gate suite: 226 pass, 0 fail, 2 skipped.
-- Ported SecScan/SecLayer gate suites: 25 pass, 0 fail.
+- Gate suite (`npm test`): 213 pass, 0 fail, 2 skipped.
 
 ## Known external failures
 
