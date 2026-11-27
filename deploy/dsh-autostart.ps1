@@ -35,11 +35,31 @@ function Write-Log($m) {
     Write-Host $line
 }
 
+# Load the git-ignored .env (DEEPSEEK_API_KEY, DATABASE_URL, ...) into this process so the
+# profiles inherit it. A scheduled task starts with none of it; without the key every model
+# call returns 401 and the agents have nothing to work with. Values are never logged.
+function Import-DotEnv([string]$path) {
+    if (-not (Test-Path $path)) { Write-Log "WARN: $path not found - profiles start without .env values"; return }
+    $loaded = 0
+    foreach ($line in Get-Content -Path $path) {
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') {
+            $value = $Matches[2].Trim('"').Trim("'")
+            [Environment]::SetEnvironmentVariable($Matches[1], $value, 'Process')
+            $loaded++
+        }
+    }
+    Write-Log "loaded $loaded variable(s) from .env"
+    foreach ($required in 'DEEPSEEK_API_KEY', 'DATABASE_URL') {
+        if (-not [Environment]::GetEnvironmentVariable($required, 'Process')) { Write-Log "WARN: $required is not set after loading .env" }
+    }
+}
+
 function Test-Listener([int]$port) {
     return [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
 }
 
 Write-Log '--- dsh-autostart start ---'
+Import-DotEnv (Join-Path $Root '.env')
 
 # 1. Docker Desktop + containers + view proxy. Idempotent, read-only if healthy.
 $stackUp = Join-Path $Root 'deploy\stack-up.ps1'
@@ -107,7 +127,7 @@ foreach ($p in $profiles) {
     if (Test-Listener $p.Port) { Write-Log ("OK   {0} listening on {1}" -f $p.Name, $p.Port) }
     else { Write-Log ("FAIL {0} not listening on {1}" -f $p.Name, $p.Port); $failed += $p.Name }
 }
-if (Test-Listener 4710 -and (Test-Listener 4711)) { Write-Log 'OK   scanners listening on 4710/4711' }
+if ((Test-Listener 4710) -and (Test-Listener 4711)) { Write-Log 'OK   scanners listening on 4710/4711' }
 else { Write-Log 'FAIL scanners not listening on 4710/4711'; $failed += 'scanners' }
 
 Write-Log ('--- dsh-autostart done, failures: ' + $(if ($failed.Count) { $failed -join ',' } else { 'none' }) + ' ---')
